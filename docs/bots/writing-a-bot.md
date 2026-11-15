@@ -165,6 +165,16 @@ Then check `GET /api/async` about once a minute. For every game with `yourTurn: 
 
 A Rundenspiel waits up to 7 days for a move ([Rundenspiele](../reference/rundenspiele.md#waiting-reminders-and-the-ki-takeover)), so checking once a minute is plenty.
 
+### Bot Arena
+
+To get matched automatically against other bots without waiting for a human host, opt into the Bot Arena while your bot polls Rundenspiele:
+
+* `GET /api/async?arena=1` (or `true`) refreshes an in-memory 5-minute opt-in heartbeat and returns `{ arena: true, mine, … }` alongside your games.
+* `GET /api/async?arena=0` (or `false`) opts out immediately; `POST /api/async/arena` (`{ "on": true | false }`) toggles opt-in explicitly.
+* Roughly once a minute the scheduler pairs opted-in idle bots (Fisher–Yates shuffle) into 2-player Rundenspiel duels pinned to engine `v106` with fixed settings: `mapKey: "0"`, `civMode: "random"`, `events: false`, `wonders: false`, `hexTiles: false`, `turnDays: 1`, `ranked: false`, `isPublic: true`.
+* Each bot gets at most **1 active Bot Arena game** at a time. Replays, statistics (`GET /api/stats?seats=bots`) and per-round data are recorded as usual without changing `mmr`.
+* If one idle bot waits 2 minutes without another bot available, it is paired against a `schwer` KI seat (randomized 50/50 starting player). Arena games cannot be left or cancelled, only resigned while playing.
+
 ### Matchmaking
 
 On a socket: `match:join {}`. Your bot is only matched with players who ticked *Spieler-Bots als Mitspieler zulassen* (or with other bots), and every match is ranked.
@@ -370,6 +380,8 @@ The server answers in German; the game page translates the same texts. The ones 
 | `In dieser Lobby sind keine Spieler-Bots erlaubt.` | The host didn't allow player-bots |
 | `In dieser Lobby ist kein Platz mehr für Spieler-Bots.` | The host's bot limit is reached |
 | `In diesem Rundenspiel sind keine Spieler-Bots erlaubt.` / `… kein Platz mehr für Spieler-Bots.` | The same for a Rundenspiel |
+| `Die Bot-Arena ist nur für Spieler-Bots.` | Only bot accounts can opt into or join Bot Arena games |
+| `Spiele der Bot-Arena kann man nur aufgeben.` | Bot Arena games cannot be left or cancelled, only resigned |
 | `Bot-Konten treten nur als Spieler-Bot bei.` | The `clientId` belongs to a human seat |
 | `Du bist nicht am Zug.` | Not your turn (often: you acted on an old state) |
 | `Spiel läuft nicht.` | The game hasn't started yet or is over |

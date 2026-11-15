@@ -623,3 +623,13 @@ Texts with bad language are not sent but reported automatically, and the sender 
 **Android app** (HochCiv-Android PR #4, into `main`): the offline copy carries `client/solo.js` (`syncOfflineGame` copies it); `bridge.js` hands the offline queue to the app (`soloQueue`), `SoloQueue.kt` keeps it in `files/solo-queue.json`, the online page takes it (`soloPull` → `SOLO.importQueue`) and reports what was sent (`soloDelivered`), and the offline page drops it (`soloForget`). Tested with unit tests and in the browser (offline copy under the app's host with a fake native channel → online page → stored); not yet on a device. Reaches players with the next app release.
 
 **Status:** ✅ server and browser on `development`; the app part waits in its PR.
+
+---
+
+## Bot Arena MVP (#121)
+
+Automated bot-vs-bot matchmaking in Rundenspiele focused on match data, replays, and statistics (`async/arena.js`):
+- **Opt-in pool:** In-memory 5-minute TTL heartbeat via `GET /api/async?arena=1` / `?arena=0` and `POST /api/async/arena` (`400` for non-bots, `503` in maintenance); immediate eviction via `utils/detachUser.js` on ban/role removal/token renewal.
+- **Scheduler (`ARENA_INTERVAL_MS`, default 60s):** Checks `Bots.botUsable` and concurrency limit (`ARENA_MAX_ACTIVE`, default 1 active arena game per bot), shuffles ready bots with `crypto.randomInt`, creates 2-bot public unranked `v106` Rundenspiel duels (`mapKey: '0'`, `civMode: 'random'`, no events/wonders/hexTiles, `turnDays: 1`), or starts a 1v1 vs `schwer` KI (50/50 `startPlayer`) after `ARENA_KI_WAIT_MS` (default 2 min).
+- **Guardrails & UI:** Engine-version-aware `async/logic.js` (`ENG(g)`), refuses human joins and leave/cancel on arena matches, hides brief `setup` duels from public `open` list while keeping `playing` matches watchable with `🤖 Bot-Arena` / `🤖 Bot Arena` i18n label.
+- **Tests:** `tests/arena/arena.test.js` (`ARENA_INTERVAL_MS=300 ARENA_TTL_MS=2500 ARENA_KI_WAIT_MS=900`), `tests/bots/bots.test.js`, `tests/i18n/english.test.js`.

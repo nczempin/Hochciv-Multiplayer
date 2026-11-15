@@ -5,7 +5,7 @@
 services:
   hochciv-db:
     image: postgres:15-alpine
-    container_name: hochciv-db
+    container_name: ${HOCHCIV_DB_CONTAINER:-hochciv-db}
     restart: unless-stopped
     environment:
       POSTGRES_USER: hochciv
@@ -15,16 +15,16 @@ services:
       - pgdata:/var/lib/postgresql/data
     ports:
       # Only reachable from this machine (for DB tools / psql)
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${HOCHCIV_DB_PORT:-5432}:5432"
 
   hochciv-local:
     build: .
-    container_name: hochciv-multiplayer-local
+    container_name: ${HOCHCIV_CONTAINER:-hochciv-multiplayer-local}
     restart: unless-stopped
     depends_on:
       - hochciv-db
     ports:
-      - "3000:3000"
+      - "${HOCHCIV_PORT:-3000}:3000"
     environment:
       - PORT=3000
       # No NODE_ENV=production: mails are printed to the log, cookies work over http
@@ -43,6 +43,11 @@ services:
       - ASYNC_TIMEOUT_MS=${ASYNC_TIMEOUT_MS:-}
       - ASYNC_REMINDER_MS=${ASYNC_REMINDER_MS:-}
       - ASYNC_SWEEP_MS=${ASYNC_SWEEP_MS:-}
+      # Bot Arena intervals/limits, scaled down for tests/arena (empty = defaults in async/arena.js)
+      - ARENA_INTERVAL_MS=${ARENA_INTERVAL_MS:-}
+      - ARENA_TTL_MS=${ARENA_TTL_MS:-}
+      - ARENA_KI_WAIT_MS=${ARENA_KI_WAIT_MS:-}
+      - ARENA_MAX_ACTIVE=${ARENA_MAX_ACTIVE:-}
       # Chat word filter tests (tests/filter/filter.test.js): the first writing timeout (default 5 minutes)
       - CHAT_MUTE_MS=${CHAT_MUTE_MS:-300000}
       # No popup for the terms of use in the browser tests, except tests/terms (TERMS_CHECK=on)

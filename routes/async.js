@@ -5,6 +5,8 @@
 const express = require('express');
 const router = express.Router();
 const service = require('../async/service');
+const arena = require('../async/arena');
+const Bots = require('../utils/bots');
 const serverState = require('../utils/serverState');
 
 function isAuthenticated(req, res, next) {
@@ -21,8 +23,28 @@ const send = (res, p) => p.then(r => {
     res.status(500).json({ error: 'Serverfehler' });
 });
 
-// List: own games, invitations, open public games
-router.get('/', (req, res) => send(res, service.list(req.user)));
+// List: own games, invitations, open public games (also refreshes Bot Arena opt-in heartbeat)
+router.get('/', (req, res) => {
+    if (Bots.isBot(req.user)) {
+        const q = req.query.arena;
+        if ((q === '1' || q === 'true') && !serverState.state.maintenanceMode) arena.optIn(req.user.id);
+        else if (q === '0' || q === 'false') arena.optOut(req.user.id);
+    }
+    send(res, service.list(req.user));
+});
+
+// Explicit Bot Arena opt-in / opt-out toggle ({ on?: boolean }, default true)
+router.post('/arena', (req, res) => {
+    if (serverState.state.maintenanceMode)
+        return res.status(503).json({ error: 'Der Server befindet sich im Wartungsmodus.' });
+    if (!Bots.isBot(req.user))
+        return res.status(400).json({ error: 'Die Bot-Arena ist nur für Spieler-Bots.' });
+    const body = req.body || {};
+    const on = body.on === undefined ? true : !!body.on;
+    if (on) arena.optIn(req.user.id);
+    else arena.optOut(req.user.id);
+    res.json({ ok: true, arena: arena.isOptedIn(req.user.id) });
+});
 
 // Create { config: { mapKey, civMode, humanCount, events, eventMode, wonders, hexTiles, difficulty, ranked, isPublic }, civ, ability, invite: [usernames] }
 router.post('/', (req, res) => {

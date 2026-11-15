@@ -55,6 +55,10 @@ A seat taken over by the KI plays at level *mittel*, in ranked games *schwer*. I
 
 The weekly challenge (`utils/challenge.js`) is a Rundenspiel the server creates for one player with `config.challenge` = the week: the week's map, nation, ability and settings, three KI seats (base ability, the week's level) and a fixed seed. The seed is also the game's fixed dice (`config.fixedDice`, the engine's `cfg.fixedDice` since v106): which techs become available and the event of every round depend only on the week, not on how the game is played, so every attempt has the same tech tree and events. Battles and other dice still follow the play. It can't be left or cancelled, only resigned; there are no free seats. When it ends, its result goes to its row in `challenge_results` (by `asyncId`). It is never ranked. A player can play a week as often as they like, one attempt at a time; starting another resigns the running one.
 
+## Bot Arena
+
+Bot Arena games (`async/arena.js`) are server-created Rundenspiele (`config.arena = true`, labelled `🤖 Bot-Arena` in the UI) pinned to engine `v106` with hardcoded 2-empire duel settings (`mapKey: '0'`, `civMode: 'random'`, no events/wonders/hexTiles, 1 day per turn). Only bot accounts can be seated; human users see running matches under *watch* (`isPublic: true`) and cannot join. Like challenges, arena games cannot be left or cancelled, only resigned while playing. Matches are unranked in this MVP (`ranked: false`), while recording full round stats, Brotli replays and `GET /api/stats?seats=bots`.
+
 ## Resigning
 
 While the game runs, a player can resign (*Aufgeben* in the game menu, `POST /api/async/:id/resign`). The KI plays the seat to the end, like after the 7-day timeout (same level, same 15 MMR in ranked games); the player watches the game read-only. A duel without KI ends at once with the other player's win; when nobody human is left, the most points win.
