@@ -41,7 +41,7 @@ Status: ⬜ planned · 🔨 in progress · ✅ on `development` (staging) · �
 | 31 | F31 | [Bots as friends and invites](#f31-bots-as-friends-and-invites) | ✔ | ✔ | ✅ (PR #148, Nic) |
 | 32 | F32 | [Random nations: no dodging, no rerolling](#f32-random-nations-no-dodging-no-rerolling) | – | ✔ | ✅ |
 | 33 | F33 | [Mirror match (both sides)](#f33-mirror-match-both-sides) | ? | ✔ | ⬜ idea |
-| 34 | F34 | [Nation draft and turn-order choice](#f34-nation-draft-and-turn-order-choice) | ✔ | ✔ | ⬜ planned |
+| 34 | F34 | [Nation draft and turn-order choice](#f34-nation-draft-and-turn-order-choice) | ✔ | ✔ | ✅ done |
 
 The numbers are those of the original proposal; F11 and F12 were requested after the staging tests of F1. F15–F22 (and F8, F10 moved up from "later") are the second round, approved on 2026-11-03. Not wanted for now: a vacation mode for Rundenspiele, a tutorial, tournaments (too few players yet). F23–F27 are the third round, approved on 2026-11-10; F28 was asked for the same day. Parked as GitHub issues for later: daily challenge (#120), bot arena (#121), Discord integration (#122). The order puts the small fixes for live games first. F6 and F7 come before F5 because they record per-turn data that F5 can reuse.
 
@@ -695,6 +695,14 @@ F29–F33 come from player feedback on Discord (Nic, 2026-11-15/16), consolidate
 **Thoughts:** fits Rundenspiele best (two linked games, the combined result counts); open whether and how it counts for MMR. Before building it: use the statistics (F13/F23) to measure how big the first-move and nation advantages are. Bigger feature – parked until decided.
 
 ## F34 Nation draft and turn-order choice
+
+**Status: done (2026-11-16)** with the proposed defaults below. Implemented:
+- `utils/civdraft.js`: modes (`civMode` fixed / random / draft / randomDraft, `turnOrder` classic / pick / random; configs from before keep working), positions, draft pool, picks, KI and forced picks.
+- Engine adapter: `seatOrder` with a turn-order mode (also in the Marathon preview), custom maps keep spawn *n* for position *n*.
+- Live (`sockets/game.js`, `mp.js`): the two selects replace *Zufällige Nationen für alle*; a position select per player with *Positionen wählen*; at the start the seats are arranged in position order (new lobby indices via `session:index`), then the nation draft (status `civdraft`, `civdraft:update` / `civdraft:pick`, dialog in `MP.drawCivDraft`), then placement / Marathon draft / game. A pick has the turn time, without a timer 2 minutes.
+- Rundenspiele (`async/logic.js`, `async/service.js`, `sockets/async.js`): seats are positions; the host and joiners pick a free one (`pos`), or they are shuffled when everybody is there; the KI takes the free ones; nations picked on joining, dealt or drafted (status `civdraft`, `async:civdraft`, notification *Du wählst jetzt deine Nation*; the deadline picks at random and the player keeps the seat). The create form and join dialog have the new choices; the draft uses the live dialog.
+- Presets, open-games filter and list labels know the new modes; bot guide and socket reference describe the events.
+- Tests: `tests/draft/civdraft.test.js`, `tests/draft/async-draft.test.js` (unit), `tests/draft/live-draft.test.js`, `tests/draft/async-draft-browser.test.js` (browser); deadline and English tests adapted.
 
 **Goal:** more ways to hand out nations and turn positions, so neither comes down to who is host or who joined first.
 

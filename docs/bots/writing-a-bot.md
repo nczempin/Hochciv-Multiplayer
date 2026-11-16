@@ -112,7 +112,8 @@ Every event you send gets an answer through the acknowledgement callback (`sio.c
    [{ "id": "…", "joinCode": "K7Q2", "password": "…", "status": "lobby", "hostName": "Anna",
       "playersCount": 1, "maxPlayers": 3, "mapKey": "random", "round": null, "spectators": 0,
       "playerBots": true, "playerBotsFree": null, "customMapName": null, "empires": 4, "kiCount": 1,
-      "difficulty": "mittel", "randomCivs": false, "events": false, "eventMode": "hard", "wonders": false,
+      "difficulty": "mittel", "randomCivs": false, "civMode": "fixed", "turnOrder": "classic",
+      "events": false, "eventMode": "hard", "wonders": false,
       "ranked": false, "turnTime": 0 }]
    ```
 
@@ -154,7 +155,7 @@ As host, your bot starts the game with `game:start` (free seats are filled with 
 Rundenspiele need no socket while you wait, only REST:
 
 * `GET /api/async` → `{ mine, open, invites }`. `mine` are your games; each has `yourTurn`, `status`, `round` and `config`. `open` are public games with free seats (`freeSeats`) whose host allows player-bots when `config.playerBots` is `true`. Games started on an older version of the rules carry it in `engine` (for example `"v98"`, see [Know the rules](#6-know-the-rules)).
-* `POST /api/async/:id/join { civ, ability }` takes a seat.
+* `POST /api/async/:id/join { civ, ability, pos }` takes a seat. `pos` is the turn position (0 = first) when `config.turnOrder` is `"pick"`; `freeSeats` lists the free ones as `slot`.
 * `POST /api/async { config, civ, ability }` creates a Rundenspiel. A Rundenspiel your bot hosts always lets player-bots in. Example `config`: `{ "mapKey": "plaettchen", "playerCount": 3, "kiCount": 0, "difficulty": "schwer", "civMode": "random", "isPublic": true, "ranked": false, "events": false, "eventMode": "hard", "wonders": false, "playerBots": true }`.
 
 Then check `GET /api/async` about once a minute. For every game with `yourTurn: true`:
@@ -244,6 +245,8 @@ Some game types need a step before the first turn:
 
 * **Tile maps** (`mapKey` `"random"` live, `"plaettchen"` in Rundenspiele): `placement:start { plan, queue, seed, cfg }` arrives. Every player places their start tile at the same time with `placement:action { o, cell }`. `o` is the orientation (0–2) and `cell` the field of the tile for the capital. In a Rundenspiel: `view.status == "placement"` and `async:place { id, o, cell }`. The engine's `placeOptions(plan, seat, o)` in `js/tiles.js` tells you which cells are allowed, and the KI's `kiPlaceSeat` in `js/ki.js` shows how to pick a good one. If you don't want to deal with this, play only the fixed maps `"0"`, `"1"` and `"gross"`.
 * **Marathon:** every player drafts abilities: `draft:update` shows the choice, `draft:pick { id }` picks (in a Rundenspiel `async:draft { id, abilityId }`). Simplest: leave marathon games.
+* **Nation draft** (`civMode` `"draft"` or `"randomDraft"`): before anything else, the players pick their nations one after another, the last to move first. `civdraft:update` shows the pool and whose pick it is (`cur`, your lobby index); `civdraft:pick { id, ability }` picks. In a Rundenspiel: `view.status == "civdraft"`, `view.civdraft` and `async:civdraft { id, pick, ability }`. A bot that doesn't pick gets a random nation when the time is up.
+* **Turn positions** (`turnOrder` `"pick"` or `"random"`): at the start the seats are put in turn order, so your lobby index may change – `session:index` tells you the new one.
 
 ### The turn timer
 
