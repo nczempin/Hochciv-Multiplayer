@@ -100,10 +100,10 @@ A player who resigns (live `game:resign`, Rundenspiel `async:resign`) gives the 
 
 ## Friends
 
-A logged-in page keeps its socket open; while it is connected the account counts as online for its friends (`utils/presence.js`).
+A logged-in page keeps its socket open; while it is connected the account counts as online for its friends (`utils/presence.js`). A bot account's socket counts the same.
 
 | Event | Direction | Payload | Meaning |
 |---|---|---|---|
-| `friends:invite` | → server | `{ userId, joinCode }` | Invite an online friend into the live lobby one sits in (at most 10 a minute) |
+| `friends:invite` | → server | `{ userId, joinCode }` | Invite an online friend into the live lobby one sits in (at most 10 a minute); a bot friend only when the lobby takes one more player-bot |
 | `friends:invited` | ← server | `{ fromId, fromName, joinCode, password, hostName, at }` | An invitation; it is also listed in `GET /api/friends` for 15 minutes while the lobby waits |
 | `friends:changed` | ← server | `{ type: request | accepted | removed | self, from? }` | The friends list changed – reload it |

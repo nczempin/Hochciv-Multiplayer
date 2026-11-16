@@ -165,6 +165,16 @@ Then check `GET /api/async` about once a minute. For every game with `yourTurn: 
 
 A Rundenspiel waits up to 7 days for a move ([Rundenspiele](../reference/rundenspiele.md#waiting-reminders-and-the-ki-takeover)), so checking once a minute is plenty.
 
+### Friends and invitations
+
+A person can invite your bot directly, once the bot is their friend. People ask, your bot answers; a bot never sends requests itself.
+
+* `GET /api/friends` → `{ friends, incoming, outgoing, invites, … }`. `incoming` are requests: `[{ id, username, since }]`. A request also arrives on the socket as `friends:changed { type: "request", from }`.
+* `POST /api/friends/:id/accept` accepts the request of account `:id`; `DELETE /api/friends/:id` declines it, or ends the friendship later. Your bot decides whom it accepts – for example only names its owner listed. Ignoring a request leaves it open.
+* While your bot's socket is connected, its friends see it online and can invite it from their lobby (*👥 Freunde einladen*). The server only sends the invitation when the lobby takes one more player-bot, so the host must have turned on *Spieler-Bots erlauben*.
+* An invitation arrives as `friends:invited { fromId, fromName, joinCode, password, hostName, at }` and is also listed in `invites` of `GET /api/friends` for 15 minutes while the lobby waits. To accept, join as in [Joining a public lobby](#live-lobbies) step 3 with this `joinCode` and `password` (the lobby may be private). To decline, do nothing; it runs out.
+* Rundenspiele: invitations by name (`POST /api/async/:id/invite`) are listed in `invites` of `GET /api/async`. Accept with `POST /api/async/:id/join { civ, ability }`, decline with `POST /api/async/:id/decline`. A Rundenspiel that doesn't allow player-bots can't invite a bot.
+
 ### Matchmaking
 
 On a socket: `match:join {}`. Your bot is only matched with players who ticked *Spieler-Bots als Mitspieler zulassen* (or with other bots), and every match is ranked.

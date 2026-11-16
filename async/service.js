@@ -479,6 +479,10 @@ async function invite(user, id, username) {
         if (!g.seats.some(s => s.userId === user.id)) return { error: 'Nur Mitspieler können einladen.' };
         if (!L.freeSeats(g).length) return { error: 'Es ist kein Platz mehr frei.' };
         if (g.seats.some(s => s.userId === target.id)) return { error: `${target.username} spielt schon mit.` };
+        if (target.accountType === 'bot') {
+            const why = L.playerBotRoom(g);
+            if (why) return { error: why };
+        }
         // Every invitation sends an e-mail – keep the number per game small
         if (g.invites.filter(i => i.status === 'pending').length >= MAX_PENDING_INVITES) {
             return { error: 'Zu viele offene Einladungen für dieses Spiel.' };

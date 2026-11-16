@@ -840,6 +840,6 @@ function view(g, userId) {
 
 module.exports = {
     create, join, leave, cancel, place, draftPick, action, drive, timeout, removeUser, resign, DELETED_NAME, IN_PREPHASE,
-    waitingOn, summary, view, freeSeats, seatOf, stateIndex, isFree, engineVersionOf, ENG, summaryText,
+    waitingOn, summary, view, freeSeats, playerBotRoom, seatOf, stateIndex, isFree, engineVersionOf, ENG, summaryText,
     MMR_PENALTY, TURN_DAYS,
 };
