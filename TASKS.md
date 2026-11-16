@@ -38,8 +38,8 @@ Status: ⬜ planned · 🔨 in progress · ✅ on `development` (staging) · �
 | 28 | F28 | [Single-player games in the statistics](#f28-single-player-games-in-the-statistics) | – | – (single player, browser and app) | ✅ server · app: PR open |
 | 29 | F29 | [Server checks research](#f29-server-checks-research) | ✔ | ✔ | ✅ |
 | 30 | F30 | [Show refused moves](#f30-show-refused-moves) | ✔ | ✔ | ✅ |
-| 31 | F31 | [Bots as friends and invites](#f31-bots-as-friends-and-invites) | ✔ | ✔ | 🔨 PR #148 (Nic) |
-| 32 | F32 | [Random nations: no dodging, no rerolling](#f32-random-nations-no-dodging-no-rerolling) | – | ✔ | ⬜ |
+| 31 | F31 | [Bots as friends and invites](#f31-bots-as-friends-and-invites) | ✔ | ✔ | ✅ (PR #148, Nic) |
+| 32 | F32 | [Random nations: no dodging, no rerolling](#f32-random-nations-no-dodging-no-rerolling) | – | ✔ | ✅ |
 | 33 | F33 | [Mirror match (both sides)](#f33-mirror-match-both-sides) | ? | ✔ | ⬜ idea |
 
 The numbers are those of the original proposal; F11 and F12 were requested after the staging tests of F1. F15–F22 (and F8, F10 moved up from "later") are the second round, approved on 2026-11-03. Not wanted for now: a vacation mode for Rundenspiele, a tutorial, tournaments (too few players yet). F23–F27 are the third round, approved on 2026-11-10; F28 was asked for the same day. Parked as GitHub issues for later: daily challenge (#120), bot arena (#121), Discord integration (#122). The order puts the small fixes for live games first. F6 and F7 come before F5 because they record per-turn data that F5 can reuse.
@@ -665,7 +665,7 @@ F29–F33 come from player feedback on Discord (Nic, 2026-11-15/16), consolidate
 
 **Goal:** a host can let one specific bot into a game instead of any bot; later bots can be befriended like players (F8).
 
-**Status:** Nic's PR #148 (`feature/bot-invites`) – to review and merge into `development`.
+**Status:** ✅ Nic's PR #148 merged as it is (decided 2026-11-16): bots in friend lists, invitations follow the host's player-bot rules (also in ranked lobbies that allow player-bots). Tests: `tests/friends`, `tests/bots`.
 
 **Related, not code:** Nic offered to host a Neura* bot (and trained one of their own) so bots have opponents for MMR while the NeuraBot is down. To agree: bot names that make clear who runs them, and which version they play.
 
@@ -675,10 +675,17 @@ F29–F33 come from player feedback on Discord (Nic, 2026-11-15/16), consolidate
 
 **Problem:** live games deal the nations at the start (`sockets/game.js`), which is fine. Rundenspiele deal every nation when the game is created (`async/logic.js`, `civMode === 'random'`), and `freeSeats()` shows the next seat's nation before anyone joins. So a joiner can skip games with a nation they don't want, and a host can create and delete games until they get the nation they want.
 
-**Planned (to decide):**
-- Deal the nation (and turn position) when a player joins, from the server's seed, or deal them all only when the game starts; the open-games list shows no nation.
-- The host's nation is not known before the others join either.
-- Optional: limit how often an account deletes unstarted games.
+**Decided (2026-11-16):** deal at the start – nobody, the host included, knows their nation until the last seat is filled. No limit on deleting games (nothing left to gain by it).
+
+**Built:**
+- `async/logic.js`: new random games get `config.dealAtStart`; seats are created without a nation (the humans', then the KI's). `freeSeats` offers a seat with `civ: null`; joining takes any free seat. When the last human joins, `dealRandom()` deals one hand for all seats (fixed map: different nations; tile/custom map: as evenly as possible) and the turn positions as before: host first, the others in join order, the KI last. Then the game starts (or its placement/draft). The setup timeout deals those who are there (with KI: the KI takes the free seats; without KI: the free seats leave).
+- **Changed behaviour:** a Rundenspiel with random nations no longer starts at once with the host's first turn – it waits until everybody has joined, like a game without KI.
+- Games created before (nations dealt at creation, no `dealAtStart`) keep their old rules; so do live games turned into Rundenspiele.
+- `mp.js`: the join dialog says the nations are dealt once every seat is taken; the create form's hint follows the new start. English in `client/i18n.js`.
+
+**Tests:** `tests/random/deal.test.js` (no docker): nothing dealt before, the free seat shows no nation, dealt when full (positions, KI last, host moves first), without KI, tile map (placement follows), leaving before the start, setup timeout with and without KI, an old game. `tests/placement/hex.test.js`, `tests/lobbies/lobby-filter.test.js`, `tests/spectators/spectators.test.js` still pass.
+
+**Status:** ✅
 
 ## F33 Mirror match (both sides)
 

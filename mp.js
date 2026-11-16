@@ -2500,13 +2500,13 @@ const ASYNC = {
         // mirrors async/logic.js create(): when the host can play turn 1 right away
         const humans = f.playerCount - f.kiCount, noKi = f.kiCount === 0;
         const freeCivMap = f.mapKey === 'plaettchen' || f.mapKey === 'eigene';
-        const seatsFinal = random || (!freeCivMap && f.playerCount === 4);
+        const seatsFinal = !random && !freeCivMap && f.playerCount === 4;      // random: dealt at the start (F32)
         const atOnce = !(f.mapKey === 'plaettchen' || marathon) && !noKi && seatsFinal;
         if (f.mapKey === 'plaettchen' || marathon)
             hint = marathon ? TX('Erst wenn alle beigetreten sind, wird gedraftet – dann beginnt die Partie mit deinem Zug.')
                 : TX('Erst wenn alle beigetreten sind, legt jeder sein Startplättchen – dann beginnt die Partie mit deinem Zug.');
-        else if (atOnce) hint = random ? TX('Du spielst sofort deinen ersten Zug. Wer beitritt, bekommt den nächsten Platz in der Zugfolge.')
-            : TX('Du spielst sofort deinen ersten Zug. Kommt eine Nation an die Reihe, die noch niemand gewählt hat, wartet das Spiel auf sie.');
+        else if (atOnce) hint = TX('Du spielst sofort deinen ersten Zug. Kommt eine Nation an die Reihe, die noch niemand gewählt hat, wartet das Spiel auf sie.');
+        else if (random) hint = TX('Sobald alle beigetreten sind, werden die Nationen zufällig verteilt – auch deine. Dann beginnt die Partie mit deinem Zug.');
         else hint = TX('Die Partie beginnt mit deinem Zug, sobald alle Mitspieler beigetreten sind.');
         hint = (f.kiCount ? TX('%s Reiche: %s Menschen, %s KI', f.playerCount, humans, f.kiCount) : TX('%s Reiche: %s Menschen, keine KI', f.playerCount, humans))
             + (f.playerCount === 2 ? ' – ' + TX('1 gegen 1 (höhere Siegschwellen)') : '') + '. ' + hint;
@@ -2684,7 +2684,9 @@ const ASYNC = {
         if (c.civMode === 'random') {
             const s = g.seats[g.freeSeats[0].slot];
             const ab = (this.civ(s.civ) || { abilities: [] }).abilities.find(a => a.k === s.ability);
-            pickHtml = `<p>${ab && c.mapKey !== 'marathon' ? TX('Du bekommst den nächsten Platz in der Zugfolge: %s mit „%s".', `<b>${this.civLabel(s.civ)}</b>`, this.esc(ab.n))
+            // F32: nations are dealt once every seat is taken – nobody knows theirs before
+            pickHtml = !s.civ ? `<p>${TX('Die Nationen werden zufällig verteilt, sobald alle Plätze besetzt sind – auch der Host kennt seine noch nicht.')}</p>`
+                : `<p>${ab && c.mapKey !== 'marathon' ? TX('Du bekommst den nächsten Platz in der Zugfolge: %s mit „%s".', `<b>${this.civLabel(s.civ)}</b>`, this.esc(ab.n))
                 : TX('Du bekommst den nächsten Platz in der Zugfolge: %s.', `<b>${this.civLabel(s.civ)}</b>`)}</p>`;
         } else {
             const civs = [...new Set(g.freeSeats.map(s => s.civ))];
