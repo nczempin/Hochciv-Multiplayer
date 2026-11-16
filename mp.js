@@ -975,8 +975,20 @@ const MP = {
     /** The login dialog; `mfa`: only the second factor is missing (a new Google/Discord link, ?oauth=mfa). */
     showAuthModal: function (mfa) {
         if (typeof modal === 'function') {
-            modal(TX('Anmelden'), `<iframe src="/client/index.html?modal=true${mfa ? '&mfa=1' : ''}" style="width:100%; height:75vh; min-height:550px; border:none; background:transparent;"></iframe>`);
-            document.getElementById('overlay').classList.add('wide');
+            modal(TX('Anmelden'), `<iframe id="mp-auth-frame" src="/client/index.html?modal=true${mfa ? '&mfa=1' : ''}" style="display:block; width:100%; height:520px; border:none; background:transparent;"></iframe>`);
+            // The frame is as tall as its form (same origin), so the dialog scrolls, not a box
+            // inside it; switching tabs or showing an error resizes it.
+            const frame = document.getElementById('mp-auth-frame');
+            frame.addEventListener('load', () => {
+                try {
+                    const doc = frame.contentDocument, fit = () => {
+                        const box = doc.querySelector('.portal-container') || doc.body;
+                        frame.style.height = Math.ceil(box.getBoundingClientRect().height) + 'px';
+                    };
+                    fit();
+                    if (typeof ResizeObserver === 'function') new ResizeObserver(fit).observe(doc.querySelector('.portal-container') || doc.body);
+                } catch (e) { frame.style.height = '75vh'; }
+            });
         }
     },
 
