@@ -779,6 +779,8 @@
         'Kein Platz mehr frei.': 'No free seat left.',
         'Du bekommst den nächsten Platz in der Zugfolge: %s mit „%s".': 'You get the next seat in the turn order: %s with "%s".',
         'Du bekommst den nächsten Platz in der Zugfolge: %s.': 'You get the next seat in the turn order: %s.',
+        'Die Nationen werden zufällig verteilt, sobald alle Plätze besetzt sind – auch der Host kennt seine noch nicht.': 'The nations are dealt at random once every seat is taken – the host doesn’t know theirs yet either.',
+        'Sobald alle beigetreten sind, werden die Nationen zufällig verteilt – auch deine. Dann beginnt die Partie mit deinem Zug.': 'Once everybody has joined, the nations are dealt at random – yours too. Then the game begins with your turn.',
         'Nation': 'Nation',
         'Fähigkeiten werden vor dem ersten Zug gedraftet.': 'Abilities are drafted before the first turn.',
         'Rundenspiel beitreten': 'Join turn-based game',

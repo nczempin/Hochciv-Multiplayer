@@ -73,6 +73,39 @@ const isFree = s => s.kind === 'human' && !s.userId;
 const claimedCount = g => g.seats.filter(s => s.userId).length;
 const seatOf = (g, userId) => g.seats.find(s => s.userId === userId && !s.replaced) || null;
 const civKeys = () => (E().CIVS || []).map(c => c.k);
+const blankSeat = slot => ({
+    slot, civ: null, ability: 'basis', kind: 'human', userId: null, name: null,
+    roman: null, color: null, started: false, replaced: false, penalty: 0, joinedAt: null,
+});
+const makeKiSeat = (g, s) => Object.assign(s, {
+    kind: 'ki', kiLevel: ENG(g).kiLevelFor(g.config.difficulty),
+    ability: isMarathon(g) || !s.civ ? 'basis' : resolveAbility(s.civ, 'random'),
+});
+/** Random nations, dealt at the start (F32) – and not dealt yet. */
+const awaitsDeal = g => !!(g.config.dealAtStart && !g.config.order);
+
+/**
+ * F32: the last human has joined a game with random nations – deal the nations now, as one
+ * shuffled hand for all seats. Turn positions as before: the host first, then the others in
+ * the order they joined, the last positions are the KI's.
+ */
+function dealRandom(g) {
+    const total = g.seats.length, civs = civKeys();
+    const dealt = freeCivs(g) ? dealCivs(civs, total) : shuffle(civs).slice(0, total);
+    const order = ENG(g).turnOrderSlots(dealt, 0);
+    const humans = g.seats.filter(s => s.userId)
+        .sort((a, b) => (b.userId === g.hostUserId) - (a.userId === g.hostUserId) || (a.joinedAt || 0) - (b.joinedAt || 0));
+    const seats = dealt.map((civ, slot) => Object.assign(blankSeat(slot), { civ }));
+    order.forEach((slot, pos) => {
+        const s = seats[slot], h = humans[pos];
+        if (!h) return makeKiSeat(g, s);
+        Object.assign(s, { userId: h.userId, name: h.name, joinedAt: h.joinedAt, botAccount: !!h.botAccount });
+        s.ability = isMarathon(g) ? 'basis' : resolveAbility(s.civ, 'random');
+    });
+    g.seats = seats;
+    g.config.order = order;
+    g.config.startPlayer = order[0];        // slot 0: the host
+}
 const civDef = k => (E().CIVS || []).find(c => c.k === k) || null;
 const pick = list => list[Math.floor(Math.random() * list.length)];
 const deepCopy = x => JSON.parse(JSON.stringify(x));
@@ -172,30 +205,20 @@ function create(host, opts) {
         hostUserId: host.id, status: 'setup', config,
         seats: [], invites: [], pre: null, hold: false, state: null, result: null,
     };
-    const blank = slot => ({
-        slot, civ: null, ability: 'basis', kind: 'human', userId: null, name: null,
-        roman: null, color: null, started: false, replaced: false, penalty: 0, joinedAt: null,
-    });
+    const blank = blankSeat;
     const civs = civKeys();
     const kiSeats = total - config.humanCount;
-    const kiSeat = s => Object.assign(s, {
-        kind: 'ki', kiLevel: engine.kiLevelFor(config.difficulty),
-        ability: isMarathon(g) ? 'basis' : resolveAbility(s.civ, 'random'),
-    });
+    const kiSeat = s => makeKiSeat(g, s);
     let hostSlot = 0;
 
     if (config.civMode === 'random') {
-        // Nations are dealt now (random for everyone); turn positions are taken in join order
-        // (host first), the last ones in turn order are the KI.
-        const dealt = freeCivs(g) ? dealCivs(civs, total) : shuffle(civs).slice(0, total);
-        g.seats = dealt.map((civ, slot) => Object.assign(blank(slot), { civ }));
-        const order = engine.turnOrderSlots(dealt, 0);
-        order.forEach((slot, pos) => {
-            const s = g.seats[slot];
-            if (pos >= config.humanCount) kiSeat(s);
-            else s.ability = isMarathon(g) ? 'basis' : resolveAbility(s.civ, 'random');
-        });
-        config.order = order;
+        // F32: nothing is dealt yet. Seats without a nation – the humans', then the KI's – and
+        // once the last human has joined, dealRandom() deals nations and turn positions. So
+        // nobody (the host neither) knows their nation before, and can't pick it by skipping
+        // or recreating games.
+        config.dealAtStart = true;
+        g.seats = Array.from({ length: total }, (_, slot) => blank(slot));
+        g.seats.slice(config.humanCount).forEach(kiSeat);
     } else if (freeCivs(g)) {
         // Tile map / custom map: any nation, also twice – the host takes slot 0, the others
         // choose on joining; the KI seats (the last ones) get a nation now
@@ -221,15 +244,15 @@ function create(host, opts) {
     config.startPlayer = hostSlot;          // the host always moves first
 
     /* Start right away (the host plays turn 1 while the others join) when the seats are
-       final already: nations dealt at random, or all four nations of a fixed map. Otherwise –
-       and always without KI – the game starts once everybody is there. */
+       final already: all four nations of a fixed map. Otherwise – always without KI, and with
+       random nations since F32 (dealt once everybody is there) – the game starts then. */
     // the weekly challenge: the KI takes the other seats right away, all with the base ability –
     // the same opponents for everybody
     if (challenge) {
         fillBots(g);
         g.seats.filter(s => s.kind === 'ki').forEach(s => { s.ability = 'basis'; });
     }
-    const seatsFinal = config.civMode === 'random' || (!freeCivs(g) && total === 4);
+    const seatsFinal = config.civMode === 'random' ? !awaitsDeal(g) : !freeCivs(g) && total === 4;
     if (!hasPrephase(g) && !config.noKi && seatsFinal) startGame(g);
     return { g };
 }
@@ -263,6 +286,7 @@ function playerBotRoom(g) {
 
 function freeSeats(g) {
     if (!['setup', 'playing'].includes(g.status) || claimedCount(g) >= g.config.humanCount) return [];
+    if (awaitsDeal(g)) return [g.seats.find(isFree)].filter(Boolean).map(s => ({ slot: s.slot, civ: null }));
     if (g.config.civMode === 'random') return [nextRandomSeat(g)].filter(Boolean).map(s => ({ slot: s.slot, civ: s.civ }));
     if (freeCivs(g)) return civKeys().map(civ => ({ slot: null, civ }));
     return g.seats.filter(isFree).map(s => ({ slot: s.slot, civ: s.civ }));
@@ -287,7 +311,10 @@ function join(g, user, opts) {
     }
 
     let seat, ability;
-    if (g.config.civMode === 'random') {
+    if (awaitsDeal(g)) {
+        seat = g.seats.find(isFree);            // nation and ability come with dealRandom()
+        ability = 'basis';
+    } else if (g.config.civMode === 'random') {
         seat = nextRandomSeat(g);
         ability = seat && seat.ability;
     } else if (freeCivs(g)) {
@@ -317,6 +344,7 @@ function join(g, user, opts) {
         // waits before an unclaimed seat's turn begins), so newGame's start effects are redone.
         if (g.config.civMode === 'fixed' && !seat.started) ENG(g).applyLateAbility(g.state, i, ability);
     }
+    if (claimedCount(g) >= g.config.humanCount && awaitsDeal(g)) dealRandom(g);
     if (claimedCount(g) >= g.config.humanCount) fillBots(g);
     if (g.status === 'setup' && claimedCount(g) >= g.config.humanCount) startPrephase(g);
     return null;
@@ -607,6 +635,13 @@ function timeout(g) {
             g.cancelReason = 'Es sind nicht genug Mitspieler beigetreten.';
         }
         else {
+            if (awaitsDeal(g)) {
+                // random nations (F32): only those who are there are dealt in
+                g.seats = g.seats.filter(s => s.userId);
+                g.seats.forEach((s, i) => { s.slot = i; });
+                g.config.humanCount = claimedCount(g);
+                dealRandom(g);
+            }
             fillBots(g);
             if (g.config.humanCount < 2) g.config.ranked = false;
             startPrephase(g);
@@ -615,6 +650,7 @@ function timeout(g) {
         // Nobody else joined in time: play with those who are there, the KI fills up
         g.config.humanCount = Math.max(1, claimedCount(g));
         if (g.config.humanCount < 2) g.config.ranked = false;
+        if (awaitsDeal(g)) dealRandom(g);       // F32: the free human seats are dealt to the KI
         fillBots(g);
         startPrephase(g);
     } else if (g.status === 'placement') {
