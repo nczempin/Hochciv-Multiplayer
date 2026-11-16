@@ -43,6 +43,7 @@ Status: ⬜ planned · 🔨 in progress · ✅ on `development` (staging) · �
 | 33 | F33 | [Mirror match (both sides)](#f33-mirror-match-both-sides) | ? | ✔ | ✅ moved to issue #161 |
 | 34 | F34 | [Nation draft and turn-order choice](#f34-nation-draft-and-turn-order-choice) | ✔ | ✔ | ✅ done |
 | 35 | F35 | [Security audit fixes](#f35-security-audit-fixes) | ✔ | ✔ | ✅ |
+| 36 | F36 | [Second security audit](#f36-second-security-audit) | ✔ | ✔ | ✅ |
 
 The numbers are those of the original proposal; F11 and F12 were requested after the staging tests of F1. F15–F22 (and F8, F10 moved up from "later") are the second round, approved on 2026-11-03. Not wanted for now: a vacation mode for Rundenspiele, a tutorial, tournaments (too few players yet). F23–F27 are the third round, approved on 2026-11-10; F28 was asked for the same day. Parked as GitHub issues for later: daily challenge (#120), bot arena (#121), Discord integration (#122), mirror match (#161, was F33). The order puts the small fixes for live games first. F6 and F7 come before F5 because they record per-turn data that F5 can reuse.
 
@@ -755,5 +756,34 @@ F29–F33 come from player feedback on Discord (Nic, 2026-11-15/16), consolidate
 **Tests:** `tests/security/audit.test.js` (no docker): roads, dice, nation and ability for every engine version; host settings, kick, ranked and the start check through `sessions.js` and `sockets/game.js`. `tests/security/audit-live.test.js` (docker): the same over real sockets, and the admin broadcast in the game page.
 
 **Not changed:** the Android app has its own copy of `mp.js` (no `sys:message` dialog there yet).
+
+**Status:** ✅
+
+## F36 Second security audit
+
+**Goal:** fix the findings of the second audit of 2026-11-16 (findings SA-01 … SA-18; the report stays private until production runs the fixes), each reproduced against an isolated local instance.
+
+**Built:**
+- **SA-01 passkey login** (`routes/auth.js`): `Passkey` was no longer imported since `0105ebf` – every passkey login (passwordless and as second factor) answered 500. Import back; the auth routes log their errors.
+- **SA-10 dependencies:** `compression` 1.8.2 (DoS advisory), `qs` 6.16.2.
+- **SA-03 attempt counters** (`utils/auth.js` `consumeCode`, `utils/totp.js` `checkLimited`): counted in the database before comparing, in one statement – parallel guesses no longer share one count; a right code is used up once. A code replacing a valid one keeps its attempts; at most 3 codes of a kind per account and hour (reset, e-mail login, e-mail change).
+- **SA-15 login limits** (`routes/auth.js`): separate IP limits per group of auth endpoints; 20 wrong passwords per account in 15 minutes lock password guesses for that account.
+- **SA-02 ranked** (`sockets/game.js` `startGame`, `sockets/match.js` `fitsBots`, `async/service.js` `join`): rated only between different logged-in people – no guest seat, no account twice, no bot with its owner or two bots of one owner.
+- **SA-04 revocation** (`utils/detachUser.js` `disconnectSessions`): a password change, reset or admin-set password also closes the other sessions' open sockets.
+- **SA-05 Discord Activity** (`routes/activity.js`): the access token must belong to this application (`/oauth2/@me`).
+- **SA-06 invitations** (`async/service.js`, `routes/async.js`): one mail per invitation, a declined one again after a day; 60 Rundenspiel requests a minute per account.
+- **SA-07** `update-password` rate-limited. **SA-11** registration answers the same for a taken e-mail (note to its owner), unknown logins take as long as wrong passwords, `activate` doesn't tell whether an account exists.
+- **SA-08** a lobby nobody connects to within a minute is removed (`UNUSED_LOBBY_MS`).
+- **SA-12** mails logged in production mode hide their codes (`MAIL_LOG_CODES=on` shows them); SMTP requires STARTTLS (`SMTP_REQUIRE_TLS=off`).
+- **SA-13** image: only `public/` writable for `node`, health check; compose: no capabilities, `no-new-privileges`, pid and memory limits, database health check, `POSTGRES_PASSWORD` required; server: database retries at start, pool errors and unhandled rejections logged instead of ending the process; Socket.IO messages ≤ 100 KB.
+- **SA-14** admin: re-confirmation for password, second factors, roles, deleting and OAuth (dialog on the admin page); every admin change logged.
+- **SA-17** the weekly challenge's `fixedDice` no longer reaches clients. **SA-18** HSTS over HTTPS.
+- **SA-09** (without Watchtower, which stays as it is): workflow actions pinned to commit SHAs, Dependabot for actions and npm, `.github/workflows/checks.yml` runs the tests without a server and `npm audit` on pull requests.
+
+**Not changed:** Watchtower and the `latest` auto-deploy (decided 2026-11-16); a database role without superuser rights and migrations instead of `sync({ alter: true })` (bigger change, later); CSP `script-src` (needs the inline `onclick` handlers of the account and admin pages replaced first); the cookie name (changing it would log everybody out).
+
+**Operators:** `.env` must now contain `POSTGRES_PASSWORD` (the one the database was created with – `password123` if it was never set); on staging `MAIL_LOG_CODES=on` to read codes in the log.
+
+**Tests:** `tests/security/regression.test.js` (docker, `TURN_TIMER_SCALE=0.05`): all 8 checks failed before, pass now. `tests/bots/bots.test.js`: a bot never meets its owner in matchmaking.
 
 **Status:** ✅
