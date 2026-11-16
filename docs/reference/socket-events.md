@@ -24,7 +24,7 @@ Handled by `sockets/game.js`. A live game is a Socket.IO room named after its `s
 | `game:start` | – | host | Start the game |
 | `draft:pick` | `{ id }` | player | Marathon draft: pick an ability |
 | `placement:action` | placement action | player | Tile map: place the start tile (all players at once) |
-| `action` | `{ type, params }` | player on turn | A game action, applied by the engine (`engine.applyAction`) |
+| `action` | `{ type, params }` | player on turn | A game action, applied by the engine (`engine.applyAction`). Answer `{ ok }`, or `{ error, state }` with the player's unchanged state |
 | `chat:send` | `{ kind: 'text' \| 'emote' \| 'ping', … }` | player | Chat message, emote or map ping (texts need an account) |
 | `chat:report` | `{ id, reason }` (message id) | player or spectator | Report a message ([chat moderation](../overview/features.md#during-and-after-a-game)) |
 | `session:rematch` | – | host | Back to the lobby after the game |

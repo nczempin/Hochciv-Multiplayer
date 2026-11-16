@@ -37,7 +37,7 @@ Status: ⬜ planned · 🔨 in progress · ✅ on `development` (staging) · �
 | 27 | F27 | [Pause a live game, or continue it as a Rundenspiel](#f27-pause-a-live-game-or-continue-it-as-a-rundenspiel) | ✔ | – | ✅ |
 | 28 | F28 | [Single-player games in the statistics](#f28-single-player-games-in-the-statistics) | – | – (single player, browser and app) | ✅ server · app: PR open |
 | 29 | F29 | [Server checks research](#f29-server-checks-research) | ✔ | ✔ | ✅ |
-| 30 | F30 | [Show refused moves](#f30-show-refused-moves) | ✔ | ✔ | ⬜ |
+| 30 | F30 | [Show refused moves](#f30-show-refused-moves) | ✔ | ✔ | ✅ |
 | 31 | F31 | [Bots as friends and invites](#f31-bots-as-friends-and-invites) | ✔ | ✔ | 🔨 PR #148 (Nic) |
 | 32 | F32 | [Random nations: no dodging, no rerolling](#f32-random-nations-no-dodging-no-rerolling) | – | ✔ | ⬜ |
 | 33 | F33 | [Mirror match (both sides)](#f33-mirror-match-both-sides) | ? | ✔ | ⬜ idea |
@@ -649,10 +649,17 @@ F29–F33 come from player feedback on Discord (Nic, 2026-11-15/16), consolidate
 
 **Goal:** when the server refuses a move, the player (and a bot author) sees why, instead of a client that believes the move happened.
 
-**Planned:**
-- Live games already answer with `ack({ error })` (`sockets/game.js`); check that `mp.js` shows it as a toast and reloads the authoritative state.
-- Rundenspiele: the same for the error from `async/logic.js` (`applyAction`).
-- Bot API: the error text in the response, documented for bot authors.
+**Found:** Rundenspiele already showed the error and reloaded (`mp.js` sendAction). Bots already got `{ error }` in both modes. Live games did not: the page plays each move on its own copy first and sent it without a callback, so a refused move showed nothing and the board kept a move the server never made, until the next update from someone else.
+
+**Built:**
+- `sockets/game.js` `action`: a refused move is answered with `{ error, state }` (the player's view, unchanged), so the client needs no extra round trip.
+- `mp.js` sendAction (live): on an error, a toast with the reason and `applyState(state)`. `endTurn` keeps its own message (the turn button).
+- `client/i18n.js`: English for "Diese Technologie ist nicht erforschbar." (F29).
+- Docs: bot guide (the `state` in a refused live answer, the new message), socket reference.
+
+**Tests:** `tests/security/refused-move.test.js` (local docker): the socket answer for a forged Singularity (error and unchanged state); in the page, a tampered copy plays a move the server refuses → the reason is shown, the board is back to the server's state. `tests/pause/pause.test.js` still passes.
+
+**Status:** ✅
 
 ## F31 Bots as friends and invites
 

@@ -1270,6 +1270,7 @@
         'Armee nicht gefunden.': 'Army not found.',
         'Nicht deine Armee.': 'Not your army.',
         'Unbekannte Aktion: %s': 'Unknown action: %s',
+        'Diese Technologie ist nicht erforschbar.': 'This technology cannot be researched.',
         'Server-Fehler bei der Ausführung.': 'Server error while carrying this out.',
         'Das ist keine Karte.': 'This is not a map.',
         // async/ – turn-based games

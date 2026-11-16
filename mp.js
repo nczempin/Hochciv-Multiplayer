@@ -95,7 +95,15 @@ const MP = {
                 if (cb) cb(res);
             });
         } else {
-            this.socket.emit('action', payload, cb);
+            // The move was already played on the local copy (see ACTIONS below). If the server
+            // refuses it, say why and put the board back to the server's state (F30).
+            this.socket.emit('action', payload, res => {
+                if (res && res.error && payload.type !== 'endTurn') {
+                    toast(TXS(res.error));
+                    if (res.state) MP.applyState(res.state);
+                }
+                if (cb) cb(res);
+            });
         }
     },
 
