@@ -739,6 +739,9 @@ function makeAdapter(engineDir, label) {
     function stateForPlayer(state, _pi) {
         const copy = JSON.parse(JSON.stringify(state));
         delete copy.seed;
+        // the weekly challenge's fixed dice: with them (and fixedRand, public engine code) a client
+        // could work out every tech roll and event of the week before it happens
+        delete copy.fixedDice;
         return copy;
     }
 

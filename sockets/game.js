@@ -102,6 +102,8 @@ module.exports = function registerHandlers(io) {
                 me.dbUserId = socket.request.user.id;
                 me.dbUsername = socket.request.user.username;
                 me.mmr = socket.request.user.mmr;
+                // a bot account counts as its owner in ranked games (startGame)
+                me.dbOwnerId = socket.request.user.ownerId || null;
             }
 
             // Reclaim host if the lobby was abandoned
@@ -695,6 +697,14 @@ function startGame(io, session) {
     // the same in async/logic.js; matchmaking only starts with two)
     if (gc.ranked && session.players.filter(p => p.kind === 'human').length < 2)
         return 'Gewertete Spiele brauchen mindestens 2 Spieler.';
+    // … and they are rated between different people: no guest seats (a second tab of the host
+    // would just resign), no account twice and no bot against its owner
+    if (gc.ranked) {
+        const seats = session.players.filter(p => p.kind === 'human');
+        if (seats.some(p => !p.dbUserId)) return 'Gewertete Spiele gibt es nur mit angemeldeten Spielern.';
+        const persons = seats.map(p => p.dbOwnerId || p.dbUserId);
+        if (new Set(persons).size !== persons.length) return 'In gewerteten Spielen spielt niemand gegen sich selbst oder den eigenen Bot.';
+    }
     gc.playerCount = total;
     gc.duel = total === 2;
 

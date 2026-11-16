@@ -99,6 +99,12 @@ function createSession(gameConfig, hostInfo) {
 
     sessions.set(sessionId, session);
     codeIndex.set(joinCode, sessionId);
+    // Nobody connected within UNUSED_LOBBY_MS: the lobby was never used – free its slot now instead
+    // of at the second cleanup (5–10 minutes), so a few addresses can't fill MAX_SESSIONS
+    setTimeout(() => {
+        const s = sessions.get(sessionId);
+        if (s && s.status === 'lobby' && !s.players.some(p => p.connected) && !(s.spectators || []).some(w => w.connected)) removeSession(sessionId);
+    }, config.UNUSED_LOBBY_MS).unref();
     return { sessionId, joinCode, password };
 }
 
