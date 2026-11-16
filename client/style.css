@@ -6,6 +6,8 @@
     --field: #fffdf6;
     --ink: #2a2721;
     --ink-soft: #6f6551;
+    /* muted text straight on the parchment (header line, footer): --ink-soft is 4.2:1 there */
+    --ink-soft-on-parchment: #5c5341;
     --rule: #c9bb98;
     --red: #9d3b2f;
     --red-hover: #85301f;
@@ -74,7 +76,7 @@ body {
 }
 
 .portal-header p {
-    color: var(--text-muted);
+    color: var(--ink-soft-on-parchment);
     font-size: 15px;
 }
 
@@ -433,7 +435,7 @@ textarea {
 /* Footer */
 .portal-footer {
     text-align: center;
-    color: var(--text-muted);
+    color: var(--ink-soft-on-parchment);
     font-size: 12px;
     padding: 2rem 0;
 }

@@ -59,6 +59,18 @@
             border-top: 1px solid var(--rule);
         }
 
+        /* h2 under the page's h1, sized like the h3 they were */
+        .mfa-title,
+        .form-title {
+            font-size: 1.17em;
+        }
+
+        .form-title {
+            margin-bottom: 15px;
+            text-align: center;
+            font-family: var(--serif);
+        }
+
         .mfa-title {
             margin-top: 0;
             font-family: var(--serif);
@@ -139,8 +151,8 @@
 
                         <!-- MFA Form (Hidden by default) -->
                         <form id="form-mfa" class="auth-form" style="display:none;">
-                            <h3 class="mfa-title">
-                                Zwei-Faktor-Authentifizierung</h3>
+                            <h2 class="mfa-title">
+                                Zwei-Faktor-Authentifizierung</h2>
                             <p class="form-desc">Bitte bestätige deine Identität.
                             </p>
 
@@ -215,8 +227,8 @@
 
                         <!-- Reset Request Form -->
                         <form id="form-reset-request" class="auth-form">
-                            <h3 style="margin-bottom:15px; text-align:center; font-family:var(--serif);">Passwort
-                                zurücksetzen</h3>
+                            <h2 class="form-title">Passwort
+                                zurücksetzen</h2>
                             <p class="form-desc">Bitte gib deine registrierte E-Mail-Adresse ein.</p>
                             <div class="form-group">
                                 <label for="reset-email">E-Mail</label>
@@ -230,8 +242,8 @@
 
                         <!-- Reset Confirm Form -->
                         <form id="form-reset-confirm" class="auth-form">
-                            <h3 style="margin-bottom:15px; text-align:center; font-family:var(--serif);">Passwort neu
-                                setzen</h3>
+                            <h2 class="form-title">Passwort neu
+                                setzen</h2>
                             <p class="form-desc">Gib den Code aus deiner E-Mail und ein neues Passwort ein.</p>
                             <div class="form-group">
                                 <label for="reset-conf-email">E-Mail</label>
