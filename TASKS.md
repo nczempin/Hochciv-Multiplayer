@@ -42,6 +42,7 @@ Status: ⬜ planned · 🔨 in progress · ✅ on `development` (staging) · �
 | 32 | F32 | [Random nations: no dodging, no rerolling](#f32-random-nations-no-dodging-no-rerolling) | – | ✔ | ✅ |
 | 33 | F33 | [Mirror match (both sides)](#f33-mirror-match-both-sides) | ? | ✔ | ⬜ idea |
 | 34 | F34 | [Nation draft and turn-order choice](#f34-nation-draft-and-turn-order-choice) | ✔ | ✔ | ✅ done |
+| 35 | F35 | [Security audit fixes](#f35-security-audit-fixes) | ✔ | ✔ | ✅ |
 
 The numbers are those of the original proposal; F11 and F12 were requested after the staging tests of F1. F15–F22 (and F8, F10 moved up from "later") are the second round, approved on 2026-11-03. Not wanted for now: a vacation mode for Rundenspiele, a tutorial, tournaments (too few players yet). F23–F27 are the third round, approved on 2026-11-10; F28 was asked for the same day. Parked as GitHub issues for later: daily challenge (#120), bot arena (#121), Discord integration (#122). The order puts the small fixes for live games first. F6 and F7 come before F5 because they record per-turn data that F5 can reuse.
 
@@ -732,3 +733,25 @@ F29–F33 come from player feedback on Discord (Nic, 2026-11-15/16), consolidate
 4. Rundenspiele: positions on joining, draft phase with notifications and timeout.
 5. Bot events and docs; replay/statistics check (positions instead of nations on the classic map).
 
+## F35 Security audit fixes
+
+**Goal:** a modified client or a host can't bend the rules of a game, and server and client agree on what they send each other.
+
+**Found by:** an audit of the server and the client layer on 2026-11-16, each finding reproduced against the local docker setup.
+
+**Built:**
+- **Roads** (`engine-adapter.js`, `buildRoad`): only the numbers 1 (road) and 2 (railway). The engine checks the tech with `target === 1` / `=== 2`, so the string `"2"` skipped the Eisenbahn check, cost one coin and was stored as a railway.
+- **Dice** (`engine-adapter.js` `createGame` / `stateForPlayer`, `async/logic.js` view): the engine's dice are a counter on `S.seed`. A started game now rolls with a seed only the server knows; the setup rolled before (available techs, wonder pools) and the challenge's `fixedDice` stay as they were. Clients get the state without `seed` (live and Rundenspiele); their local preview of a move is replaced by the server's state right after. Games already running keep their seed.
+- **Nation and ability** (`sockets/game.js`): `lobby:player:update` refuses a nation the engine doesn't know and an ability of another nation (`engine.checkCivChoice`); the live start checks every seat once more (seats also get their choice when they are created or join over REST).
+- **Host settings** (`sessions.js` `cleanHostConfig`, `routes/api.js`): `lobby:config` and `POST /api/sessions` keep only the settings the lobby, presets and bots send. `seed`, `fixedDice`, `startPlayer`, `map`, `setup` and `matchmaking` stay the server's; a new lobby always gets a server seed.
+- **Ranked live games** need two humans at the start ("min 2 H-Spieler" was only text). Rundenspiele already turn ranked off below two; matchmaking already needed two.
+- **Admin broadcast** (`mp.js`): the client listens for `sys:message` and shows it as a dialog, as plain text. Before, the admin got "ok" and nobody saw anything.
+- **Kick after a rematch** (`sessions.js` `kickPlayer`): the host's seat is protected, not seat 0. After a game with turn positions the host may sit elsewhere and could not kick seat 0 (a regression of F34). A seat that doesn't exist is no longer "kicked".
+- **Reconnect text:** joining a running game said to use the exact original name. A seat is found by the secret client id of the browser tab, so the text says that now.
+- **Tests:** the ready and invite tests set the classic map (the lobby starts on the tile map, which leads to the placement and changes the invite text). The match and deadline tests check that the container runs with the short waits they need and say how to start it, instead of failing for no reason in the code.
+
+**Tests:** `tests/security/audit.test.js` (no docker): roads, dice, nation and ability for every engine version; host settings, kick, ranked and the start check through `sessions.js` and `sockets/game.js`. `tests/security/audit-live.test.js` (docker): the same over real sockets, and the admin broadcast in the game page.
+
+**Not changed:** the Android app has its own copy of `mp.js` (no `sys:message` dialog there yet).
+
+**Status:** ✅
