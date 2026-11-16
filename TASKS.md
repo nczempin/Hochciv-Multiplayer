@@ -41,6 +41,7 @@ Status: ⬜ planned · 🔨 in progress · ✅ on `development` (staging) · �
 | 31 | F31 | [Bots as friends and invites](#f31-bots-as-friends-and-invites) | ✔ | ✔ | ✅ (PR #148, Nic) |
 | 32 | F32 | [Random nations: no dodging, no rerolling](#f32-random-nations-no-dodging-no-rerolling) | – | ✔ | ✅ |
 | 33 | F33 | [Mirror match (both sides)](#f33-mirror-match-both-sides) | ? | ✔ | ⬜ idea |
+| 34 | F34 | [Nation draft and turn-order choice](#f34-nation-draft-and-turn-order-choice) | ✔ | ✔ | ⬜ planned |
 
 The numbers are those of the original proposal; F11 and F12 were requested after the staging tests of F1. F15–F22 (and F8, F10 moved up from "later") are the second round, approved on 2026-11-03. Not wanted for now: a vacation mode for Rundenspiele, a tutorial, tournaments (too few players yet). F23–F27 are the third round, approved on 2026-11-10; F28 was asked for the same day. Parked as GitHub issues for later: daily challenge (#120), bot arena (#121), Discord integration (#122). The order puts the small fixes for live games first. F6 and F7 come before F5 because they record per-turn data that F5 can reuse.
 
@@ -691,4 +692,35 @@ F29–F33 come from player feedback on Discord (Nic, 2026-11-15/16), consolidate
 
 **Idea (Nic):** a match type where each pairing is played twice with seats and nations swapped, so the first-move advantage and strong nations even out.
 
-**Thoughts:** fits Rundenspiele best (two linked games, the combined result counts); open whether and how it counts for MMR. Before building it: use the statistics (F13/F23) to measure how big the first-move and nation advantages are. Bigger feature – parked until decided.
+**Thoughts:** fits Rundenspiele best (two linked games, the combined result counts); open whether and how it counts for MMR. Before building it: use the statistics (F13/F23) to measure how big the first-move and nation advantages are. Bigger feature – parked until decided.
+
+## F34 Nation draft and turn-order choice
+
+**Goal:** more ways to hand out nations and turn positions, so neither comes down to who is host or who joined first.
+
+**Decided (2026-11-16):**
+- Live games and Rundenspiele.
+- **Nation mode** (lobby, replaces the *Zufallsnationen* checkbox): *Standard* (everybody picks), *Zufall* (dealt, F32), *Draft*, *Zufallsdraft*.
+  - **Draft:** players pick their nation one after another in **reverse turn order** – the last to move picks first, the first to move picks last. They pick the ability with it (Marathon: drafted later as now).
+  - **Zufallsdraft:** a pool of random nations, **one per empire, repeats allowed**, drafted in the same reverse order; the ability is **random**. The first to move gets what is left.
+- **Turn order** (lobby): the host can let everybody **pick their position** (1, 2, 3 …) or choose **random order** (dealt at the start, nobody picks).
+- **Classic map:** with a turn-order choice its four start points become **positions 1–4** – any nation can start on any of them; it no longer belongs to a nation.
+
+**Proposed details (defaults, open to change):**
+- Turn order modes: *Klassisch* (today: host first, then the nations' order) stays the default for *Standard* and *Zufall*; *Positionen wählen* and *Zufällige Reihenfolge* are new. A draft needs the turn order before the nations, so the drafts offer only the two new modes.
+- Positions on the classic map follow today's order of its start points: 1 = Russia's, 2 = Greece's, 3 = England's, 4 = the Vikings'.
+- *Draft* on a map with one seat per nation (classic map, 4 empires): each nation once. On the tile map or a custom map: each nation at most ⌈empires / 4⌉ times, so a draft still takes nations away from the later pickers.
+- Positions of the KI: with *Positionen wählen*, the free positions at the start; with random order, dealt like everyone's. The KI drafts on its own when its pick comes (random from what is left; ability random).
+- Rundenspiele: positions are picked on joining (free ones only); the draft is a phase like the Marathon draft – whose pick it is gets a notification, the turn deadline counts, and a timeout picks at random. Live: the turn timer counts for a pick.
+- Ranked matchmaking stays as it is (random nations, classic order).
+- Bots get the draft and position events, documented in the bot guide.
+
+**Engine (no change to `HochCiv/`):** `newGame` already supports `seatOrder: true` (turn order = seat order) and capitals by seat (`capitals: [{ r, c }, …]`, as on the tile map). The adapter turns the classic map's capitals into positions and passes `seatOrder` when a turn-order mode is chosen; the seats are arranged in position order before the game starts.
+
+**Steps:**
+1. Adapter: positions on the classic map, `seatOrder`, seats in position order (live and Rundenspiele) – with tests.
+2. Live lobby: turn-order modes and position picking; nation modes in the settings, presets and the open-games filter.
+3. Live draft phase (server state, client screen, KI picks, turn timer).
+4. Rundenspiele: positions on joining, draft phase with notifications and timeout.
+5. Bot events and docs; replay/statistics check (positions instead of nations on the classic map).
+
