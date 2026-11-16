@@ -19,7 +19,7 @@
         "express-session": "^1.19.0",
         "google-auth-library": "10.9.1",
         "naughty-words": "^1.2.0",
-        "nodemailer": "^10.1.0",
+        "nodemailer": "^10.5.0",
         "obscenity": "^0.4.6",
         "otplib": "^13.5.0",
         "passport": "^0.7.0",
