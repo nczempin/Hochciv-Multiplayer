@@ -24,6 +24,7 @@
  * config.difficulty) and takes over a human seat after 7 days of inactivity (`replaced`).
  * 'bot' only appears in games created before KI fill-ins.
  */
+const crypto = require('crypto');
 const appConfig = require('../config');
 const engine = require('../engine-adapter');
 const { renameInState } = require('../utils/rename');
@@ -31,6 +32,7 @@ const Summary = require('../utils/summary');
 const Scenes = require('../utils/scenes');
 const Resign = require('../utils/resign');
 const E = () => engine.getEngine();
+const randomSeed = () => 1 + crypto.randomInt(0x7fffffff);
 /* Each game plays with the engine version it was started on (g.engine): games from before
    the game shipped with this server have none and count as v83, a label only by now: forVersion
    runs them on the current engine. New games get the current one. */
@@ -126,7 +128,7 @@ function create(host, opts) {
         isPublic: !!raw.isPublic,
         // time per turn in days (F19); setup keeps 7 days to find players
         turnDays: TURN_DAYS.includes(raw.turnDays) ? raw.turnDays : 7,
-        seed: Math.floor(Math.random() * 2 ** 31),
+        seed: randomSeed(),
     };
     // Ranked: KI on the hardest level (as in live lobbies)
     if (config.ranked) config.difficulty = kiLevels()[kiLevels().length - 1].k;
@@ -157,9 +159,12 @@ function create(host, opts) {
     const challenge = opts && typeof opts.challenge === 'string' ? opts.challenge : null;
     if (total - ki < 2 && !challenge) return { error: 'Ein Rundenspiel braucht mindestens zwei Menschen.' };
     // fixedDice: tech availability and events fall the same in every attempt of the week, however
-    // it is played (the engine's fixed dice; engines before it ignore the field)
-    if (challenge) Object.assign(config, { challenge, isPublic: false, ranked: false, seed: Number.isInteger(opts.seed) ? opts.seed : config.seed });
-    if (challenge) config.fixedDice = config.seed;
+    // it is played (the engine's fixed dice; engines before it ignore the field). S.seed itself
+    // stays a per-attempt CSPRNG seed so combat / KI rolls are never identical across players.
+    if (challenge) {
+        const challengeSeed = Number.isInteger(opts.seed) && opts.seed > 0 ? opts.seed : config.seed;
+        Object.assign(config, { challenge, isPublic: false, ranked: false, fixedDice: challengeSeed });
+    }
     Object.assign(config, { playerCount: total, humanCount: total - ki, noKi: ki === 0 });
     // Player-bots (bot accounts, utils/bots.js) take human seats like players, never the KI's;
     // the host allows them and may limit them (null = no limit). A bot as host always allows them.
@@ -451,6 +456,7 @@ function place(g, userId, o, cell) {
 function finishPlacement(g) {
     g.pre.plan.revealed = true;
     g.config.map = ENG(g).getEngine().tileMap(g.pre.plan);
+    g.config.seed = randomSeed();
     startGame(g);
 }
 
@@ -470,6 +476,7 @@ function finishDraft(g) {
     // D.picks are by index into V.players (turn order); seats are by slot
     const { V, D } = g.pre.draft;
     V.players.forEach((p, i) => { if (p.kind !== 'bot') g.seats[p.slot].drafted = D.picks[i].slice(); });
+    g.config.seed = randomSeed();
     startGame(g);
 }
 
@@ -777,8 +784,8 @@ function summary(g, userId) {
 }
 
 function publicConfig(g) {
-    const { map, setup, seed, order, customMap, ...rest } = g.config;
-    void map; void setup; void seed; void order;
+    const { map, setup, seed, fixedDice, order, customMap, ...rest } = g.config;
+    void map; void setup; void seed; void fixedDice; void order;
     // lists only need the name of a custom map; the rows are in the game state
     if (customMap) rest.customMapName = customMap.name;
     return rest;
@@ -812,7 +819,7 @@ function view(g, userId) {
             wonders: g.config.wonders, events: g.config.events, startPlayer: g.config.startPlayer,
         };
     }
-    if (g.status === 'draft') out.draft = deepCopy(g.pre.draft);
+    if (g.status === 'draft') out.draft = ENG(g).sanitizeDraft(g.pre.draft);
     // the end screen's statistics (utils/stats.js), without their bookkeeping
     if (g.status === 'finished' && g.stats) {
         const { owners, wonders, ...stats } = g.stats;
@@ -822,8 +829,8 @@ function view(g, userId) {
     // the stored match and its replay (GET /api/games/:id[/replay])
     if (g.status === 'finished' && g.result && g.result.gameId) out.record = { id: g.result.gameId, replay: !!g.result.replay };
     if (g.state) {
-        out.state = g.state;
         out.myIndex = mine ? stateIndex(g, mine.slot) : -1;
+        out.state = ENG(g).stateForPlayer(g.state, out.myIndex);
         // "since your last turn" (utils/summary.js) while it is the player's turn
         if (g.status === 'playing' && !g.hold && out.myIndex >= 0 && g.state.cur === out.myIndex) {
             out.summary = Summary.summarize(ENG(g).getEngine(), g.state, g.marks, out.myIndex) || undefined;

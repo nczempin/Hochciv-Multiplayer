@@ -20,7 +20,8 @@ const crypto = require('crypto');
 const fs = require('fs');
 
 const BASE = (process.argv[2] || 'http://localhost:3000').replace(/\/$/, '');
-const CONTAINER = 'hochciv-multiplayer-local';
+const CONTAINER = process.env.HOCHCIV_CONTAINER || 'hochciv-multiplayer-local';
+const DB_CONTAINER = process.env.HOCHCIV_DB_CONTAINER || 'hochciv-db';
 const BROWSER = process.env.HOCHCIV_BROWSER || [
     'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
     'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -33,7 +34,7 @@ const ok = (cond, name, info) => {
     if (!cond) failed++;
 };
 const inServer = code => execFileSync('docker', ['exec', '-i', '-w', '/app', CONTAINER, 'node', '-'], { input: code }).toString().trim();
-const sql = q => execFileSync('docker', ['exec', 'hochciv-db', 'psql', '-U', 'hochciv', '-d', 'hochciv', '-tAc', q]).toString().trim();
+const sql = q => execFileSync('docker', ['exec', DB_CONTAINER, 'psql', '-U', 'hochciv', '-d', 'hochciv', '-tAc', q]).toString().trim();
 const PASSWORD = 'Test-' + crypto.randomBytes(6).toString('hex');
 function makeUser() {
     const name = 'hx_' + crypto.randomBytes(3).toString('hex');
@@ -129,7 +130,7 @@ async function rundenspiel(browser, errors, user, second, ids) {
     const { chromium } = require('playwright-core');
     const user = makeUser(), second = makeUser();
     const ids = [];
-    const browser = await chromium.launch({ executablePath: BROWSER });
+    const browser = await chromium.launch({ executablePath: BROWSER, args: ['--disable-gpu', '--disable-dev-shm-usage'] });
     const errors = [];
     try {
         for (const n of [2, 3, 4, 6, 8]) await live(browser, errors, n);

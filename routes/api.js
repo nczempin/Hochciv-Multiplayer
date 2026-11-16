@@ -29,8 +29,9 @@ router.post('/sessions', lobbyLimit, (req, res) => {
     if (config != null && (typeof config !== 'object' || Array.isArray(config))) {
         return res.status(400).json({ error: 'Ungültige Konfiguration.' });
     }
-    // a bot account plays its seat itself (sessions.js playerBotPolicy)
-    const result = sessions.createSession(config || {}, { ...host, botUserId: botId(req) });
+    // a bot account plays its seat itself (sessions.js playerBotPolicy); clients never pick server seeds/maps
+    const { seed: _s, fixedDice: _fd, map: _m, setup: _su, ...cleanCfg } = config || {};
+    const result = sessions.createSession(cleanCfg, { ...host, botUserId: botId(req) });
     if (typeof result === 'string') return res.status(503).json({ error: result });
     res.status(201).json(result);
 });

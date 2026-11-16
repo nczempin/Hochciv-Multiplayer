@@ -1,6 +1,15 @@
 const crypto = require('crypto');
 const config = require('./config');
 
+const randomSeed = () => 1 + crypto.randomInt(0x7fffffff);
+
+/** Public lobby config sent to clients and spectators (never exposes server RNG / fixed maps). */
+function publicGameConfig(cfg) {
+    if (!cfg || typeof cfg !== 'object') return {};
+    const { seed: _s, fixedDice: _fd, map: _m, setup: _su, ...pub } = cfg;
+    return pub;
+}
+
 // ─── In-memory session store ─────────────────────────────────────────────────
 
 const sessions = new Map();      // sessionId → session
@@ -50,13 +59,15 @@ function createSession(gameConfig, hostInfo) {
     const sessionId = generateId();
     const joinCode = generateJoinCode();
     const password = generatePassword();
+    const cfg = { ...(gameConfig && typeof gameConfig === 'object' ? gameConfig : {}) };
+    if (!Number.isInteger(cfg.seed) || cfg.seed <= 0) cfg.seed = randomSeed();
 
     const session = {
         id: sessionId,
         joinCode,
         password,                     // 6-digit numeric, shared out-of-band
-        gameConfig,                   // raw setup data from host
-        isPublic: gameConfig.isPublic === true,
+        gameConfig: cfg,              // server-owned setup data
+        isPublic: cfg.isPublic === true,
         status: 'lobby',              // lobby → playing → finished
         createdAt: Date.now(),
         lastActivity: Date.now(),
@@ -272,7 +283,8 @@ function updateConfig(sessionId, newConfig) {
     if (!session || session.status !== 'lobby') return false;
     if (!newConfig || typeof newConfig !== 'object' || Array.isArray(newConfig)) return false;
     if (JSON.stringify(newConfig).length > 10000) return false;
-    const { map, setup, ...allowed } = newConfig;      // both are set by the server at game start
+    const { map, setup, seed, fixedDice, ...allowed } = newConfig;      // server owns map, setup, and RNG seeds
+    void map; void setup; void seed; void fixedDice;
     session.gameConfig = { ...session.gameConfig, ...allowed };
     if (typeof allowed.isPublic === 'boolean') session.isPublic = allowed.isPublic;   // the host switches it in the lobby
     return session.gameConfig;
@@ -324,8 +336,10 @@ function resetForRematch(sessionId) {
     });
     session.hostIndex = Math.max(0, session.players.indexOf(host));
     // map / setup are set by the server at the start (tile map, Marathon), the seed is new
-    const { map, setup, ...gameConfig } = session.gameConfig;
-    session.gameConfig = { ...gameConfig, seed: crypto.randomInt(2 ** 31) };
+    const { map, setup, seed: prevSeed, fixedDice: _fd, ...gameConfig } = session.gameConfig;
+    let nextSeed = randomSeed();
+    while (nextSeed === prevSeed) nextSeed = randomSeed();
+    session.gameConfig = { ...gameConfig, seed: nextSeed };
     Object.assign(session, {
         status: 'lobby', state: null, gameOverProcessed: false, stats: null, replay: null, gameRecord: null,
         chat: [], marks: null, summaryKey: null, lastSummary: null,
@@ -453,5 +467,7 @@ module.exports = {
     resetForRematch,
     getPublicSessions,
     recordActivity,
+    publicGameConfig,
+    randomSeed,
     getAllSessions: () => sessions,
 };
