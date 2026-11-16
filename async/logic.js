@@ -277,7 +277,15 @@ function create(host, opts) {
     // the same opponents for everybody
     if (challenge) {
         fillBots(g);
-        g.seats.filter(s => s.kind === 'ki').forEach(s => { s.ability = 'basis'; });
+        // the same opponents in every attempt: on a free map the other nations in a fixed order
+        // (not dealt at random); the week's seed makes the tile map and its placement the same
+        const others = civKeys().filter(k => k !== g.seats[hostSlot].civ);
+        g.seats.filter(s => s.kind === 'ki').forEach((s, i) => {
+            if (freeCivs(g)) s.civ = others[i % others.length];
+            s.ability = 'basis';
+        });
+        // a tile map: the challenger places the start tile right away (the KI's lie already)
+        if (hasPrephase(g)) startPrephase(g);
     }
     // with positions (F34) the game waits for everybody: positions and nations come then
     const seatsFinal = positional(g) ? false : config.civMode === 'random' ? !awaitsDeal(g) : !freeCivs(g) && total === 4;
