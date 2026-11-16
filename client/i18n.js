@@ -318,6 +318,7 @@
         'Karte': 'Map',
         'Originalkarte (12 × 18)': 'Original map (12 × 18)',
         'Plättchenkarte (2–8 Reiche)': 'Tile map (2–8 empires)',
+        'Plättchenkarte, experimentell (Dreiecke)': 'Tile map, experimental (triangles)',
         'Marathon (24 × 36)': 'Marathon (24 × 36)',
         'Eigene Karte': 'Custom map',
         'Eigene Karte: %s': 'Custom map: %s',
