@@ -1120,7 +1120,6 @@ const MP = {
           <div class="mp-settings" style="pointer-events:${isHost ? 'all' : 'none'}; opacity:${isHost ? 1 : 0.4}; filter:${isHost ? 'none' : 'grayscale(100%)'}">
               <label class="row"><span>${TX('Karte')}</span>
                 <select id="mp-set-map" onchange="MP.updateLobbyConfig()">
-                  <option value="0" ${this.gameConfig.mapKey === '0' ? 'selected' : ''}>${TX('Originalkarte (12 × 18)')}</option>
                   <option value="random" ${this.gameConfig.mapKey === 'random' ? 'selected' : ''}>${TX('Plättchenkarte (2–8 Reiche)')}</option>
                   ${typeof marathonMap === 'function' ? `<option value="marathon" ${isMarathon ? 'selected' : ''}>${TX('Marathon (24 × 36)')}</option>` : ''}
                   ${typeof checkCustomMap === 'function' ? `<option value="eigene" ${this.gameConfig.mapKey === 'eigene' ? 'selected' : ''}>${TX('Eigene Karte')}</option>` : ''}
@@ -1302,7 +1301,7 @@ const MP = {
     FILTER_KEYS: ['kind', 'map', 'empires', 'ki', 'level', 'civs', 'events', 'wonders', 'ranked', 'turn', 'bots'],
 
     filterDefs: function () {
-        const maps = [['0', TX('Originalkarte')], ['plaettchen', TX('Plättchenkarte')]]
+        const maps = [['plaettchen', TX('Plättchenkarte')]]
             .concat(typeof marathonMap === 'function' ? [['marathon', TX('Marathon')]] : [])
             .concat(typeof checkCustomMap === 'function' ? [['eigene', TX('Eigene Karte')]] : []);
         return {
@@ -1744,7 +1743,7 @@ const MP = {
             eventMode: 'hard',
             wonders: false,
             difficulty: KI_DEFAULT_LEVEL,   // KI level of the computer seats
-            mapKey: '0'
+            mapKey: 'random'        // the classic map is a built-in custom map now (maps/builtin.js)
         };
 
         try {
@@ -2484,7 +2483,7 @@ const ASYNC = {
     // ── Create ───────────────────────────────────────────────────────────────
     showCreate: function () {
         const f = this.form = this.form || {
-            mapKey: '0', civMode: 'fixed', playerCount: 4, kiCount: 2, civ: 'russland', ability: 'basis',
+            mapKey: 'plaettchen', civMode: 'fixed', playerCount: 4, kiCount: 2, civ: 'russland', ability: 'basis',
             events: false, eventMode: 'hard', wonders: false, hexTiles: false, difficulty: KI_DEFAULT_LEVEL, ranked: false, isPublic: false, invite: '', turnDays: 7,
             playerBots: false, playerBotLimit: '',
         };
@@ -2534,7 +2533,6 @@ const ASYNC = {
             ${typeof PRESETS !== 'undefined' ? PRESETS.rowHtml('async') : ''}
             <div class="mp-settings">
               <label class="row"><span>${TX('Karte')}</span><select id="mpa-map">
-                ${opt('0', f.mapKey, TX('Originalkarte (12 × 18)'))}
                 ${opt('plaettchen', f.mapKey, TX('Plättchenkarte (2–8 Reiche)'))}
                 ${typeof marathonMap === 'function' ? opt('marathon', f.mapKey, TX('Marathon (24 × 36)')) : ''}
                 ${typeof checkCustomMap === 'function' ? opt('eigene', f.mapKey, TX('Eigene Karte')) : ''}</select></label>
