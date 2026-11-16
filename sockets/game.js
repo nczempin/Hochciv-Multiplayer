@@ -308,7 +308,9 @@ module.exports = function registerHandlers(io) {
                 broadcastState(io, session);
                 checkGameOver(io, session);
             });
-            if (err) return ack({ error: err });
+            // Refused (F30): the client already played the move on its own copy, so it gets the
+            // authoritative state back with the reason and puts its board back.
+            if (err) return ack({ error: err, state: engine.stateForPlayer(session.state, finalIndex) });
 
             sessions.recordActivity(sessionId);
             me.missedTurns = 0;             // acting is being there (turn timer)

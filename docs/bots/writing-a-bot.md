@@ -201,7 +201,7 @@ Note that `yourIndex` is not the lobby seat (`playerIndex`): the game sorts the 
 
 ### Moves
 
-On your turn, send `action { type, params }` (in a Rundenspiel: `async:action { id, type, params }`). The server applies it, answers `{ ok: true }`, and sends the new state to everyone. If the move isn't allowed it answers `{ error }` and nothing changes.
+On your turn, send `action { type, params }` (in a Rundenspiel: `async:action { id, type, params }`). The server applies it, answers `{ ok: true }`, and sends the new state to everyone. If the move isn't allowed it answers `{ error }` and nothing changes; in a live game the answer also carries the unchanged `state` for you, so you can decide again on it.
 
 | `type` | `params` | Move |
 |---|---|---|
@@ -374,6 +374,7 @@ The server answers in German; the game page translates the same texts. The ones 
 | `Du bist nicht am Zug.` | Not your turn (often: you acted on an old state) |
 | `Spiel läuft nicht.` | The game hasn't started yet or is over |
 | `Unbekannte Aktion: …` / `Ungültiger Parameter: …` | Wrong `type`, or a parameter that isn't a plain value |
+| `Diese Technologie ist nicht erforschbar.` | `research` for a tech your sheet doesn't offer: not available, already known, or the Singularity before a modern tech in every field |
 | `Zu viele Anfragen …` (HTTP 429) | Rate limit: slow down |
 
 Any other refusal of a move comes from the engine and says what is missing, for example `Zu wenig Münzen.`
