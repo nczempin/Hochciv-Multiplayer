@@ -340,6 +340,11 @@ function makeAdapter(engineDir, label) {
             switch (action) {
                 // ── Research ──────────────────────────────────────────────
                 case 'research':
+                    // doResearch trusts the client's sheet: it checks the cost, not whether the
+                    // tech is on offer. Over the network only what researchable() offers counts
+                    // (rolled as available, not yet known, Singularity only once it is ready).
+                    if (typeof E.researchable === 'function'
+                        && !E.researchable(state, pi).some(t => t.k === params.tech)) return 'Diese Technologie ist nicht erforschbar.';
                     return E.doResearch(state, pi, params.tech);
 
                 case 'freeTech':
