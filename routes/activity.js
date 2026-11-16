@@ -102,7 +102,7 @@ function withLock(key, fn) {
 // Same defaults as "Neues Spiel hosten" in mp.js; the host changes them in the lobby.
 function defaultGameConfig() {
     return {
-        seed: crypto.randomInt(2 ** 31),
+        seed: 1 + crypto.randomInt(0x7fffffff),
         isPublic: false,
         duel: false,
         events: false,

@@ -31,6 +31,7 @@
  * nations: picked on joining (civMode fixed), dealt (random) or drafted in reverse position order
  * (draft / randomDraft, status 'civdraft'). Games without turnOrder keep the classic rules.
  */
+const crypto = require('crypto');
 const appConfig = require('../config');
 const engine = require('../engine-adapter');
 const { renameInState } = require('../utils/rename');
@@ -41,6 +42,7 @@ const CivDraft = require('../utils/civdraft');
 const BotFilter = require('../utils/botfilter');
 const Stats = require('../utils/stats');
 const E = () => engine.getEngine();
+const randomSeed = () => 1 + crypto.randomInt(0x7fffffff);
 /* Each game plays with the engine version it was started on (g.engine): games from before
    the game shipped with this server have none and count as v83, a label only by now: forVersion
    runs them on the current engine. New games get the current one. */
@@ -176,7 +178,7 @@ function create(host, opts) {
         isPublic: !!raw.isPublic,
         // time per turn in days (F19); setup keeps 7 days to find players
         turnDays: TURN_DAYS.includes(raw.turnDays) ? raw.turnDays : 7,
-        seed: Math.floor(Math.random() * 2 ** 31),
+        seed: randomSeed(),
     };
     // Ranked: KI on the hardest level (as in live lobbies)
     if (config.ranked) config.difficulty = kiLevels()[kiLevels().length - 1].k;
@@ -208,9 +210,12 @@ function create(host, opts) {
     const challenge = opts && typeof opts.challenge === 'string' ? opts.challenge : null;
     if (total - ki < 2 && !challenge) return { error: 'Ein Rundenspiel braucht mindestens zwei Menschen.' };
     // fixedDice: tech availability and events fall the same in every attempt of the week, however
-    // it is played (the engine's fixed dice; engines before it ignore the field)
-    if (challenge) Object.assign(config, { challenge, isPublic: false, ranked: false, seed: Number.isInteger(opts.seed) ? opts.seed : config.seed });
-    if (challenge) config.fixedDice = config.seed;
+    // it is played (the engine's fixed dice; engines before it ignore the field). S.seed itself
+    // stays a per-attempt CSPRNG seed so combat / KI rolls are never identical across players.
+    if (challenge) {
+        const challengeSeed = Number.isInteger(opts.seed) && opts.seed > 0 ? opts.seed : config.seed;
+        Object.assign(config, { challenge, isPublic: false, ranked: false, seed: challengeSeed, fixedDice: challengeSeed });
+    }
     // the weekly challenge keeps the classic rules; a draft never has the classic order
     if (challenge) Object.assign(config, { civMode: 'fixed', turnOrder: 'classic' });
     // a game of the bot ladder (async/ladder.js): only the server sets it, never a request
@@ -638,6 +643,7 @@ function place(g, userId, o, cell) {
 function finishPlacement(g) {
     g.pre.plan.revealed = true;
     g.config.map = ENG(g).getEngine().tileMap(g.pre.plan);
+    g.config.seed = randomSeed();
     startGame(g);
 }
 
@@ -676,6 +682,7 @@ function finishDraft(g) {
     // D.picks are by index into V.players (turn order); seats are by slot
     const { V, D } = g.pre.draft;
     V.players.forEach((p, i) => { if (p.kind !== 'bot') g.seats[p.slot].drafted = D.picks[i].slice(); });
+    g.config.seed = randomSeed();
     startGame(g);
 }
 
@@ -1017,8 +1024,8 @@ function summary(g, userId) {
 }
 
 function publicConfig(g) {
-    const { map, setup, seed, order, customMap, hostBotOwnerId, ...rest } = g.config;
-    void map; void setup; void seed; void order; void hostBotOwnerId;
+    const { map, setup, seed, fixedDice, order, customMap, hostBotOwnerId, ...rest } = g.config;
+    void map; void setup; void seed; void fixedDice; void order; void hostBotOwnerId;
     // the bot filter's lists stay with the server: only whether there is one
     rest.playerBotFilter = !!rest.playerBotFilter;
     // lists only need the name of a custom map; the rows are in the game state
@@ -1055,7 +1062,7 @@ function view(g, userId) {
             seatOrder: positional(g),           // F34: the world view shows the turn order by position
         };
     }
-    if (g.status === 'draft') out.draft = deepCopy(g.pre.draft);
+    if (g.status === 'draft') out.draft = ENG(g).sanitizeDraft(g.pre.draft);
     if (g.status === 'civdraft') out.civdraft = CivDraft.payload(g.pre.civdraft);
     // the end screen's statistics (utils/stats.js), without their bookkeeping
     if (g.status === 'finished' && g.stats) {
@@ -1068,8 +1075,8 @@ function view(g, userId) {
     // the stored match and its replay (GET /api/games/:id[/replay])
     if (g.status === 'finished' && g.result && g.result.gameId) out.record = { id: g.result.gameId, replay: !!g.result.replay };
     if (g.state) {
-        out.state = ENG(g).stateForPlayer(g.state);      // without the dice state S.seed
         out.myIndex = mine ? stateIndex(g, mine.slot) : -1;
+        out.state = ENG(g).stateForPlayer(g.state, out.myIndex);
         // "since your last turn" (utils/summary.js) while it is the player's turn
         if (g.status === 'playing' && !g.hold && out.myIndex >= 0 && g.state.cur === out.myIndex) {
             out.summary = Summary.summarize(ENG(g).getEngine(), g.state, g.marks, out.myIndex) || undefined;

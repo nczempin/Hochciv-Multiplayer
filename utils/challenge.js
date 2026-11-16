@@ -87,7 +87,7 @@ function setupOf(weekId) {
         events: h[4] % 2 === 0,
         eventMode: h[5] % 2 === 0 ? 'easy' : 'hard',
         wonders: h[6] % 3 !== 0,
-        seed: h.readUInt32BE(8) & 0x7fffffff,
+        seed: (h.readUInt32BE(8) & 0x7fffffff) || 1,
     };
 }
 

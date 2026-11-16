@@ -21,8 +21,11 @@ const LogText = require('./utils/logtext');
 const CivDraft = require('./utils/civdraft');
 
 /* Turn positions (F34, utils/civdraft.js): with 'pick' or 'random' the seats already sit in
-   position order � the engine keeps that order (seatOrder, v90+) instead of the nations' ORDER. */
+   position order � the engine keeps that order (seatOrder, v90+) instead of the nations' ORDER. */
 const bySeat = cfg => CivDraft.modesOf(cfg).turnOrder !== 'classic';
+
+// HochCiv treats seed = 0 as falsy and falls back to Math.random(). Always pick [1, 2^31 - 1].
+const randomSeed = () => 1 + crypto.randomInt(0x7fffffff);
 
 // ── Build the engine sandbox ─────────────────────────────────────────────────
 
@@ -145,11 +148,12 @@ function makeAdapter(engineDir, label) {
         }
 
         // Determine map
+        const seed = Number.isInteger(cfg.seed) && cfg.seed > 0 ? cfg.seed : randomSeed();
         let map;
         if (cfg.map) {
             map = cfg.map; // Honor map passed from interactive placement or custom setup
         } else if (cfg.duel && players.length === 2 && typeof E.duelMap === 'function') {
-            map = E.duelMap(players[0].civ, players[1].civ, cfg.seed);
+            map = E.duelMap(players[0].civ, players[1].civ, seed);
         } else if (cfg.mapKey === 'gross' && vm.runInContext('typeof MAP_GROSS', sandbox) !== 'undefined') {
             // up to v98 – since then the map is gone from the game (the map browser has it, maps/builtin.js)
             map = JSON.parse(JSON.stringify(vm.runInContext('MAP_GROSS', sandbox)));
@@ -164,7 +168,7 @@ function makeAdapter(engineDir, label) {
         const gameCfg = {
             players,
             map,
-            seed: cfg.seed,
+            seed,
             duel: !!cfg.duel || players.length === 2,
             events: !!cfg.events,
             eventMode: cfg.eventMode || 'hard',
@@ -229,11 +233,11 @@ function makeAdapter(engineDir, label) {
         const r = checkCustomMap(cfg.customMap);
         if (r.error) throw new Error('Eigene Karte: ' + r.error);
         if (typeof E.mapForPlayers !== 'function') throw new Error('Diese Hochciv-Version kennt keine eigenen Karten.');
-        if (!Number.isInteger(cfg.seed)) cfg.seed = Math.floor(Math.random() * 2 ** 31);
+        if (!Number.isInteger(cfg.seed) || cfg.seed <= 0) cfg.seed = randomSeed();
         const map = E.mapForPlayers(r.map, n, cfg.seed);
         if (!map) throw new Error(`Die Karte hat nur ${r.map.spawns.length} Startpunkte.`);
         // Turn positions (F34): position n starts on the map's n-th start point (of those in play),
-        // so the positions mean something on the map � mapForPlayers deals them at random.
+        // so the positions mean something on the map � mapForPlayers deals them at random.
         if (bySeat(cfg)) {
             const at = cap => r.map.spawns.findIndex(sp => sp[0] === cap.r && sp[1] === cap.c);
             map.capitals.sort((a, b) => at(a) - at(b));
@@ -252,7 +256,7 @@ function makeAdapter(engineDir, label) {
     function startDraft(session) {
         if (!marathonAvailable()) throw new Error('Diese Hochciv-Version kennt den Marathon noch nicht.');
         const cfg = session.gameConfig;
-        const seed = Math.floor(Math.random() * 2 ** 31);
+        const seed = randomSeed();
         const players = buildPlayers(session);
         const base = {
             players,
@@ -268,9 +272,9 @@ function makeAdapter(engineDir, label) {
         const setup = E.rollSetup(base);
         base.avail = setup.avail; base.wpool = setup.wpool;
         const V = E.draftView(base);                 // the same game, still without abilities
-        const D = E.draftNew(V, seed + 1);
+        const D = E.draftNew(V, (seed % 0x7fffffff) + 1);
 
-        // createGame() later starts the real game with exactly this map and these rolls
+        // createGame() later starts the real game with this map and setup, using a fresh dice seed
         Object.assign(cfg, { seed, marathon: true, map: base.map, setup });
         session.players.forEach(p => { delete p.drafted; });
         session.draft = { V, D };
@@ -308,15 +312,30 @@ function makeAdapter(engineDir, label) {
         V.players.forEach((p, i) => {
             if (p.kind !== 'bot' && session.players[p.slot]) session.players[p.slot].drafted = D.picks[i].slice();
         });
+        if (session.gameConfig) session.gameConfig.seed = randomSeed();
         const state = createGame(session);
         session.draft = null;
         return state;
     }
 
-    /** What the clients need to draw the draft screen (deep copy). */
+    /** Deep-clone a Marathon draft without exposing RNG state on preview state V. */
+    function sanitizeDraft(draft) {
+        if (!draft) return null;
+        const out = JSON.parse(JSON.stringify({ V: draft.V, D: draft.D }));
+        if (out.V) {
+            delete out.V.seed;
+            delete out.V.fixedDice;
+            if ('evNext' in out.V) out.V.evNext = null;
+            if (Array.isArray(out.V.players)) {
+                out.V.players.forEach(p => { if (p) delete p.kiRng; });
+            }
+        }
+        return out;
+    }
+
+    /** What the clients need to draw the draft screen (sanitised deep copy). */
     function draftPayload(session) {
-        if (!session.draft) return null;
-        return JSON.parse(JSON.stringify({ V: session.draft.V, D: session.draft.D }));
+        return sanitizeDraft(session && session.draft);
     }
 
     // ── Action dispatch ──────────────────────────────────────────────────────────
@@ -758,18 +777,36 @@ function makeAdapter(engineDir, label) {
     }
 
     /**
-     * The state as clients get it: a deep copy without the dice state S.seed (see createGame) –
-     * with it a client could compute every roll ahead. Everything else on the board is open
-     * information. The client only previews its own moves locally; the server's state replaces
-     * that preview right after.
+    /**
+     * Pre-roll S.evNext on the authoritative state whenever events are active and any player
+     * owns the Oracle ('orakel'), because clients no longer receive S.seed to roll lazily.
      */
-    function stateForPlayer(state, _pi) {
-        const copy = JSON.parse(JSON.stringify(state));
-        delete copy.seed;
-        // the weekly challenge's fixed dice: with them (and fixedRand, public engine code) a client
-        // could work out every tech roll and event of the week before it happens
-        delete copy.fixedDice;
-        return copy;
+    function ensureOracleEvent(S) {
+        if (!S || S.over || !S.ev || S.evNext) return;
+        if (typeof E.peekNextEvent !== 'function' || typeof E.hasWonder !== 'function') return;
+        if (Array.isArray(S.players) && S.players.some((_, i) => E.hasWonder(S, i, 'orakel'))) {
+            E.peekNextEvent(S);
+        }
+    }
+
+    /**
+     * Return a sanitised copy of the state for a specific player (or -1 / null for spectators):
+     * strips live RNG streams (seed, fixedDice, players[*].kiRng) and hides evNext unless
+     * that recipient owns 'orakel'.
+     */
+    function stateForPlayer(state, pi) {
+        if (!state) return state;
+        ensureOracleEvent(state);
+        const out = JSON.parse(JSON.stringify(state));
+        delete out.seed;
+        delete out.fixedDice;
+        if (Array.isArray(out.players)) {
+            out.players.forEach(p => { if (p) delete p.kiRng; });
+        }
+        const canSeeOracle = Number.isInteger(pi) && pi >= 0
+            && typeof E.hasWonder === 'function' && E.hasWonder(state, pi, 'orakel');
+        if (!canSeeOracle && 'evNext' in out) out.evNext = null;
+        return out;
     }
 
     /**
@@ -802,8 +839,8 @@ function makeAdapter(engineDir, label) {
     }
 
     return {
-        createGame, applyAction, stateForPlayer, checkCivChoice, civsFor, allCivs, civDef, stateIndexOf, rollSetup,
-        marathonAvailable, startDraft, draftPick, isDraftDone, finishDraft, draftPayload,
+        createGame, applyAction, stateForPlayer, ensureOracleEvent, checkCivChoice, civsFor, allCivs, civDef, stateIndexOf, rollSetup,
+        marathonAvailable, startDraft, draftPick, isDraftDone, finishDraft, draftPayload, sanitizeDraft,
         advanceDraft, assignDoubles, isAutoPlayer, kiLevelFor, randomAbility, checkCustomMap,
         engineConst, turnOrderSlots, peekNext, advanceWithoutBegin, applyLateAbility, autoTurn,
         finishTurnForAbsent, endTurnAsIs, ensureEngineLoaded, attachScenes, finishTurn,

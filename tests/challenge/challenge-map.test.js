@@ -43,7 +43,8 @@ ok(other.config.seed !== a.config.seed && mapOf(other) !== mapOf(a), 'the next w
 
 let placed = false;
 for (let o = 0; o < 6 && !placed; o++) for (let c = 0; c < 40 && !placed; c++) placed = L.place(a, 'a', o, c) === null;
-ok(placed && a.status === 'playing' && a.state.fixedDice === a.config.seed, 'after placing: the game runs with the week\'s fixed dice', a.status);
+ok(placed && a.status === 'playing' && a.state.fixedDice === C.setupOf(w).seed && a.state.seed !== a.state.fixedDice,
+    'after placing: the game runs with the week\'s fixed dice', a.status);
 const old = attempt('2026-W46', 'a');
 ok(old.status === 'playing' && old.config.mapKey === '0', 'an old week: the original map, starts at once');
 

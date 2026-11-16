@@ -35,9 +35,10 @@ const BROWSER = process.env.HOCHCIV_BROWSER || [
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
 ].find(p => fs.existsSync(p));
 const CONTAINER = process.env.HOCHCIV_CONTAINER || 'hochciv-multiplayer-local';
+const DB_CONTAINER = process.env.HOCHCIV_DB_CONTAINER || 'hochciv-db';
 const inServer = code => execFileSync('docker', ['exec', '-i', '-w', '/app', CONTAINER, 'node', '-'], { input: code }).toString().trim().split('\n').filter(l => !/Engine Adapter/.test(l)).join('\n');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const sql = q => execFileSync('docker', ['exec', 'hochciv-db', 'psql', '-U', 'hochciv', '-d', 'hochciv', '-tAc', q]).toString().trim();
+const sql = q => execFileSync('docker', ['exec', DB_CONTAINER, 'psql', '-U', 'hochciv', '-d', 'hochciv', '-tAc', q]).toString().trim();
 const PASSWORD = 'Test-' + crypto.randomBytes(6).toString('hex');
 const users = [];
 function makeUser() {
@@ -77,7 +78,7 @@ function unit() {
     try { unit(); } catch (e) { ok(false, 'unit', e.stack); }
     const C_setup = w => require('../../utils/challenge').setupOf(w);
     const { chromium } = require('playwright-core');
-    const browser = await chromium.launch({ executablePath: BROWSER });
+    const browser = await chromium.launch({ executablePath: BROWSER, args: ['--disable-gpu', '--disable-dev-shm-usage'] });
     const errors = [];
     let week = null;
     try {
@@ -127,10 +128,10 @@ function unit() {
         ok(v.status === 'playing' && v.my && v.cfg.challenge === week && !v.cfg.isPublic && !v.cfg.ranked && v.seats.filter(s => s.startsWith('ki:')).length === 3
             && mine === `human:${guest.setup.civ}:${guest.setup.ability}` && v.cfg.mapKey === guest.setup.mapKey && v.cfg.difficulty === guest.setup.difficulty,
             'started: alone against three KI with the week\'s setup, A\'s turn', JSON.stringify({ seats: v.seats, map: v.cfg.mapKey }));
-        // the week's seed is the game's fixed dice (same techs and events in every attempt) – it stays on
-        // the server: a client that had it could compute the week in advance (audit SA-17)
-        ok(v.fixedDice === undefined && guest.setup.seed === undefined, 'fixed dice: the week\'s seed stays on the server',
-            `game ${v.fixedDice}, /api/challenge ${guest.setup.seed}`);
+        // the week's seed is the server state's fixedDice (stripped from client views alongside seed)
+        const dbFixedDice = Number(sql(`SELECT (state->>'fixedDice')::bigint FROM async_games WHERE id = '${v.id}'`));
+        ok(v.fixedDice === undefined && dbFixedDice === guest.setup.seed,
+            'fixed dice: the week\'s seed on server state, stripped from client view', `${v.fixedDice} / ${dbFixedDice} / ${guest.setup.seed}`);
         const api = (method, path, body) => p.evaluate(async ([m, u, b]) => { const r = await fetch(u, { method: m, headers: b ? { 'Content-Type': 'application/json' } : undefined, body: b ? JSON.stringify(b) : undefined }); return { status: r.status, body: await r.json() }; }, [method, path, body]);
         const leave = await api('POST', `/api/async/${v.id}/leave`), cancel = await api('POST', `/api/async/${v.id}/cancel`);
         ok(leave.body.error === 'Die Wochen-Challenge kann man nur aufgeben.' && cancel.body.error === 'Die Wochen-Challenge kann man nur aufgeben.', 'leaving and cancelling are refused');
