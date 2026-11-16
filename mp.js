@@ -542,12 +542,11 @@ const MP = {
             this.socket.on('placement:start', data => {
                 MP.renderLobby = null; closeModal();
                 // spectators see the map once every start tile lies (game:start)
-                if (MP.spectator) return modal(TX('Zuschauen'), `<p>${TX('Die Spieler legen ihre Startplättchen. Die Karte erscheint, sobald alle gelegt haben.')}</p>`);
+                if (MP.spectator || (data && data.spectator)) return modal(TX('Zuschauen'), `<p>${TX('Die Spieler legen ihre Startplättchen. Die Karte erscheint, sobald alle gelegt haben.')}</p>`);
+                if (!data || !data.plan || !data.cfg) return;
 
-                // Clever trick: Tell the native random map generator that EVERY other player across the network is a Bot!
-                // This tricks the native UI to instantly autocomplete them and ONLY present the single local player queue 
-                // for placement! This enables seamless simultaneous decentralized drafting!
-                // KI seats stay KI: the server places them with kiPlaceSeat, so the preview matches.
+                // Disguise other human seats as bots locally so HochCiv's placement UI only
+                // queues our own start tile; KI seats stay KI.
                 data.cfg.players = MP.players.map(p => {
                     return p.index === MP.lobbyIndex ? p : { ...p, kind: p.kind === 'ki' ? 'ki' : 'bot' };
                 });
@@ -556,7 +555,7 @@ const MP = {
                     // Suppress revealing the map locally since we must wait for server resolution!
                     document.body.classList.add('mp-waiting');
                     if (MP.placementFinished) window.toast(TX('Warten auf andere Spieler...'));
-                }
+                };
 
                 // the game's own placeSeat – once, a rematch on the same page would wrap the wrapper
                 MP.placementFinished = false;
@@ -573,20 +572,40 @@ const MP = {
                     return origPlaceSeat(plan, seat, o, cell);
                 };
 
-                const origRandom = Math.random;
-                // Force seed predictability
-                Math.random = () => (data.seed / (Math.pow(2, 31)));
-                try {
-                    window.startPlacement(data.cfg);
-                    // the world view shows everybody as they are – as bots they would have no ability
-                    if ($('pl-world')) $('pl-world').onclick = () => {
-                        const disguised = placeState.cfg.players;
-                        placeState.cfg.players = MP.players;
-                        try { placeWorldView(); } finally { placeState.cfg.players = disguised; }
-                    };
-                } finally {
-                    Math.random = origRandom;
+                // Render directly from the server-supplied masked plan & setup (never regenerate from seed).
+                const mySeat = Array.isArray(data.plan.seats) ? data.plan.seats.find(s => s.idx === MP.lobbyIndex) : null;
+                const alreadyPlaced = !!(mySeat && mySeat.cell != null);
+                MP.placementFinished = alreadyPlaced;
+                placeState = {
+                    cfg: data.cfg,
+                    plan: data.plan,
+                    rnd: mapRng(1),
+                    setup: data.setup,
+                    queue: mySeat ? [mySeat] : [],
+                    at: alreadyPlaced ? 1 : 0,
+                    o: alreadyPlaced && mySeat.o != null ? mySeat.o : 0,
+                    cell: alreadyPlaced ? mySeat.cell : null,
+                    done: false,
+                };
+                show('screen-place');
+                if (alreadyPlaced || !mySeat) {
+                    drawPlace();
+                    document.body.classList.add('mp-waiting');
+                } else {
+                    placeStep();
                 }
+                if ($('pl-ok')) $('pl-ok').onclick = () => (ASYNC.placing && MP.asyncId ? ASYNC.confirmPlacement() : placeConfirm());
+                // World and tech overlays need un-disguised player abilities / owner marks.
+                if ($('pl-world')) $('pl-world').onclick = () => {
+                    const disguised = placeState.cfg.players;
+                    placeState.cfg.players = MP.players;
+                    try { placeWorldView(); } finally { placeState.cfg.players = disguised; }
+                };
+                if ($('pl-tech')) $('pl-tech').onclick = () => {
+                    const disguised = placeState.cfg.players;
+                    placeState.cfg.players = MP.players;
+                    try { placeTechView(); } finally { placeState.cfg.players = disguised; }
+                };
             });
 
             // Marathon (v83): the server runs the ability draft; we draw Hochciv's own draft
@@ -1727,9 +1746,8 @@ const MP = {
         const isPublic = true;
         localStorage.setItem('mp-name', name);
 
-        // Create local config with valid defaults (since Singleplayer UI is bypassed)
+        // Create local config with defaults (server chooses all seeds)
         const config = {
-            seed: Math.floor(Math.random() * 2 ** 31) | 0,
             isPublic: isPublic,
             duel: false, // Could read from setupMode if needed
             events: false,

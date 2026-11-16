@@ -1,4 +1,5 @@
 const sessions = require('../sessions');
+const { randomSeed, publicGameConfig } = sessions;
 const engine = require('../engine-adapter');
 const { User, Game, sequelize } = require('../models');
 const { calculateMMR } = require('../utils/mmr');
@@ -108,7 +109,7 @@ module.exports = function registerHandlers(io) {
             // Join a Socket.IO room for this session
             socket.join(sessionId);
 
-            ack({ ok: true, playerIndex, status: s.status, players: publicPlayers(s), gameConfig: s.gameConfig, hostIndex: s.hostIndex, spectators: sessions.spectatorCount(s) });
+            ack({ ok: true, playerIndex, status: s.status, players: publicPlayers(s), gameConfig: publicGameConfig(s.gameConfig), hostIndex: s.hostIndex, spectators: sessions.spectatorCount(s) });
             socket.emit('chat:history', { list: s.chat || [], guest: !me.dbUserId, mute: me.chatMute || null });
 
             // Tell everyone a player (re-)connected
@@ -122,6 +123,11 @@ module.exports = function registerHandlers(io) {
 
             // A lobby of the matchmaking starts as soon as everyone is there (sockets/match.js)
             if (s.match && s.match.onConnect) s.match.onConnect();
+
+            // Tile placement in progress: send masked placement plan (only own tile if already placed)
+            if (s.status === 'placement' && s.placementState) {
+                socket.emit('placement:start', placementPayloadFor(s, playerIndex));
+            }
 
             // Marathon draft in progress: show the reconnecting player the draft screen
             if (s.status === 'draft' && s.draft) {
@@ -153,9 +159,10 @@ module.exports = function registerHandlers(io) {
             w.connected = true;
             w.socketId = socket.id;
             socket.join(sessionId);
-            ack({ ok: true, spectator: true, playerIndex: -1, status: s.status, players: publicPlayers(s), gameConfig: s.gameConfig, hostIndex: s.hostIndex, spectators: sessions.spectatorCount(s) });
+            ack({ ok: true, spectator: true, playerIndex: -1, status: s.status, players: publicPlayers(s), gameConfig: publicGameConfig(s.gameConfig), hostIndex: s.hostIndex, spectators: sessions.spectatorCount(s) });
             socket.emit('chat:history', { list: s.chat || [] });
             io.to(sessionId).emit('spectators:update', { count: sessions.spectatorCount(s) });
+            if (s.status === 'placement' && s.placementState) socket.emit('placement:start', { spectator: true });
             if (s.status === 'draft' && s.draft) socket.emit('draft:update', engine.draftPayload(s));
             if (s.status === 'playing' && s.state) {
                 socket.emit('game:start', { state: engine.stateForPlayer(s.state, -1), yourIndex: -1, turn: turnInfo(s), paused: s.paused || null });
@@ -224,7 +231,7 @@ module.exports = function registerHandlers(io) {
             const updated = sessions.updateConfig(sessionId, newConfig);
             if (updated) {
                 ack({ ok: true });
-                io.to(sessionId).emit('lobby:config:update', updated);
+                io.to(sessionId).emit('lobby:config:update', publicGameConfig(updated));
                 // ready check (F17): new settings have to be confirmed again
                 if (session.players.some(p => p.ready)) {
                     session.players.forEach(p => { p.ready = false; });
@@ -384,7 +391,7 @@ module.exports = function registerHandlers(io) {
                 if (!p.socketId) return;
                 io.to(p.socketId).emit('session:rematch', {
                     playerIndex: i, hostIndex: session.hostIndex,
-                    players: publicPlayers(session), gameConfig: session.gameConfig,
+                    players: publicPlayers(session), gameConfig: publicGameConfig(session.gameConfig),
                 });
             });
             // spectators keep watching: the lobby, then the next game
@@ -392,7 +399,7 @@ module.exports = function registerHandlers(io) {
                 if (!w.connected || !w.socketId) continue;
                 io.to(w.socketId).emit('session:rematch', {
                     playerIndex: -1, spectator: true, hostIndex: session.hostIndex,
-                    players: publicPlayers(session), gameConfig: session.gameConfig,
+                    players: publicPlayers(session), gameConfig: publicGameConfig(session.gameConfig),
                 });
             }
         });
@@ -705,14 +712,15 @@ function startGame(io, session) {
 
     try {
         if (isPlaettchen) {
-            const seed = Number.isInteger(session.gameConfig.seed) ? session.gameConfig.seed : Math.floor(Math.random() * 2 ** 31);
+            const seed = Number.isInteger(session.gameConfig.seed) && session.gameConfig.seed > 0
+                ? session.gameConfig.seed : randomSeed();
             const plan = engineApi.tilePlan(session.players.map(p => p.civ), seed,
                 // experimental tile mode: v107 reads `shape` (14 triangles, four empires), older engines `hex`
                 session.gameConfig.hexTiles ? { hex: true, shape: 'tri14' } : {});
             if (!plan) return 'Für diese Spielerzahl gibt es keine Plättchenkarte.';
 
-            // v66+: starting techs and wonder pools are rolled before placement
-            // (the clients roll the same thing locally from the same seed).
+            // v66+: starting techs and wonder pools are rolled before placement and sent in `setup`
+            // so clients do not need the placement seed. finishPlacement() draws a fresh live game seed.
             session.gameConfig.seed = seed;
             session.gameConfig.setup = engine.rollSetup(session, seed);
 
@@ -743,15 +751,7 @@ function startGame(io, session) {
                 deadline: ms ? Date.now() + ms : null,
             };
 
-            const { setup: _setup, ...publicCfg } = session.gameConfig;
-            io.to(session.id).emit('placement:start', {
-                // the game rebuilds the plan from cfg: v107+ reads tileShape (14 triangles), older games hexTiles
-                cfg: { ...publicCfg, tileShape: session.gameConfig.hexTiles ? 'tri14' : null },
-                seed,
-                queue: humanSeats,
-                at: 0,
-                plan
-            });
+            emitPlacementStart(io, session);
             return null;
         }
 
@@ -905,19 +905,40 @@ function broadcastState(io, session) {
     if (!session || !session.state) return;
     recordStats(session, false);
 
-    // Instead of deep cloning per-player in a loop, clone the state exactly once.
-    // The engine's stateForPlayer currently treats the state as fully visible for all players.
-    const sharedState = engine.stateForPlayer(session.state, 0);
+    const turn = turnInfo(session);
+    const paused = session.paused || null;
+    const summary = turnSummary(session);
+    const scenes = newScenes(session);
+    // Running stateForPlayer(-1) first triggers ensureOracleEvent(session.state) if any player owns 'orakel'.
+    const baseState = engine.stateForPlayer(session.state, -1);
 
-    // Broadcast universally to everyone in the room. This avoids individual serialization per socket.
-    io.to(session.id).emit('state:update', {
-        state: sharedState,
+    if (!session.state.evNext) {
+        io.to(session.id).emit('state:update', {
+            state: baseState,
+            currentPlayer: session.state.cur,
+            round: session.state.round,
+            turn, paused, summary, scenes,
+        });
+        return;
+    }
+
+    const shared = {
         currentPlayer: session.state.cur,
         round: session.state.round,
-        turn: turnInfo(session), paused: session.paused || null,
-        summary: turnSummary(session),
-        scenes: newScenes(session),
+        turn, paused, summary, scenes,
+    };
+    session.players.forEach((lobbyPlayer, lobbyIndex) => {
+        if (!lobbyPlayer.socketId) return;
+        const finalIndex = engine.stateIndexOf(session.state, lobbyIndex, lobbyPlayer);
+        io.to(lobbyPlayer.socketId).emit('state:update', {
+            ...shared,
+            state: engine.stateForPlayer(session.state, finalIndex),
+        });
     });
+    for (const w of session.spectators || []) {
+        if (!w.connected || !w.socketId) continue;
+        io.to(w.socketId).emit('state:update', { ...shared, state: baseState });
+    }
 }
 
 /**
@@ -938,12 +959,36 @@ function newScenes(session) {
     }
 }
 
-// ── Turn timer ────────────────────────────────────────────────────────────────
+// ── Placement helpers & turn timer ───────────────────────────────────────────
 
-/** Everyone has a start tile: the map is made and the game begins. */
+function placementPayloadFor(session, lobbyIndex) {
+    const st = session.placementState;
+    const plan = JSON.parse(JSON.stringify(st.plan));
+    plan.seats.forEach(ps => {
+        if (ps.idx !== lobbyIndex) { ps.o = null; ps.cell = null; }
+    });
+    return {
+        // v107+ reads tileShape (14 triangles), older games hexTiles
+        cfg: { ...publicGameConfig(session.gameConfig), tileShape: session.gameConfig.hexTiles ? 'tri14' : null },
+        setup: session.gameConfig.setup,
+        plan,
+    };
+}
+
+function emitPlacementStart(io, session) {
+    session.players.forEach((p, i) => {
+        if (p.socketId) io.to(p.socketId).emit('placement:start', placementPayloadFor(session, i));
+    });
+    for (const w of session.spectators || []) {
+        if (w.connected && w.socketId) io.to(w.socketId).emit('placement:start', { spectator: true });
+    }
+}
+
+/** Everyone has a start tile: the map is made and the game begins with a fresh dice seed. */
 function finishPlacement(io, session) {
     const st = session.placementState;
     session.gameConfig.map = engine.getEngine().tileMap(st.plan);
+    session.gameConfig.seed = randomSeed();
     try {
         session.state = engine.createGame(session);
         session.status = 'playing';
