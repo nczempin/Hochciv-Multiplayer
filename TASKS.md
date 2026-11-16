@@ -36,6 +36,11 @@ Status: ⬜ planned · 🔨 in progress · ✅ on `development` (staging) · �
 | 26 | F26 | [Challenge: compare with the best attempt](#f26-challenge-compare-with-the-best-attempt) | – | ✔ (challenge) | ✅ |
 | 27 | F27 | [Pause a live game, or continue it as a Rundenspiel](#f27-pause-a-live-game-or-continue-it-as-a-rundenspiel) | ✔ | – | ✅ |
 | 28 | F28 | [Single-player games in the statistics](#f28-single-player-games-in-the-statistics) | – | – (single player, browser and app) | ✅ server · app: PR open |
+| 29 | F29 | [Server checks research](#f29-server-checks-research) | ✔ | ✔ | ✅ |
+| 30 | F30 | [Show refused moves](#f30-show-refused-moves) | ✔ | ✔ | ⬜ |
+| 31 | F31 | [Bots as friends and invites](#f31-bots-as-friends-and-invites) | ✔ | ✔ | 🔨 PR #148 (Nic) |
+| 32 | F32 | [Random nations: no dodging, no rerolling](#f32-random-nations-no-dodging-no-rerolling) | – | ✔ | ⬜ |
+| 33 | F33 | [Mirror match (both sides)](#f33-mirror-match-both-sides) | ? | ✔ | ⬜ idea |
 
 The numbers are those of the original proposal; F11 and F12 were requested after the staging tests of F1. F15–F22 (and F8, F10 moved up from "later") are the second round, approved on 2026-11-03. Not wanted for now: a vacation mode for Rundenspiele, a tutorial, tournaments (too few players yet). F23–F27 are the third round, approved on 2026-11-10; F28 was asked for the same day. Parked as GitHub issues for later: daily challenge (#120), bot arena (#121), Discord integration (#122). The order puts the small fixes for live games first. F6 and F7 come before F5 because they record per-turn data that F5 can reuse.
 
@@ -623,3 +628,53 @@ Texts with bad language are not sent but reported automatically, and the sender 
 **Android app** (HochCiv-Android PR #4, into `main`): the offline copy carries `client/solo.js` (`syncOfflineGame` copies it); `bridge.js` hands the offline queue to the app (`soloQueue`), `SoloQueue.kt` keeps it in `files/solo-queue.json`, the online page takes it (`soloPull` → `SOLO.importQueue`) and reports what was sent (`soloDelivered`), and the offline page drops it (`soloForget`). Tested with unit tests and in the browser (offline copy under the app's host with a fake native channel → online page → stored); not yet on a device. Reaches players with the next app release.
 
 **Status:** ✅ server and browser on `development`; the app part waits in its PR.
+
+---
+
+F29–F33 come from player feedback on Discord (Nic, 2026-11-15/16), consolidated on 2026-11-16. F29 was a security fix and went first.
+
+## F29 Server checks research
+
+**Goal:** a bot or a modified client can't research what the sheet wouldn't offer.
+
+**Found by:** Nic. The engine's `doResearch` only checks the Dark Age, the expansion and the cost, never `researchable()`. Over the network a player could take the Singularity without a modern tech in every field (and so win), research any tech that was never rolled as available, or pay twice for a known one. The free paths (`freeTech`, `freePick`, `backPick`, `copyTech`) already check their own options.
+
+**Built:** `engine-adapter.js`, action `research`: refused with "Diese Technologie ist nicht erforschbar." unless `researchable(S, pi)` offers the tech. The game in `HochCiv/` is unchanged; works for every kept engine version.
+
+**Tests:** `tests/security/research.test.js` (no docker): per engine version, Singularity without prerequisites, a tech not available, a known tech twice are refused; an offered tech still works. 8 of its checks fail without the fix.
+
+**Status:** ✅
+
+## F30 Show refused moves
+
+**Goal:** when the server refuses a move, the player (and a bot author) sees why, instead of a client that believes the move happened.
+
+**Planned:**
+- Live games already answer with `ack({ error })` (`sockets/game.js`); check that `mp.js` shows it as a toast and reloads the authoritative state.
+- Rundenspiele: the same for the error from `async/logic.js` (`applyAction`).
+- Bot API: the error text in the response, documented for bot authors.
+
+## F31 Bots as friends and invites
+
+**Goal:** a host can let one specific bot into a game instead of any bot; later bots can be befriended like players (F8).
+
+**Status:** Nic's PR #148 (`feature/bot-invites`) – to review and merge into `development`.
+
+**Related, not code:** Nic offered to host a Neura* bot (and trained one of their own) so bots have opponents for MMR while the NeuraBot is down. To agree: bot names that make clear who runs them, and which version they play.
+
+## F32 Random nations: no dodging, no rerolling
+
+**Goal:** with *Zufallsnationen* nobody can choose their nation by skipping or recreating games.
+
+**Problem:** live games deal the nations at the start (`sockets/game.js`), which is fine. Rundenspiele deal every nation when the game is created (`async/logic.js`, `civMode === 'random'`), and `freeSeats()` shows the next seat's nation before anyone joins. So a joiner can skip games with a nation they don't want, and a host can create and delete games until they get the nation they want.
+
+**Planned (to decide):**
+- Deal the nation (and turn position) when a player joins, from the server's seed, or deal them all only when the game starts; the open-games list shows no nation.
+- The host's nation is not known before the others join either.
+- Optional: limit how often an account deletes unstarted games.
+
+## F33 Mirror match (both sides)
+
+**Idea (Nic):** a match type where each pairing is played twice with seats and nations swapped, so the first-move advantage and strong nations even out.
+
+**Thoughts:** fits Rundenspiele best (two linked games, the combined result counts); open whether and how it counts for MMR. Before building it: use the statistics (F13/F23) to measure how big the first-move and nation advantages are. Bigger feature – parked until decided.
