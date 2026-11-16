@@ -80,7 +80,8 @@
             const has = k => s[k] !== undefined;
             const c = {};
             if (s.map === 'eigene') { const m = this.customMap(s); if (m) Object.assign(c, { mapKey: 'eigene', customMap: m }); }
-            else if (has('map')) c.mapKey = s.map === 'tiles' ? 'random' : s.map;
+            // the classic map ('0') left the selection – such a preset gets the tile map
+            else if (has('map')) c.mapKey = s.map === 'tiles' || s.map === '0' ? 'random' : s.map;
             ['hexTiles', 'events', 'eventMode', 'wonders', 'randomCivs', 'difficulty', 'turnTime', 'playerBots', 'playerBotLimit', 'isPublic']
                 .forEach(k => { if (has(k)) c[k] = s[k]; });
             if (has('ranked')) c.ranked = !!s.ranked && !!MP.user;
@@ -105,7 +106,7 @@
             const f = ASYNC.form;
             ASYNC.readForm(false);
             if (s.map === 'eigene') { if (this.customMap(s)) Object.assign(f, { mapKey: 'eigene', customName: s.customName }); }
-            else if (has('map')) f.mapKey = s.map === 'tiles' ? 'plaettchen' : s.map;
+            else if (has('map')) f.mapKey = s.map === 'tiles' || s.map === '0' ? 'plaettchen' : s.map;
             ['hexTiles', 'events', 'eventMode', 'wonders', 'difficulty', 'turnDays', 'playerBots', 'isPublic'].forEach(k => { if (has(k)) f[k] = s[k]; });
             if (has('playerBotLimit')) f.playerBotLimit = s.playerBotLimit ? String(s.playerBotLimit) : '';
             if (has('randomCivs')) f.civMode = s.randomCivs ? 'random' : 'fixed';

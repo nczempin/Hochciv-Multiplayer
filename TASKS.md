@@ -704,21 +704,21 @@ F29–F33 come from player feedback on Discord (Nic, 2026-11-15/16), consolidate
   - **Draft:** players pick their nation one after another in **reverse turn order** – the last to move picks first, the first to move picks last. They pick the ability with it (Marathon: drafted later as now).
   - **Zufallsdraft:** a pool of random nations, **one per empire, repeats allowed**, drafted in the same reverse order; the ability is **random**. The first to move gets what is left.
 - **Turn order** (lobby): the host can let everybody **pick their position** (1, 2, 3 …) or choose **random order** (dealt at the start, nobody picks).
-- **Classic map:** with a turn-order choice its four start points become **positions 1–4** – any nation can start on any of them; it no longer belongs to a nation.
+- **Classic map:** taken out of the map selection and published as the built-in custom map *Originalkarte* (code `URKART`, like the *Große Karte*). As a custom map its start points belong to no nation – any nation can start on any of them. Done on 2026-11-16.
 
 **Proposed details (defaults, open to change):**
 - Turn order modes: *Klassisch* (today: host first, then the nations' order) stays the default for *Standard* and *Zufall*; *Positionen wählen* and *Zufällige Reihenfolge* are new. A draft needs the turn order before the nations, so the drafts offer only the two new modes.
-- Positions on the classic map follow today's order of its start points: 1 = Russia's, 2 = Greece's, 3 = England's, 4 = the Vikings'.
+- Positions on a custom map (also the Originalkarte): position *n* plays from the start point the map gives seat *n*.
 - *Draft* on a map with one seat per nation (classic map, 4 empires): each nation once. On the tile map or a custom map: each nation at most ⌈empires / 4⌉ times, so a draft still takes nations away from the later pickers.
 - Positions of the KI: with *Positionen wählen*, the free positions at the start; with random order, dealt like everyone's. The KI drafts on its own when its pick comes (random from what is left; ability random).
 - Rundenspiele: positions are picked on joining (free ones only); the draft is a phase like the Marathon draft – whose pick it is gets a notification, the turn deadline counts, and a timeout picks at random. Live: the turn timer counts for a pick.
 - Ranked matchmaking stays as it is (random nations, classic order).
 - Bots get the draft and position events, documented in the bot guide.
 
-**Engine (no change to `HochCiv/`):** `newGame` already supports `seatOrder: true` (turn order = seat order) and capitals by seat (`capitals: [{ r, c }, …]`, as on the tile map). The adapter turns the classic map's capitals into positions and passes `seatOrder` when a turn-order mode is chosen; the seats are arranged in position order before the game starts.
+**Engine (no change to `HochCiv/`):** `newGame` already supports `seatOrder: true` (turn order = seat order) and capitals by seat (`capitals: [{ r, c }, …]`, as on the tile map and custom maps). The adapter passes `seatOrder` when a turn-order mode is chosen; the seats are arranged in position order before the game starts.
 
 **Steps:**
-1. Adapter: positions on the classic map, `seatOrder`, seats in position order (live and Rundenspiele) – with tests.
+1. Adapter: `seatOrder`, seats in position order (live and Rundenspiele) – with tests.
 2. Live lobby: turn-order modes and position picking; nation modes in the settings, presets and the open-games filter.
 3. Live draft phase (server state, client screen, KI picks, turn timer).
 4. Rundenspiele: positions on joining, draft phase with notifications and timeout.
