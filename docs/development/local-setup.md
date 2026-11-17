@@ -25,7 +25,7 @@ npm install
 npm start          # or: npm run dev (restarts on file changes)
 ```
 
-You need a PostgreSQL database (`DATABASE_URL=postgres://user:pass@host:5432/db`). Run `node scripts/build-public.js` once (and after changes to the game or `mp.js`) so the server can serve the game page; the engine is always loaded from `HochCiv/` (and `HochCiv-v100/`, `HochCiv-v98/`). The Discord Activity bundle needs `npm run build:activity`.
+You need a PostgreSQL database (`DATABASE_URL=postgres://user:pass@host:5432/db`); the server applies the migrations with that role at start, so it must be allowed to create tables. The Docker setup uses separate roles like production ([Roles and migrations](../reference/database.md#roles-and-migrations)). Run `node scripts/build-public.js` once (and after changes to the game or `mp.js`) so the server can serve the game page; the engine is always loaded from `HochCiv/` (and `HochCiv-v100/`, `HochCiv-v98/`). The Discord Activity bundle needs `npm run build:activity`.
 
 ## Testing the Discord Activity or passkeys locally
 

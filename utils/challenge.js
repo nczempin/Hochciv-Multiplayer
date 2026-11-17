@@ -253,9 +253,4 @@ async function mergeUser(fromId, into, transaction) {
     await ChallengeResult.update({ userId: into.id, username: into.username }, { where: { userId: fromId }, transaction });
 }
 
-/** Until 2026-11 the table had one attempt per week and player; that unique index goes. */
-async function migrate() {
-    await ChallengeResult.sequelize.query('DROP INDEX IF EXISTS "challenge_results_week_user_key"');
-}
-
-module.exports = { TILE_MAP_FROM, weekOf, boundsOf, setupOf, info, start, compare, recordResult, removeUser, mergeUser, migrate, WEEK_RE };
+module.exports = { TILE_MAP_FROM, weekOf, boundsOf, setupOf, info, start, compare, recordResult, removeUser, mergeUser, WEEK_RE };
