@@ -38,6 +38,12 @@ async function main() {
     const database = env('POSTGRES_DB', 'hochciv');
     const passwords = { [OWNER]: env('POSTGRES_OWNER_PASSWORD'), [APP]: env('POSTGRES_APP_PASSWORD') };
     if (passwords[OWNER] === passwords[APP]) throw new Error('POSTGRES_OWNER_PASSWORD and POSTGRES_APP_PASSWORD must differ');
+    // The compose files put both into URLs (DATABASE_URL, MIGRATION_DATABASE_URL) unencoded: a
+    // character like @ / # % : would leave the server unable to parse them ("Invalid URL") – refuse
+    // here, before the server starts with them
+    for (const [name, pw] of [['POSTGRES_OWNER_PASSWORD', passwords[OWNER]], ['POSTGRES_APP_PASSWORD', passwords[APP]]]) {
+        if (!/^[A-Za-z0-9._~-]+$/.test(pw)) throw new Error(`${name} may only contain letters, digits and . _ ~ - (it goes into a URL) – e.g. openssl rand -hex 24`);
+    }
     const db = await connect({
         host: env('DB_HOST', 'hochciv-db'), port: Number(process.env.DB_PORT) || 5432, database,
         user: env('POSTGRES_USER', 'hochciv'), password: env('POSTGRES_PASSWORD'),
