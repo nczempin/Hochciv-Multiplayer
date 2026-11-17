@@ -44,6 +44,7 @@ Status: ⬜ planned · 🔨 in progress · ✅ on `development` (staging) · �
 | 34 | F34 | [Nation draft and turn-order choice](#f34-nation-draft-and-turn-order-choice) | ✔ | ✔ | ✅ done |
 | 35 | F35 | [Security audit fixes](#f35-security-audit-fixes) | ✔ | ✔ | ✅ |
 | 36 | F36 | [Second security audit](#f36-second-security-audit) | ✔ | ✔ | ✅ |
+| 37 | F37 | [Public bot descriptions](#f37-public-bot-descriptions) | ✔ | ✔ | 🔨 (#171) |
 
 The numbers are those of the original proposal; F11 and F12 were requested after the staging tests of F1. F15–F22 (and F8, F10 moved up from "later") are the second round, approved on 2026-11-03. Not wanted for now: a vacation mode for Rundenspiele, a tutorial, tournaments (too few players yet). F23–F27 are the third round, approved on 2026-11-10; F28 was asked for the same day. Parked as GitHub issues for later: daily challenge (#120), bot arena (#121), Discord integration (#122), mirror match (#161, was F33). The order puts the small fixes for live games first. F6 and F7 come before F5 because they record per-turn data that F5 can reuse.
 
@@ -787,3 +788,13 @@ F29–F33 come from player feedback on Discord (Nic, 2026-11-15/16), consolidate
 **Tests:** `tests/security/regression.test.js` (docker, `TURN_TIMER_SCALE=0.05`): all 8 checks failed before, pass now. `tests/bots/bots.test.js`: a bot never meets its owner in matchmaking.
 
 **Status:** ✅
+
+## F37 Public bot descriptions
+
+**Goal:** Bot owners can tell players what their bot does on its public profile.
+
+**Built:** Owners and admins can set, edit or clear up to 280 characters of plain text in *Meine Bots*. The public bot profile shows the saved text below the owner. See [#171](https://github.com/peterswoDE/Hochciv-Multiplayer/issues/171).
+
+**Tests:** `tests/bots/description.test.js` (local Docker and browser) covers permissions, validation, editing and public rendering.
+
+**Status:** 🔨
