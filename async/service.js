@@ -560,7 +560,7 @@ async function list(user) {
         open: open.map(summarize).filter(s => s.freeSeats.length && !(s.config && s.config.arena)),
         watch: watch.map(summarize).filter(s => !s.freeSeats.length),
     };
-    if (Bots.isBot(u || user)) res.arena = arena.isOptedIn(user.id);
+    if (Bots.isBot(u || user)) Object.assign(res, arena.status(user.id));
     return res;
 }
 

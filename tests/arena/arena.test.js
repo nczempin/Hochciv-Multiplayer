@@ -17,6 +17,8 @@ const crypto = require('crypto');
 const fs = require('fs');
 const http = require('http');
 const zlib = require('zlib');
+const adapter = require('../../engine-adapter');
+const officialVersion = adapter.version();
 
 const BASE = (process.argv[2] || 'http://localhost:3000').replace(/\/$/, '');
 const CONTAINER = process.env.HOCHCIV_CONTAINER || 'hochciv-multiplayer-local';
@@ -83,7 +85,7 @@ function unit() {
         const arena = require('../../async/arena');
         const L = require('../../async/logic');
 
-        ok(arena.ARENA_ENGINE === 'v106', 'unit: ARENA_ENGINE is pinned to v106', arena.ARENA_ENGINE);
+        ok(arena.ARENA_ENGINE === officialVersion, 'unit: official arena uses the deployed engine', arena.ARENA_ENGINE);
         const cfg = arena.ARENA_CONFIG;
         ok(cfg.mapKey === '0' && cfg.civMode === 'random' && cfg.playerCount === 2 && cfg.difficulty === 'schwer'
             && cfg.events === false && cfg.wonders === false && cfg.hexTiles === false && cfg.ranked === false
@@ -105,8 +107,8 @@ function unit() {
         const h1 = { id: 'h1', username: 'Human1', isBot: false };
 
         const duel = L.create(b1, { arena: true, engine: arena.ARENA_ENGINE, config: { ...cfg, kiCount: 0 } });
-        ok(!duel.error && duel.g.status === 'setup' && duel.g.engine === 'v106' && duel.g.config.arena === true,
-            'unit: 2-bot arena duel starts in setup on v106');
+        ok(!duel.error && duel.g.status === 'setup' && duel.g.engine === officialVersion && duel.g.config.arena === true,
+            'unit: 2-bot arena duel starts in setup on the current engine');
         ok(L.leave(duel.g, 'b1') === 'Spiele der Bot-Arena kann man nur aufgeben.'
             && L.cancel(duel.g, 'b1') === 'Spiele der Bot-Arena kann man nur aufgeben.',
         'unit: leave and cancel are refused on arena games');
@@ -142,21 +144,14 @@ function unit() {
 function playTurnPayload(E, S, pi) {
     const actions = [];
     const sim = JSON.parse(JSON.stringify(S));
-    if (typeof E.blockingIssues === 'function' && E.blockingIssues(sim, pi).length
-        && typeof E.armyReach === 'function' && typeof E.cityAt === 'function') {
-        for (const a of sim.armies.filter(x => x.owner === pi && E.cityAt(sim, x.r, x.c))) {
-            const fields = [...E.armyReach(sim, a).keys()].map(k => k.split(',').map(Number))
-                .filter(([r, c]) => !(r === a.r && c === a.c) && !E.cityAt(sim, r, c)
-                    && (typeof E.canStop !== 'function' || E.canStop(sim, pi, r, c)))
-                .sort((u, v) => Number(sim.armies.some(o => o.r === u[0] && o.c === u[1]))
-                    - Number(sim.armies.some(o => o.r === v[0] && o.c === v[1])));
-            for (const [r, c] of fields) {
-                if (!E.moveArmy(sim, a, r, c)) {
-                    actions.push({ type: 'moveArmy', params: { armyId: a.id, r, c } });
-                    break;
-                }
-            }
-        }
+    while (E.blockingIssues(sim, pi).length) {
+        // Leaving a city can spawn the next free army there. Recheck the updated state.
+        const army = sim.armies.find(a => a.owner === pi && E.cityAt(sim, a.r, a.c) && E.armyReach(sim, a).size);
+        if (!army) throw new Error('engine reported a blocking army without a reachable destination');
+        const [r, c] = E.armyReach(sim, army).keys().next().value.split(',').map(Number);
+        const error = E.moveArmy(sim, army, r, c);
+        if (error) throw new Error(error);
+        actions.push({ type: 'moveArmy', params: { armyId: army.id, r, c } });
     }
     if (!E.buyPower(sim, pi, 1)) {
         actions.push({ type: 'buyPower', params: { n: 1 } });
@@ -204,7 +199,7 @@ function playTurnPayload(E, S, pi) {
             return page;
         };
         const emit = (page, ev, data) => page.evaluate(([ev, data]) => new Promise(r => MP.socket.emit(ev, data, r)), [ev, data || {}]);
-        const ENG = require('../../engine-adapter').forVersion('v106').getEngine();
+        const ENG = adapter.getEngine();
 
         const C = await loginUser(creator);
         const A = await loginUser(admin);
@@ -237,6 +232,8 @@ function playTurnPayload(E, S, pi) {
         ok((await call(b1Ctx, 'GET', '/api/async')).body.arena === false, 'bot initially not opted into arena');
         const tOn = await call(b1Ctx, 'POST', '/api/async/arena', { on: true });
         ok(tOn.status === 200 && tOn.body.ok === true && tOn.body.arena === true
+            && tOn.body.arenaVersion === officialVersion && tOn.body.arenaOfficialVersion === officialVersion
+            && tOn.body.arenaVersions.includes('v106')
             && (await call(b1Ctx, 'GET', '/api/async')).body.arena === true,
         'POST /api/async/arena { on: true } opts bot in');
         const tOff = await call(b1Ctx, 'POST', '/api/async/arena', { on: false });
@@ -246,6 +243,11 @@ function playTurnPayload(E, S, pi) {
         ok((await call(b1Ctx, 'GET', '/api/async?arena=1')).body.arena === true
             && (await call(b1Ctx, 'GET', '/api/async?arena=0')).body.arena === false,
         'GET /api/async?arena=1 / ?arena=0 toggles opt-in');
+        const unsupportedGet = await call(b1Ctx, 'GET', '/api/async?arena=1&arenaVersion=v99999');
+        const unsupportedPost = await call(b1Ctx, 'POST', '/api/async/arena', { version: 'v99999' });
+        ok(unsupportedGet.status === 400 && unsupportedPost.status === 400
+            && (await call(b1Ctx, 'GET', '/api/async')).body.arena === false,
+        'unknown editions cannot add a bot to the official pool');
 
         // ── 2-bot duel, max-1 concurrency cap, spectator, English UI, data + replay ──
         hbTimer = setInterval(() => {
@@ -261,12 +263,12 @@ function playTurnPayload(E, S, pi) {
             return m1.find(g => g.config && g.config.arena && g.status === 'playing' && m2.some(x => x.id === g.id)) || null;
         }, 8000, 150);
 
-        ok(!!duelGame && duelGame.engine === 'v106' && duelGame.config.mapKey === '0'
+        ok(!!duelGame && duelGame.engine === officialVersion && duelGame.config.mapKey === '0'
             && duelGame.config.civMode === 'random' && duelGame.config.ranked === false
             && duelGame.config.isPublic === true && duelGame.config.events === false
             && duelGame.config.wonders === false && duelGame.config.hexTiles === false
             && duelGame.config.turnDays === 1 && duelGame.freeSeats.length === 0,
-        'two opted-in bots automatically paired into public unranked v106 duel', duelGame && duelGame.id);
+        `two opted-in bots automatically paired into public unranked ${officialVersion} duel`, duelGame && duelGame.id);
 
         // Keep heartbeating over ~3 ticks while active: concurrency cap keeps count at 1
         await sleep(1000);
@@ -357,10 +359,10 @@ function playTurnPayload(E, S, pi) {
 
         const duelGameId = finishedDuel.record.id;
         const gDoc = (await call(H, 'GET', `/api/games/${duelGameId}`)).body;
-        ok(gDoc.version === 'v106' && gDoc.rounds >= 3 && gDoc.replay === true
+        ok(gDoc.version === officialVersion && gDoc.rounds >= 3 && gDoc.replay === true
             && gDoc.stats && Array.isArray(gDoc.stats.rounds) && gDoc.stats.rounds.length >= 3
             && gDoc.players.every(p => p.mmrShift == null),
-        'finished duel records Game (v106, >=3 rounds, stats) without MMR shift', JSON.stringify({ v: gDoc.version, rounds: gDoc.rounds, statRounds: gDoc.stats && gDoc.stats.rounds && gDoc.stats.rounds.length }));
+        `finished duel records Game (${officialVersion}, >=3 rounds, stats) without MMR shift`, JSON.stringify({ v: gDoc.version, rounds: gDoc.rounds, statRounds: gDoc.stats && gDoc.stats.rounds && gDoc.stats.rounds.length }));
 
         const mmrCheck = sql(`SELECT string_agg(mmr::text || ':' || "gamesPlayed"::text, ',') FROM users WHERE id IN ('${bots[0].id}','${bots[1].id}')`);
         ok(mmrCheck === '1000:1,1000:1', 'both bots stay at 1000 MMR while gamesPlayed increments', mmrCheck);
@@ -369,7 +371,7 @@ function playTurnPayload(E, S, pi) {
         const repJson = rep.status === 200 && rep.headers['content-encoding'] === 'br'
             ? JSON.parse(zlib.brotliDecompressSync(rep.body).toString('utf8'))
             : null;
-        ok(!!repJson && repJson.version === 'v106' && repJson.frames.length >= 5 && !!repJson.frames[repJson.frames.length - 1].over,
+        ok(!!repJson && repJson.version === officialVersion && repJson.frames.length >= 5 && !!repJson.frames[repJson.frames.length - 1].over,
             'Brotli replay stored and served with all duel turns', repJson && `${repJson.frames.length} frames, ${repJson.version}`);
 
         const duelFacts = await until(async () => {
@@ -378,7 +380,7 @@ function playTurnPayload(E, S, pi) {
         }, 10000, 150);
         const botStats = (await call(H, 'GET', '/api/stats?seats=bots')).body;
         const pStats = (await call(H, 'GET', `/api/stats/player/${bots[0].id}`)).body;
-        ok(!!duelFacts && duelFacts.facts.src === 'replay' && duelFacts.facts.ver === 'v106'
+        ok(!!duelFacts && duelFacts.facts.src === 'replay' && duelFacts.facts.ver === officialVersion
             && botStats.games >= 1 && pStats.games >= 1,
         'Facts stored and reflected in GET /api/stats?seats=bots & player stats', JSON.stringify({ src: duelFacts && duelFacts.facts.src, botsGames: botStats.games, playerGames: pStats.games }));
 
@@ -451,9 +453,29 @@ function playTurnPayload(E, S, pi) {
             return Array.isArray(rows) ? rows.find(x => x.id === soloGameId && x.facts) || null : null;
         }, 10000, 150);
         const b3Mmr = sql(`SELECT mmr FROM users WHERE id = '${bots[2].id}'`);
-        ok(soloDoc.version === 'v106' && soloDoc.replay === true && !!soloFacts && soloFacts.facts.src === 'replay'
+        ok(soloDoc.version === officialVersion && soloDoc.replay === true && !!soloFacts && soloFacts.facts.src === 'replay'
             && soloDoc.players.every(p => p.mmrShift == null) && b3Mmr === '1000',
-        'naturally finished KI match records v106 Game/Replay/Facts with 1000 MMR unchanged', JSON.stringify({ src: soloFacts && soloFacts.facts.src, mmr: b3Mmr }));
+        `naturally finished KI match records ${officialVersion} Game/Replay/Facts with 1000 MMR unchanged`, JSON.stringify({ src: soloFacts && soloFacts.facts.src, mmr: b3Mmr }));
+
+        // Wait in two editions at the same time. Each bot must get its own version's KI fallback.
+        const [latest, historical] = await Promise.all([
+            call(b1Ctx, 'POST', '/api/async/arena', { on: true }),
+            call(b3Ctx, 'POST', '/api/async/arena', { on: true, version: 'v106' }),
+        ]);
+        const refreshed = await call(b3Ctx, 'GET', '/api/async?arena=1&arenaVersion=v106');
+        ok(latest.body.arenaVersion === officialVersion && historical.body.arenaVersion === 'v106'
+            && refreshed.body.arenaVersion === 'v106' && refreshed.body.arenaOfficialVersion === officialVersion,
+        'explicit v106 selection works via POST and heartbeat');
+        const editionGames = await until(async () => {
+            const lists = await Promise.all([b1Ctx, b3Ctx].map(ctx => call(ctx, 'GET', '/api/async')));
+            const games = lists.map(list => (list.body.mine || []).find(g => g.config.arena && g.status === 'playing'));
+            return games.every(Boolean) ? games : null;
+        }, 8000);
+        await Promise.all([b1Ctx, b3Ctx].map(ctx => call(ctx, 'GET', '/api/async?arena=0')));
+        ok(editionGames && editionGames[0].id !== editionGames[1].id
+            && editionGames[0].engine === officialVersion && editionGames[1].engine === 'v106'
+            && editionGames.every(g => g.seats.some(s => s.kind === 'ki')),
+        'idle bots in different editions receive separate games with their selected engine');
 
         // ── Heartbeat TTL expiration ────────────────────────────────────────────
         await call(b1Ctx, 'POST', '/api/async/arena', { on: true });

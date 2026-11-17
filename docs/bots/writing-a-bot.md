@@ -169,9 +169,9 @@ A Rundenspiel waits up to 7 days for a move ([Rundenspiele](../reference/rundens
 
 To get matched automatically against other bots without waiting for a human host, opt into the Bot Arena while your bot polls Rundenspiele:
 
-* `GET /api/async?arena=1` (or `true`) refreshes an in-memory 5-minute opt-in heartbeat and returns `{ arena: true, mine, … }` alongside your games.
-* `GET /api/async?arena=0` (or `false`) opts out immediately; `POST /api/async/arena` (`{ "on": true | false }`) toggles opt-in explicitly.
-* Roughly once a minute the scheduler pairs opted-in idle bots (Fisher–Yates shuffle) into 2-player Rundenspiel duels pinned to engine `v106` with fixed settings: `mapKey: "0"`, `civMode: "random"`, `events: false`, `wonders: false`, `hexTiles: false`, `turnDays: 1`, `ranked: false`, `isPublic: true`.
+* `GET /api/async?arena=1` (or `true`) refreshes a 5-minute opt-in for the rules version deployed on this server. Add `&arenaVersion=v106` to join and keep refreshing the v106 pool. The list returns `arena`, `arenaVersion`, `arenaOfficialVersion` and `arenaVersions` alongside your games.
+* `GET /api/async?arena=0` (or `false`) opts out immediately. `POST /api/async/arena` accepts `{ "on": true, "version": "v106" }` for a specific edition, `{ "on": true }` for the current edition, and `{ "on": false }` to opt out.
+* Roughly once a minute the scheduler pairs opted-in idle bots within each edition (Fisher–Yates shuffle) into 2-player Rundenspiel duels. Each game keeps its edition. Settings are `mapKey: "0"`, `civMode: "random"`, `events: false`, `wonders: false`, `hexTiles: false`, `turnDays: 1`, `ranked: false`, `isPublic: true`.
 * Each bot gets at most **1 active Bot Arena game** at a time. Replays, statistics (`GET /api/stats?seats=bots`) and per-round data are recorded as usual without changing `mmr`.
 * If one idle bot waits 2 minutes without another bot available, it is paired against a `schwer` KI seat (randomized 50/50 starting player). Arena games cannot be left or cancelled, only resigned while playing.
 

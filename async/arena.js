@@ -7,12 +7,9 @@ const engine = require('../engine-adapter');
 const Bots = require('../utils/bots');
 const serverState = require('../utils/serverState');
 
-// Pin MVP arena matches to v106 while supported so bots can rely on stable rules;
-// fall back to the server's current engine only if v106 is removed later.
-const TARGET_ENGINE = 'v106';
-const ARENA_ENGINE = (engine.version() === TARGET_ENGINE || (engine.OLD_VERSIONS || []).includes(TARGET_ENGINE))
-    ? TARGET_ENGINE
-    : engine.version();
+const ARENA_ENGINE = engine.version();
+// v106 is the first arena edition. Later retired editions stay available while their engines ship.
+const ARENA_VERSIONS = Object.freeze([ARENA_ENGINE, ...engine.OLD_VERSIONS.filter(v => Number(v.slice(1)) >= 106)]);
 
 const ARENA_CONFIG = Object.freeze({
     mapKey: '0',
@@ -38,7 +35,7 @@ const ttlMs = () => intEnv('ARENA_TTL_MS', 5 * 60 * 1000, 1);
 const kiWaitMs = () => intEnv('ARENA_KI_WAIT_MS', 2 * 60 * 1000, 0);
 const maxActive = () => intEnv('ARENA_MAX_ACTIVE', 1, 1);
 
-// userId -> { joinedAt, lastSeen, idleSince }
+// userId -> { version, lastSeen, idleSince }
 const pool = new Map();
 let timer = null;
 let ticking = false;
@@ -50,14 +47,14 @@ function prune(now = Date.now()) {
     }
 }
 
-function optIn(userId, now = Date.now()) {
-    if (!userId) return false;
+function optIn(userId, now = Date.now(), version = ARENA_ENGINE) {
+    if (!userId || !ARENA_VERSIONS.includes(version)) return false;
     const ttl = ttlMs();
     const cur = pool.get(userId);
-    if (cur && now - cur.lastSeen <= ttl) {
+    if (cur && cur.version === version && now - cur.lastSeen <= ttl) {
         cur.lastSeen = now;
     } else {
-        pool.set(userId, { joinedAt: now, lastSeen: now, idleSince: now });
+        pool.set(userId, { version, lastSeen: now, idleSince: now });
     }
     return true;
 }
@@ -81,6 +78,16 @@ function isOptedIn(userId, now = Date.now()) {
 function poolSize(now = Date.now()) {
     prune(now);
     return pool.size;
+}
+
+function status(userId, now = Date.now()) {
+    const optedIn = isOptedIn(userId, now);
+    return {
+        arena: optedIn,
+        arenaVersion: optedIn ? pool.get(userId).version : null,
+        arenaOfficialVersion: ARENA_ENGINE,
+        arenaVersions: ARENA_VERSIONS,
+    };
 }
 
 async function runTick(now) {
@@ -132,7 +139,7 @@ async function runTick(now) {
     }
 
     const cap = maxActive();
-    const ready = [];
+    const readyByVersion = new Map();
     for (const bot of usable) {
         const entry = pool.get(bot.id);
         if (!entry) continue;
@@ -143,10 +150,18 @@ async function runTick(now) {
             continue;
         }
         if (entry.idleSince == null) entry.idleSince = now;
-        ready.push({ user: bot, entry });
+        if (!readyByVersion.has(entry.version)) readyByVersion.set(entry.version, []);
+        readyByVersion.get(entry.version).push({ user: bot, entry });
     }
-    if (!ready.length) return { matches: 0 };
 
+    let matches = 0;
+    for (const [version, ready] of readyByVersion) {
+        matches += await schedule(ready, version, service, now);
+    }
+    return { matches };
+}
+
+async function schedule(ready, version, service, now) {
     for (let i = ready.length - 1; i > 0; i--) {
         const j = crypto.randomInt(i + 1);
         [ready[i], ready[j]] = [ready[j], ready[i]];
@@ -157,10 +172,11 @@ async function runTick(now) {
     for (; i + 1 < ready.length; i += 2) {
         const a = ready[i];
         const b = ready[i + 1];
+        if (pool.get(a.user.id) !== a.entry || pool.get(b.user.id) !== b.entry) continue;
         const created = await service.create(
             a.user,
             { config: { ...ARENA_CONFIG, kiCount: 0 } },
-            { arena: true, engine: ARENA_ENGINE }
+            { arena: true, engine: version }
         );
         if (!created || created.error || !created.id) {
             console.warn('[arena] failed to create duel:', created && created.error);
@@ -178,11 +194,11 @@ async function runTick(now) {
 
     if (i < ready.length) {
         const solo = ready[i];
-        if (now - solo.entry.idleSince >= kiWaitMs()) {
+        if (pool.get(solo.user.id) === solo.entry && now - solo.entry.idleSince >= kiWaitMs()) {
             const created = await service.create(
                 solo.user,
                 { config: { ...ARENA_CONFIG, kiCount: 1 } },
-                { arena: true, engine: ARENA_ENGINE }
+                { arena: true, engine: version }
             );
             if (created && !created.error && created.id) {
                 solo.entry.idleSince = null;
@@ -193,7 +209,7 @@ async function runTick(now) {
         }
     }
 
-    return { matches };
+    return matches;
 }
 
 async function tick(now = Date.now()) {
@@ -230,6 +246,7 @@ module.exports = {
     optIn,
     optOut,
     isOptedIn,
+    status,
     poolSize,
     tick,
     start,

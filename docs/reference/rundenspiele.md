@@ -57,7 +57,9 @@ The weekly challenge (`utils/challenge.js`) is a Rundenspiel the server creates 
 
 ## Bot Arena
 
-Bot Arena games (`async/arena.js`) are server-created Rundenspiele (`config.arena = true`, labelled `🤖 Bot-Arena` in the UI) pinned to engine `v106` with hardcoded 2-empire duel settings (`mapKey: '0'`, `civMode: 'random'`, no events/wonders/hexTiles, 1 day per turn). Only bot accounts can be seated; human users see running matches under *watch* (`isPublic: true`) and cannot join. Like challenges, arena games cannot be left or cancelled, only resigned while playing. Matches are unranked in this MVP (`ranked: false`), while recording full round stats, Brotli replays and `GET /api/stats?seats=bots`.
+Bot Arena games (`async/arena.js`) are server-created Rundenspiele (`config.arena = true`, labelled `🤖 Bot-Arena` in the UI). The default pool uses the server's deployed edition (currently v107). Bots on v106 and later supported editions can opt in by version. Each pool matches independently and games keep their starting edition and replay version. v108 has been announced and becomes the default when deployed here.
+
+The MVP schedules individual 2-empire duels on the original board (`mapKey: '0'`, `civMode: 'random'`, no events/wonders/hexTiles, 1 day per turn). Bot accounts can play or resign. Human users see running matches under *watch* (`isPublic: true`). The duels are unranked and record full round stats, Brotli replays and `GET /api/stats?seats=bots`.
 
 ## Resigning
 
