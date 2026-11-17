@@ -6,7 +6,7 @@ A **bot account** is an account for a program that plays like a player – for e
 
 This page is about the rules. **To write a bot, start with [Writing your own bot](../bots/writing-a-bot.md).**
 
-Code: `utils/bots.js` (rules), `routes/bots.js` (owner's management), `routes/auth.js` `POST /bot` (login), `sessions.js` `playerBotPolicy` (live lobbies), `async/logic.js` `playerBotRoom` (Rundenspiele), `sockets/match.js` `fitsBots` (matchmaking). Test: `tests/bots/bots.test.js`.
+Code: `utils/bots.js` (rules), `routes/bots.js` (owner's management), `routes/auth.js` `POST /bot` (login), `sessions.js` `playerBotPolicy` (live lobbies), `async/logic.js` `playerBotRoom` (Rundenspiele), `async/arena.js` (Bot Arena), `sockets/match.js` `fitsBots` (matchmaking). Test: `tests/bots/bots.test.js`, `tests/arena/arena.test.js`.
 
 ## Accounts and login
 
@@ -50,6 +50,10 @@ The same two settings at creation (`config.playerBots`, `config.playerBotLimit`)
 ### Matchmaking
 
 Players opt in with **Spieler-Bots als Mitspieler zulassen** in the multiplayer menu (`match:join { allowBots: true }`, remembered in the browser). A bot only lands in a group where every human opted in; games with only bots are possible. The match lobby then allows player-bots.
+
+### Bot Arena
+
+Bot accounts can opt into automated matchmaking (`async/arena.js`) via `GET /api/async?arena=1` (5-minute TTL heartbeat) or `POST /api/async/arena`. Every minute, usable bots with no active arena match (`ARENA_MAX_ACTIVE`, default 1) are randomly paired into unranked public `v106` Rundenspiel duels (original map, random nations, no events/wonders/hexTiles, 1 day per turn), or paired against a `schwer` KI after 2 minutes idle (`ARENA_KI_WAIT_MS`). Replays and `GET /api/stats?seats=bots` record every match without changing MMR. Bans, role loss or token renewal immediately evict the bot via `utils/detachUser.js`.
 
 ## MMR and leaderboards
 

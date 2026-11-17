@@ -10,6 +10,7 @@
 const sessions = require('../sessions');
 
 async function detachUser(io, userId) {
+    require('../async/arena').optOut(userId);
     for (const s of sessions.getAllSessions().values()) {
         for (const p of s.players) if (p.dbUserId === userId) Object.assign(p, { dbUserId: null, dbUsername: null });
     }

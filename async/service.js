@@ -17,6 +17,8 @@ const { finalPoints } = require('../utils/score');
 const chatLib = require('../utils/chat');
 const reports = require('../utils/reports');
 const terms = require('../utils/terms');
+const Bots = require('../utils/bots');
+const arena = require('./arena');
 
 const ENDED = ['finished', 'cancelled'];
 const Stats = require('../utils/stats');
@@ -329,11 +331,16 @@ function generateJoinCode() {
     return code;
 }
 
-/** `internal`: set by the server only (the weekly challenge, utils/challenge.js), never by a request. */
+/** `internal`: set by the server only (the weekly challenge, utils/challenge.js, or arena), never by a request. */
 async function create(user, body, internal) {
     const active = await AsyncGame.count({ where: { status: ACTIVE, participantIds: { [Op.contains]: [user.id] } } });
     if (active >= MAX_ACTIVE_PER_USER) return { error: `Höchstens ${MAX_ACTIVE_PER_USER} laufende Rundenspiele.` };
-    const opts = Object.assign({}, body || {}, { challenge: internal && internal.challenge || undefined, seed: internal && internal.seed || undefined });
+    const opts = Object.assign({}, body || {}, {
+        challenge: (internal && internal.challenge) || undefined,
+        seed: (internal && internal.seed) || undefined,
+        arena: !!(internal && internal.arena),
+        engine: (internal && internal.engine) || undefined,
+    });
     const { g, error } = L.create(userOf(user), opts);
     if (error) return { error };
     g.joinCode = generateJoinCode();
@@ -342,6 +349,9 @@ async function create(user, body, internal) {
     const row = await AsyncGame.create(Object.assign({ joinCode: g.joinCode, hostUserId: user.id }, rowFields(g)));
     g.id = row.id;
     cache.set(g.id, { g, queue: Promise.resolve(), touched: Date.now(), busy: 0 });
+    if (internal && internal.arena && g.status === 'playing') {
+        await withGame(g.id, () => ({ ok: true }));
+    }
     const inviteErr = [];
     for (const name of (body.invite || []).slice(0, 3)) {
         const r = await invite(user, g.id, name);
@@ -541,15 +551,17 @@ async function list(user) {
         attributes: attrs, order: [['updatedAt', 'DESC']], limit: 20,
     });
     const u = await User.findByPk(user.id);
-    return {
+    const res = {
         notifyEmail: u ? u.notifyEmail : true,
         notifyPush: u ? u.notifyPush : true,
         timeoutDays: TIMEOUT_MS / DAY,
         mine: mine.map(summarize),
         invites: invites.map(summarize).filter(s => s.freeSeats.length && s.mySlot == null),
-        open: open.map(summarize).filter(s => s.freeSeats.length),
+        open: open.map(summarize).filter(s => s.freeSeats.length && !(s.config && s.config.arena)),
         watch: watch.map(summarize).filter(s => !s.freeSeats.length),
     };
+    if (Bots.isBot(u || user)) Object.assign(res, arena.status(user.id));
+    return res;
 }
 
 /**
@@ -731,6 +743,7 @@ function init(ioServer) {
     const t = setInterval(sweep, SWEEP_MS);
     t.unref();
     setTimeout(() => { resume().then(sweep); }, 15000).unref();
+    arena.start();
 }
 
 async function setNotifyEmail(user, on) {
@@ -774,5 +787,6 @@ function evict(id) {
 module.exports = {
     init, evict, create, fromLive, info, join, leave, cancel, invite, decline, list, open, action, place, draftPick, chat, report, resign,
     setNotifyEmail, sweep, room, removeUser, purgeEndedChats,
+    ACTIVE, MAX_ACTIVE_PER_USER,
     processResult,      // for tests/score
 };
