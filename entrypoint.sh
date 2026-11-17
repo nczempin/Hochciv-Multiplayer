@@ -10,5 +10,10 @@ echo "======================================"
 # restart. No download, no git.
 node scripts/build-public.js
 
+# Database migrations, as the owner role (MIGRATION_DATABASE_URL). The server itself only gets the
+# app role, which can read and write rows but not change the schema – and never sees the owner's
+# password (docs/reference/database.md).
+node scripts/migrate.js
+
 echo "Starting Node.js server..."
-exec node server.js
+exec env -u MIGRATION_DATABASE_URL node server.js
