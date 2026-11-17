@@ -116,7 +116,7 @@ services:
 
 networks:
   nginx:
-    # The Docker network of the reverse proxy (PROXY_NETWORK in .env, default "nginx").
+    # The Docker network of the reverse proxy (PROXY_NETWORK in .env, default "proxy").
     external: true
     name: ${PROXY_NETWORK:-proxy}
   internal:
