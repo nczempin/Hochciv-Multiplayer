@@ -137,7 +137,9 @@ async function info(user, weekId) {
     return {
         week: { id: week, current: week === now.id, startsAt: bounds.startsAt, endsAt: bounds.endsAt, previous: weeks[i + 1] || null, next: weeks[i - 1] || null },
         weeks,
-        setup: setupOf(week),
+        // without the seed: it is the game's fixed dice – whoever knows it can compute the week's
+        // techs and events in advance (audit SA-17); the client doesn't need it
+        setup: (({ seed, ...pub }) => (void seed, pub))(setupOf(week)),
         list: rows.slice(0, BOARD_SIZE).map((r, i) => publicRow(r, i + 1)),
         finished: rows.length, playing,
         me,
