@@ -21,7 +21,7 @@ Settings that change at runtime (maintenance mode, registration switch, OAuth pr
 | `HOCHCIV_MEM_LIMIT` | no | Memory limit of the server container (default `2g`). |
 | `FCM_SERVICE_ACCOUNT` | for push | Firebase service account key, base64-encoded on one line. Without it, push is off. See [Push notifications](push-notifications.md). |
 | `ALLOWED_ORIGINS` | no | Further web origins (comma-separated, e.g. `https://second.example`) whose pages may use a visitor's login. By default only this site (the request's host or `BASE_URL`) and the Discord Activity may connect a socket or send changing API requests – see [Security](../reference/security.md). |
-| `PROXY_NETWORK` | no | Docker network of the reverse proxy (default `nginx`). |
+| `PROXY_NETWORK` | no | Docker network of the reverse proxy (default `proxy`); production and staging must use the same one. |
 | `HOCHCIV_IMAGE_TAG` | no | Image version to run (default `latest`), e.g. a release tag like `v1.4.2`. |
 | `WATCHTOWER_POLL_INTERVAL` | production, staging | How often Watchtower looks for a new image (`latest` or `staging`), in seconds (default 300). |
 | `POSTGRES_DATA` | production | Where the database keeps its data: the Docker volume `pgdata` (default) or a folder such as `./postgres`. |

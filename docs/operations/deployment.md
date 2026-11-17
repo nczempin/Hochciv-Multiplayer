@@ -9,15 +9,15 @@ The production setup uses the pre-built image `peterswode/hochciv-multiplayer` b
 1. Install Docker with Docker Compose.
 2. Create the external network the proxy and the server share:
    ```bash
-   docker network create nginx
+   docker network create proxy
    ```
-   If your proxy is already in a network with another name (e.g. `proxy`), skip this and set `PROXY_NETWORK=proxy` in `.env`.
+   If your proxy is already in a network with another name (e.g. `nginx`), skip this and set `PROXY_NETWORK=nginx` in `.env`.
 3. Put `docker-compose.yml` into a folder, copy `.env.template` next to it as `.env` and fill it in (see [Configuration](configuration.md)). At least `SESSION_SECRET`, `BASE_URL` and the three database passwords (`POSTGRES_PASSWORD`, `POSTGRES_OWNER_PASSWORD`, `POSTGRES_APP_PASSWORD`) must be set.
 4. Start:
    ```bash
    docker compose up -d
    ```
-   The server listens on port `3000` inside the `nginx` network. Point your proxy at `hochciv-multiplayer:3000` for the whole site (`/`, `/api/`, `/client/`, `/socket.io/` with WebSocket upgrade). `nginx-example.conf` shows the required locations and headers; it proxies to `127.0.0.1:3000`, so when Nginx runs as a container in the `nginx` network, replace that with `hochciv-multiplayer:3000` (the compose file publishes no host port).
+   The server listens on port `3000` inside the `proxy` network. Point your proxy at `hochciv-multiplayer:3000` for the whole site (`/`, `/api/`, `/client/`, `/socket.io/` with WebSocket upgrade). `nginx-example.conf` shows the required locations and headers; it proxies to `127.0.0.1:3000`, so when Nginx runs as a container in the `proxy` network, replace that with `hochciv-multiplayer:3000` (the compose file publishes no host port).
 5. Register your account in the game, then make it superadmin (needed for the OAuth settings):
    ```bash
    docker exec hochciv-multiplayer node elevate.js <your-username> superadmin
@@ -72,7 +72,7 @@ Back: the previous `docker-compose.yml` and `docker compose up -d` – the super
 
 ### Older installations
 
-An installation from before the Watchtower (or with the database in a folder) can switch to the current `docker-compose.yml` without losing data: keep its `.env` and add `POSTGRES_DATA=./postgres` (the folder it used) and `PROXY_NETWORK=proxy` (if the proxy network has that name). `CORE_REPO_URL`, `CORE_REPO_BRANCH` and `CORE_REPO_COMMIT` are no longer used – the game ships in the image. Then `docker compose up -d`.
+An installation from before the Watchtower (or with the database in a folder) can switch to the current `docker-compose.yml` without losing data: keep its `.env` and add `POSTGRES_DATA=./postgres` (the folder it used) and, if its proxy network has another name than `proxy`, `PROXY_NETWORK`. `CORE_REPO_URL`, `CORE_REPO_BRANCH` and `CORE_REPO_COMMIT` are no longer used – the game ships in the image. Then `docker compose up -d`.
 
 ## Health check
 

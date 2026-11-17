@@ -23,7 +23,7 @@ Details: [Features](docs/overview/features.md) · roadmap: [TASKS.md](TASKS.md)
 **Production** (pre-built image behind a reverse proxy):
 
 ```bash
-docker network create nginx
+docker network create proxy
 cp .env.template .env          # set at least SESSION_SECRET and BASE_URL
 docker compose up -d
 docker exec hochciv-multiplayer node elevate.js <your-username> superadmin
