@@ -57,7 +57,7 @@ Live games are kept in memory: recreating the container ends running live games 
 
 Until 2026-11 the server used the database superuser and changed the schema itself. To switch an existing installation (staging the same way, with `-f docker-compose.staging.yml` and the `staging` names):
 
-1. Back up the database: `docker exec hochciv-db pg_dump -U hochciv hochciv > backup-$(date +%F).sql`
+1. Back up the database: `docker exec hochciv-db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > backup-$(date +%F).sql` (the superuser's name is `POSTGRES_USER` from `.env`)
 2. Add two new, different passwords to `.env` – letters and digits only, e.g. from `openssl rand -hex 24`:
    ```
    POSTGRES_OWNER_PASSWORD=…

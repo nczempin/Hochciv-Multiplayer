@@ -109,4 +109,4 @@ Migrations only go forward; there is no down. An older image started on a newer 
 ## Maintenance
 
 * `node scripts/dedupe-constraints.js [--fix]` removes duplicate UNIQUE constraints that older `sync({ alter: true })` runs created (in the container it uses the owner role).
-* Backups: back up the PostgreSQL volume (e.g. `docker exec hochciv-db pg_dump -U hochciv hochciv > backup.sql`). A dump restored into a new database belongs to the superuser; the next `docker compose up` hands it to `hochciv_owner` again.
+* Backups: back up the PostgreSQL volume (e.g. `docker exec hochciv-db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > backup.sql`). A dump restored into a new database belongs to the superuser; the next `docker compose up` hands it to `hochciv_owner` again.
