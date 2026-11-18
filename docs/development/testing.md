@@ -56,6 +56,7 @@ Tests create their own test accounts and delete them afterwards.
 | `placement/world.test.js` | the "Welt" button while start tiles are placed in a live game | default |
 | `placement/hex.test.js` | the experimental tile mode in lobbies and Rundenspiele (since v107: 14 triangles with four empires) | default |
 | `rematch/rematch.test.js` | rematch of a live game | default |
+| `report/report.test.js` | in-game player list: turn order and positions; the player report (score, rank, victory progress, empire, abilities, read-only tech tree, trend via `game:trend` without income), English | default |
 | `replay/replay.test.js` | replays | default |
 | `reports/reports.test.js` | chat reports and their admin section | default |
 | `scenes/scenes.test.js` | what the others did, played on the map: recording, live game, Rundenspiel | default |

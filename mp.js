@@ -355,7 +355,13 @@ const MP = {
         box.style.display = '';
         const title = $('mp-players-title');
         if (title) title.textContent = TX('Spieler') + (this.spectatorCount ? ` · 👁 ${this.spectatorCount}` : '');
-        list.innerHTML = S.players.map((sp, i) => {
+        // turn order (engine advanceTurn): state order, starting at the start player; out empires are skipped
+        const n = S.players.length, first = S.startIdx || 0;
+        const order = S.players.map((_, k) => (first + k) % n);
+        const pos = {};
+        order.filter(i => !S.players[i].dead).forEach((i, k) => { pos[i] = k + 1; });
+        list.innerHTML = order.map(i => {
+            const sp = S.players[i];
             const lp = this.lobbyPlayerOf(sp) || {};
             const civ = typeof civOf === 'function' ? civOf(sp) : { n: sp.civ, color: '#999' };
             const bot = lp.isBot || sp.kind === 'bot' || sp.kind === 'ki';
@@ -365,7 +371,9 @@ const MP = {
                 : lp.afk ? `<span class="mp-pl-tag off" title="${TX('Hat dreimal nicht gezogen – die KI spielt den Platz')}">${TX('KI (abwesend)')}</span>`
                 : bot ? `<span class="mp-pl-tag">${sp.kind === 'bot' ? TX('Bot') : TX('KI')}</span>`
                 : lp.connected === false ? `<span class="mp-pl-tag off" title="${TX('Nicht verbunden')}">${TX('offline')}</span>` : '';
-            return `<div class="mp-pl-row${S.cur === i && !S.over ? ' cur' : ''}">
+            // a tap on the row: the report on this empire (client/report.js); the name stays the profile
+            return `<div class="mp-pl-row${S.cur === i && !S.over ? ' cur' : ''}"${typeof REPORT !== 'undefined' && REPORT.ok() ? ` data-report="${i}" tabindex="0" title="${TX('Bericht über dieses Reich')}"` : ''}>
+                <span class="mp-pl-pos" title="${pos[i] ? TX('Zugreihenfolge: %s', pos[i]) : TX('Ausgeschieden')}">${pos[i] || '–'}</span>
                 <span class="mp-pl-dot" style="background:${esc(civ.color)}"></span>
                 <span class="mp-pl-name">${this.nameLink(name, lp.userId)}${i === this.playerIndex ? ` <small>(${TX('du')})</small>` : ''}</span>
                 ${status}
@@ -2089,12 +2097,14 @@ window.addEventListener('DOMContentLoaded', () => {
             background:#a89f91; color:white; padding:6px 10px; cursor:pointer; font-weight:bold; display:flex; justify-content:space-between; align-items:center; user-select:none;
         }
         #mp-players-content { max-height: 40vh; overflow-y: auto; padding: 6px 8px; }
-        .mp-pl-row { display: grid; grid-template-columns: 12px 1fr auto; gap: 0 8px; align-items: center; padding: 4px 4px; border-radius: 4px; }
+        .mp-pl-row { display: grid; grid-template-columns: 16px 12px 1fr auto; gap: 0 8px; align-items: center; padding: 4px 4px; border-radius: 4px; }
         .mp-pl-row.cur { background: rgba(157,59,47,0.12); }
         .mp-pl-row.cur .mp-pl-name::after { content: var(--mp-on-turn, " ◂ am Zug"); font-size: 11px; color: #9d3b2f; font-weight: normal; }
+        .mp-pl-pos { width: 16px; height: 16px; border-radius: 50%; background: #e4dbbe; color: #6f6551; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
+        .mp-pl-row.cur .mp-pl-pos { background: #9d3b2f; color: #fff; }
         .mp-pl-dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.25); }
         .mp-pl-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
-        .mp-pl-civ { grid-column: 2 / -1; font-size: 11px; color: #6f6551; }
+        .mp-pl-civ { grid-column: 3 / -1; font-size: 11px; color: #6f6551; }
         .mp-pl-tag { font-size: 10px; padding: 1px 5px; border-radius: 8px; background: #e4dbbe; color: #6f6551; }
         .mp-pl-tag.off { background: #f1d6cf; color: #9d3b2f; }
         /* Turn timer: countdown in the HUD, banner while the KI plays an absent player's seat */
