@@ -132,6 +132,22 @@ const MP = {
             redraw();
         }
         if (S.over) gameOver();
+        else MP.refreshTechModal();
+    },
+
+    /**
+     * The tech tree is a modal that draws from S once. After researching it redraws from the
+     * client's optimistic local run, whose availability roll for the next age is not the server's:
+     * clients don't get the dice seed. Redraw it from the authoritative state, keeping the scroll.
+     */
+    refreshTechModal: function () {
+        const ov = document.getElementById('overlay');
+        if (!MP._techOpen || !ov || !ov.classList.contains('show') || typeof techModal !== 'function') return;
+        const body = document.getElementById('ov-body');
+        const scrolled = [];
+        for (let el = body; el && el !== document.body; el = el.parentElement) scrolled.push([el, el.scrollTop]);
+        techModal();
+        for (const [el, top] of scrolled) el.scrollTop = top;
     },
 
     fetchUser: async function () {
@@ -2191,6 +2207,22 @@ if (originalCloseModal) {
         const after = MP._afterSummary;
         if (after) { MP._afterSummary = null; setTimeout(after, 0); }
         return r;
+    };
+}
+
+// ── Monkey Patch techModal() / modal(): remember whether the tech tree is open ──
+// MP.applyState redraws it from the server's state (MP.refreshTechModal). Any other modal
+// replaces it in the same overlay, so that one clears the mark.
+const originalTechModal = window.techModal, originalModal = window.modal;
+if (originalTechModal && originalModal) {
+    let drawingTechs = false;
+    window.modal = function () {
+        if (!drawingTechs) MP._techOpen = false;
+        return originalModal.apply(this, arguments);
+    };
+    window.techModal = function () {
+        drawingTechs = true;
+        try { return originalTechModal.apply(this, arguments); } finally { drawingTechs = false; MP._techOpen = true; }
     };
 }
 
