@@ -40,7 +40,7 @@ Relations: a `User` has many `Passkey`, `TotpToken` and `DeviceToken` rows (devi
 | `password_hash` | bcrypt; empty for Google/Discord/passkey-only accounts |
 | `mmr` (default 1000), `gamesPlayed` | Ranking |
 | `role` (`user`/`botcreator`/`admin`/`superadmin`), `isActive`, `isBanned` | Rights and state |
-| `accountType` (`human`/`bot`), `ownerId`, `botTokenHash`, `botLimit` | [Bot accounts](bot-accounts.md): a bot's owner and the SHA-256 of its token; how many bots a bot creator may own (null = default) |
+| `accountType` (`human`/`bot`), `ownerId`, `botTokenHash`, `botLimit`, `botDescription` | [Bot accounts](bot-accounts.md): a bot's owner and the SHA-256 of its token; how many bots a bot creator may own (null = default); the bot's public profile text (null = none) |
 | `googleId`, `discordId`, `avatarUrl` | Linked providers |
 | `activationCode…`, `resetCode…`, `pendingEmail`, `emailChangeCode…` | One-time codes with expiry and attempt counters |
 | `totpSecret`, `totpEnabled`, `totpAttempts`, `totpLockedUntil` | Authenticator (and its lockout) |

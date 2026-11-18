@@ -45,6 +45,7 @@ Status: ⬜ planned · 🔨 in progress · ✅ on `development` (staging) · �
 | 35 | F35 | [Security audit fixes](#f35-security-audit-fixes) | ✔ | ✔ | ✅ |
 | 36 | F36 | [Second security audit](#f36-second-security-audit) | ✔ | ✔ | ✅ |
 | 37 | F37 | [Database roles and migrations](#f37-database-roles-and-migrations) | ✔ | ✔ | ✅ |
+| 38 | F38 | [Public bot descriptions](#f38-public-bot-descriptions) | ✔ | ✔ | ✅ (#171) |
 
 The numbers are those of the original proposal; F11 and F12 were requested after the staging tests of F1. F15–F22 (and F8, F10 moved up from "later") are the second round, approved on 2026-11-03. Not wanted for now: a vacation mode for Rundenspiele, a tutorial, tournaments (too few players yet). F23–F27 are the third round, approved on 2026-11-10; F28 was asked for the same day. Parked as GitHub issues for later: daily challenge (#120), bot arena (#121), Discord integration (#122), mirror match (#161, was F33). The order puts the small fixes for live games first. F6 and F7 come before F5 because they record per-turn data that F5 can reuse.
 
@@ -807,5 +808,15 @@ Rest of SA-13 from the second security audit: the server no longer connects as t
 **Operators (once, production and staging):** back up; add `POSTGRES_OWNER_PASSWORD` and `POSTGRES_APP_PASSWORD` to `.env`; take the new compose file; `docker compose pull && docker compose up -d`. Until then the new image runs as before with the superuser.
 
 **Tests:** `tests/db/migrations.test.js` (empty Postgres; in CI as a service container): setup twice, migrations, models = schema, the app role's refusals. Checked by hand: an existing database (data kept, all tables to the owner), an empty one (schema identical to `sync`), the new image with the old compose file and the switch afterwards; the local docker setup with the server tests.
+
+**Status:** ✅
+
+## F38 Public bot descriptions
+
+**Goal:** Bot owners can tell players what their bot does on its public profile.
+
+**Built:** Owners and admins can set, edit or clear up to 280 characters of plain text in *Meine Bots*. The public bot profile shows the saved text below the owner. Column `users.botDescription` comes with migration `0002-bot-description`. See [#171](https://github.com/peterswoDE/Hochciv-Multiplayer/issues/171).
+
+**Tests:** `tests/bots/description.test.js` (local Docker and browser) covers permissions, validation, editing and public rendering; `tests/db/migrations.test.js` checks the model against the schema.
 
 **Status:** ✅
