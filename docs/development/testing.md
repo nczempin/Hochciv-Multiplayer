@@ -43,6 +43,7 @@ Tests create their own test accounts and delete them afterwards.
 | `terms/terms.test.js` | consent to the terms of use: popup for accounts and guests, declining, the server's refusals, new versions | `TERMS_CHECK=on` |
 | `friends/friends.test.js` | friends list: requests, accepting, crossing requests, refusals and blocks, suggestions, profile button, live invitation into a lobby, Rundenspiel names, removing, offline, account deletion, English | default |
 | `i18n/english.test.js` | every screen in English, no German left | default |
+| `i18n/log.test.js` | the game log (Protokoll, `logSince`) in English from the server's parts (`e.t`), German unchanged, the compressed WebSocket | default |
 | `i18n/victory.test.js` | the end screen in English: every victory text the engine writes, points comparisons with several claims, resign texts, via state and `game:over`; German unchanged | default |
 | `layout/hud.test.js` | multiplayer HUD layout on several screen sizes | default |
 | `maps/maps.test.js` | map browser: browsing, search, sorting, favorites, the detail view, picking a map for a lobby and a Rundenspiel, map reports and the admin's unpublish, the editor's drag painting and undo, phone layout, account merge and deletion | default |

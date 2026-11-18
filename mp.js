@@ -2248,6 +2248,17 @@ if (originalTechModal && originalModal) {
     };
 }
 
+// ── Monkey Patch logHtml() / logSince(): the game log in the player's language ─
+// The server writes it in German; client/logtext.js puts each line together again (Protokoll,
+// "since your last turn", the turn's log and its battle toast).
+for (const name of ['logHtml', 'logSince']) {
+    const original = window[name];
+    if (typeof original !== 'function' || typeof LOGTEXT === 'undefined') continue;
+    window[name] = name === 'logHtml'
+        ? function (entries, ...rest) { return original.call(this, MP.active ? LOGTEXT.entries(entries) : entries, ...rest); }
+        : function () { const r = original.apply(this, arguments); return MP.active ? LOGTEXT.entries(r) : r; };
+}
+
 // ── Monkey Patch saveGame(): the local single-player save is not ours ──────────
 // The game saves S as its local game ('hochciv.save') on every redraw. A multiplayer game (live,
 // Rundenspiel, watching, replay) would overwrite the player's own local game with it – and
