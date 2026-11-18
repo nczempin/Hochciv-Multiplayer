@@ -81,9 +81,20 @@ const MP = {
         else this.socket.emit('game:resign', {}, done);
     },
     RESIGN_MMR: 15,                 // utils/resign.js MMR_PENALTY
-    /** The two end texts of utils/resign.js come from the server in German. */
+    /**
+     * The end of the game comes from the server in German: the engine's victory texts (also per
+     * claim in over.score) and the two of utils/resign.js. With several claims the engine joins
+     * parts with " · ", so each part is translated on its own (no victory text has " · " inside).
+     * Each object only once (it can come through view.state and then applyState).
+     */
+    _overDone: new WeakSet(),
     translateOver: function (over) {
-        if (over && over.resign && over.how) over.how = TXS(over.how);
+        if (!over || typeof over !== 'object' || MP._overDone.has(over)) return over;
+        // split first: as a whole, a loose pattern like "%s von %s" would match and translate a bit of it
+        const tr = how => (how ? String(how).split(' · ').map(TXS).join(' · ') : how);
+        over.how = tr(over.how);
+        if (Array.isArray(over.score)) over.score.forEach(x => { if (x) x.how = tr(x.how); });
+        MP._overDone.add(over);
         return over;
     },
 
@@ -114,6 +125,7 @@ const MP = {
 
     /** A new authoritative state arrived: redraw, start our turn if it just began. */
     applyState: function (state) {
+        if (state && state.over) MP.translateOver(state.over);
         S = state;
         MP.syncTurnBlocker();
         MP.updateHudDelayed();

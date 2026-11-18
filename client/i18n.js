@@ -294,6 +294,9 @@
         'KI (%s hat aufgegeben)': 'AI (%s resigned)',
         'Alle anderen haben aufgegeben': 'Everyone else resigned',
         'Alle Spieler haben aufgegeben – Punktvergleich': 'All players resigned – decided on points',
+        // end of the game: the engine adds these parts to the victory text without T() (MP.translateOver)
+        'Punktvergleich am Rundenende: %s': 'points compared at the end of the round: %s',
+        'Mensch vor Bot': 'human before bot',
         'Aufgabe': 'Resignation',
         'Aufgeben geht nur, solange das Spiel läuft.': 'You can only resign while the game is running.',
         // invite link (mp.js openInvite / shareInvite)
