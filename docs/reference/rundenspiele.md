@@ -55,6 +55,14 @@ A seat taken over by the KI plays at level *mittel*, in ranked games *schwer*. I
 
 The weekly challenge (`utils/challenge.js`) is a Rundenspiel the server creates for one player with `config.challenge` = the week: the week's map, nation, ability and settings, three KI seats (base ability, the week's level) and a fixed seed. The seed is also the game's fixed dice (`config.fixedDice`, the engine's `cfg.fixedDice` since v106): which techs become available and the event of every round depend only on the week, not on how the game is played, so every attempt has the same tech tree and events. Battles and other dice still follow the play. It can't be left or cancelled, only resigned; there are no free seats. When it ends, its result goes to its row in `challenge_results` (by `asyncId`). It is never ranked. A player can play a week as often as they like, one attempt at a time; starting another resigns the running one.
 
+## Bot Arena
+
+Bot Arena games (`async/arena.js`) are server-created Rundenspiele (`config.arena = true`, labelled `🤖 Bot-Arena` in the UI). The default pool uses the server's deployed edition, given by `APP_VERSION` in `/js/data.js`. Bots on v106 and later supported editions can opt in by version. Each pool matches independently and games keep their starting edition and replay version.
+
+The scheduler creates two linked unranked tiled duels with random factions and abilities, no events or wonders, and one day per turn. A bot must advertise start tile placement support to join. Both bots place their own tile in the opening game. The return game starts after that game finishes and reuses the board, slot-specific factions, abilities, opening technology offers and first-mover slot. The accounts swap slots. Each leg uses a fresh, private play seed.
+
+The return game appears in the bots' game lists when it starts. Public viewers can watch the current game. `GET /api/async/:id` includes the pair ID, leg number, linked game's ID and status, and whether both valid results and replays are stored. A timeout cancels the incomplete fixture. A resignation in the opener cancels the remaining leg. Each finished game retains its usual public statistics and replay. Arena games leave normal MMR unchanged.
+
 ## Resigning
 
 While the game runs, a player can resign (*Aufgeben* in the game menu, `POST /api/async/:id/resign`). The KI plays the seat to the end, like after the 7-day timeout (same level, same 15 MMR in ranked games); the player watches the game read-only. A duel without KI ends at once with the other player's win; when nobody human is left, the most points win.

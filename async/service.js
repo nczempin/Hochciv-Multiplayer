@@ -17,6 +17,8 @@ const { finalPoints } = require('../utils/score');
 const chatLib = require('../utils/chat');
 const reports = require('../utils/reports');
 const terms = require('../utils/terms');
+const Bots = require('../utils/bots');
+const arena = require('./arena');
 
 const ENDED = ['finished', 'cancelled'];
 const Stats = require('../utils/stats');
@@ -110,10 +112,43 @@ async function getEntry(id) {
     return e;
 }
 
+function enqueueGame(entry, fn) {
+    entry.busy++;
+    const run = entry.queue.then(() => fn(entry.g));
+    entry.queue = run.catch(() => {}).finally(() => { entry.busy--; });
+    return run;
+}
+
 async function save(g) {
     // the chat ends with the game; reports keep their own copy (utils/reports.js)
     if (ENDED.includes(g.status)) Object.assign(g, { chat: [], chatMutes: {} });
-    await AsyncGame.update(rowFields(g), { where: { id: g.id } });
+    const pair = g.config.arenaPair;
+    if (!pair || pair.leg !== 1 || !ENDED.includes(g.status)) {
+        await AsyncGame.update(rowFields(g), { where: { id: g.id } });
+        return;
+    }
+    const entry = await getEntry(pair.otherGameId);
+    const released = await enqueueGame(entry, async () => {
+        const second = await sequelize.transaction(async transaction => {
+            const partner = await AsyncGame.findByPk(pair.otherGameId, { transaction, lock: transaction.LOCK.UPDATE });
+            await AsyncGame.update(rowFields(g), { where: { id: g.id }, transaction });
+            if (!partner || partner.status !== 'arena-waiting') return null;
+            const next = fromRow(partner);
+            L.finishArenaPairOpener(g, next);
+            next.waitSince = Date.now();
+            await recordStats(next, transaction);
+            await partner.update(rowFields(next), { transaction });
+            return next;
+        });
+        if (second) entry.g = second;
+        return second;
+    });
+    if (!released) return;
+    if (released.status === 'playing') {
+        const waiting = L.waitingOn(released).userIds;
+        if (waiting.length) notify(waiting, { type: 'turn', gameId: released.id,
+            subject: 'Du bist am Zug', text: 'Das Rückspiel deiner Bot-Arena hat begonnen.' });
+    }
 }
 
 /** At the start of the server: the chats of games that ended before they were deleted with the game. */
@@ -133,9 +168,7 @@ async function purgeEndedChats() {
 async function withGame(id, fn) {
     const e = await getEntry(id);
     if (!e.g) return { error: 'Spiel nicht gefunden.' };
-    e.busy++;
-    const run = e.queue.then(async () => {
-        const g = e.g;
+    return enqueueGame(e, async g => {
         const before = { key: waitKey(g), waiting: L.waitingOn(g).userIds, status: g.status };
         const res = await fn(g);
         if (res && res.error) return res;
@@ -147,8 +180,6 @@ async function withGame(id, fn) {
         }
         return res;
     });
-    e.queue = run.catch(() => {}).finally(() => { e.busy--; });
-    return run;
 }
 
 /** Display names by state index: the players (also after a KI takeover), null for KI seats. */
@@ -163,7 +194,7 @@ function stateNames(g) {
  * Statistics over the rounds (utils/stats.js): a new round adds a point, the end the final one.
  * The replay keeps a frame per turn until the game ends (utils/replay.js).
  */
-async function recordStats(g) {
+async function recordStats(g, transaction) {
     if (!g.state || !['playing', 'finished'].includes(g.status)) return;
     if (g.stats && g.stats.final) return;
     try {
@@ -173,7 +204,7 @@ async function recordStats(g) {
     }
     if (g.status === 'playing') {
         try {
-            await Replay.addAsync(g);
+            await Replay.addAsync(g, transaction);
         } catch (err) {
             console.error(`[Async] Replay frame failed for ${g.id}:`, err);
         }
@@ -284,12 +315,13 @@ async function processResult(g) {
             for (const p of players.filter(x => x.dbUserId))
                 await User.update({ gamesPlayed: sequelize.literal('"gamesPlayed" + 1') }, { where: { id: p.dbUserId } });
         }
+        const stats = Stats.publicStats(g.stats);
         const game = await Game.create({
             version: E.APP_VERSION || 'Unknown',
             durationRounds: S.round,
             winnerUsername: players.find(p => p.isWinner && p.dbUsername)?.dbUsername || null,
             participants: players,
-            stats: Stats.publicStats(g.stats),
+            stats: g.config.arenaPair ? { ...stats, arenaPair: g.config.arenaPair } : stats,
         });
         let replay = false;
         try {
@@ -303,7 +335,7 @@ async function processResult(g) {
             catch (err) { console.error(`[Challenge] Result of ${g.id} failed:`, err); }
         }
         g.result = { winners: players.filter(p => p.isWinner).map(p => p.name), ranked, players: players.map(p => ({ name: p.name, points: p.points, mmrShift: p.mmrShift || 0, replaced: p.replaced })),
-            gameId: game.id, replay };
+            gameId: game.id, replay, ...(g.config.arenaPair ? { arenaPair: g.config.arenaPair } : {}) };
     } catch (err) {
         console.error(`[Async] Result processing failed for ${g.id}:`, err);
         g.result = { error: true };
@@ -331,11 +363,16 @@ function generateJoinCode() {
     return code;
 }
 
-/** `internal`: set by the server only (the weekly challenge, utils/challenge.js), never by a request. */
+/** `internal`: set by the server only (the weekly challenge, utils/challenge.js, or arena), never by a request. */
 async function create(user, body, internal) {
     const active = await AsyncGame.count({ where: { status: ACTIVE, participantIds: { [Op.contains]: [user.id] } } });
     if (active >= MAX_ACTIVE_PER_USER) return { error: `Höchstens ${MAX_ACTIVE_PER_USER} laufende Rundenspiele.` };
-    const opts = Object.assign({}, body || {}, { challenge: internal && internal.challenge || undefined, seed: internal && internal.seed || undefined });
+    const opts = Object.assign({}, body || {}, {
+        challenge: (internal && internal.challenge) || undefined,
+        seed: (internal && internal.seed) || undefined,
+        arena: !!(internal && internal.arena),
+        engine: (internal && internal.engine) || undefined,
+    });
     const { g, error } = L.create(userOf(user), opts);
     if (error) return { error };
     g.joinCode = generateJoinCode();
@@ -344,12 +381,35 @@ async function create(user, body, internal) {
     const row = await AsyncGame.create(Object.assign({ joinCode: g.joinCode, hostUserId: user.id }, rowFields(g)));
     g.id = row.id;
     cache.set(g.id, { g, queue: Promise.resolve(), touched: Date.now(), busy: 0 });
+    if (internal && internal.arena && g.status === 'playing') {
+        await withGame(g.id, () => ({ ok: true }));
+    }
     const inviteErr = [];
     for (const name of (body.invite || []).slice(0, 3)) {
         const r = await invite(user, g.id, name);
         if (r && r.error) inviteErr.push(r.error);
     }
     return { id: g.id, joinCode: g.joinCode, inviteErrors: inviteErr };
+}
+
+async function createArenaPair(a, b, version) {
+    const { first, second, error } = L.createArenaPair(userOf(a), userOf(b), version, crypto.randomInt(1, 2 ** 31));
+    if (error) return { error };
+    const id = crypto.randomUUID();
+    first.id = crypto.randomUUID();
+    second.id = crypto.randomUUID();
+    for (const [leg, g, other] of [[1, first, second], [2, second, first]]) {
+        g.config.arenaPair = { id, leg, otherGameId: other.id };
+        g.joinCode = generateJoinCode();
+        g.waitSince = Date.now();
+        g.reminded = false;
+    }
+    await AsyncGame.bulkCreate([first, second].map(g => ({
+        id: g.id, joinCode: g.joinCode, hostUserId: g.hostUserId, ...rowFields(g),
+    })));
+    notify(L.waitingOn(first).userIds, { type: 'turn', gameId: first.id,
+        subject: 'Du bist am Zug', text: 'Lege dein Startplättchen in deinem Rundenspiel.' });
+    return { id, gameIds: [first.id, second.id] };
 }
 
 /**
@@ -449,7 +509,16 @@ async function info(user, id, code) {
     const e = await getEntry(id);
     if (!e.g) return { error: 'Spiel nicht gefunden.' };
     if (!canSee(e.g, user.id, code)) return { error: 'Kein Zugriff auf dieses Spiel.' };
-    return L.summary(e.g, user.id);
+    const summary = L.summary(e.g, user.id);
+    const pair = e.g.config.arenaPair;
+    if (pair) {
+        const other = await AsyncGame.findByPk(pair.otherGameId, { attributes: ['status', 'data'] });
+        const counted = (status, result) => status === 'finished' && !!result?.gameId
+            && result.replay && result.players.every(p => !p.replaced);
+        summary.arenaPair = { ...pair, otherStatus: other?.status || null,
+            complete: !!(counted(e.g.status, e.g.result) && counted(other?.status, other?.data.result)) };
+    }
+    return summary;
 }
 
 /**
@@ -551,7 +620,7 @@ async function list(user) {
     };
     const mine = await AsyncGame.findAll({
         // Finished games are listed in the account's game history, not here
-        where: { participantIds: { [Op.contains]: [user.id] }, status: { [Op.notIn]: ['cancelled', 'finished'] } },
+        where: { participantIds: { [Op.contains]: [user.id] }, status: { [Op.notIn]: ['cancelled', 'finished', 'arena-waiting'] } },
         attributes: attrs, order: [['updatedAt', 'DESC']], limit: 100,
     });
     const invites = await AsyncGame.findAll({
@@ -568,15 +637,17 @@ async function list(user) {
         attributes: attrs, order: [['updatedAt', 'DESC']], limit: 20,
     });
     const u = await User.findByPk(user.id);
-    return {
+    const res = {
         notifyEmail: u ? u.notifyEmail : true,
         notifyPush: u ? u.notifyPush : true,
         timeoutDays: TIMEOUT_MS / DAY,
         mine: mine.map(summarize),
         invites: invites.map(summarize).filter(s => s.freeSeats.length && s.mySlot == null),
-        open: open.map(summarize).filter(s => s.freeSeats.length),
+        open: open.map(summarize).filter(s => s.freeSeats.length && !(s.config && s.config.arena)),
         watch: watch.map(summarize).filter(s => !s.freeSeats.length),
     };
+    if (Bots.isBot(u || user)) Object.assign(res, arena.status(user.id));
+    return res;
 }
 
 /**
@@ -586,6 +657,7 @@ async function list(user) {
 async function open(user, id) {
     const e = await getEntry(id);
     if (!e.g) return { error: 'Spiel nicht gefunden.' };
+    if (e.g.status === 'arena-waiting') return { error: 'Das Rückspiel hat noch nicht begonnen.' };
     const watchable = e.g.config.isPublic && ['playing', 'finished'].includes(e.g.status);
     if (!e.g.seats.some(s => s.userId === user.id) && !watchable) return { error: 'Du spielst in diesem Spiel nicht mit.' };
     return { view: JSON.parse(JSON.stringify(L.view(e.g, user.id))), chat: e.g.chat || [], chatMute: (e.g.chatMutes || {})[user.id] || null };
@@ -766,6 +838,7 @@ function init(ioServer) {
     const t = setInterval(sweep, SWEEP_MS);
     t.unref();
     setTimeout(() => { resume().then(sweep); }, 15000).unref();
+    arena.start();
 }
 
 async function setNotifyEmail(user, on) {
@@ -807,7 +880,8 @@ function evict(id) {
 }
 
 module.exports = {
-    init, evict, create, fromLive, info, join, leave, cancel, invite, decline, list, open, action, place, draftPick, civDraftPick, chat, report, resign,
+    init, evict, create, createArenaPair, fromLive, info, join, leave, cancel, invite, decline, list, open, action, place, draftPick, civDraftPick, chat, report, resign,
     setNotifyEmail, sweep, room, removeUser, purgeEndedChats,
+    ACTIVE, MAX_ACTIVE_PER_USER,
     processResult,      // for tests/score
 };

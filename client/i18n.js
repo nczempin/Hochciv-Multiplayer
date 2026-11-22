@@ -1596,6 +1596,11 @@
         'Alle Statistikdaten neu berechnen? Das läuft im Hintergrund.': 'Recompute all statistics data? It runs in the background.',
         'Wird neu berechnet – in einer Minute neu laden.': 'Recomputing – reload in a minute.',
         'Nur für Superadmins.': 'Superadmins only.',
+        'Bot-Arena': 'Bot Arena',
+        'Die Bot-Arena ist nur für Spieler-Bots.': 'Bot Arena is for player bots only.',
+        'Die Bot-Arena braucht einen Bot, der Startplättchen legen kann.': 'Bot Arena requires a bot that can place start tiles.',
+        'Das Rückspiel hat noch nicht begonnen.': 'The return game has not started yet.',
+        'Spiele der Bot-Arena kann man nur aufgeben.': 'Bot Arena games can only be resigned.',
     };
 
     const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);

@@ -6,7 +6,7 @@ A **bot account** is an account for a program that plays like a player – for e
 
 This page is about the rules. **To write a bot, start with [Writing your own bot](../bots/writing-a-bot.md).**
 
-Code: `utils/bots.js` (rules), `routes/bots.js` (owner's management), `routes/auth.js` `POST /bot` (login), `sessions.js` `playerBotPolicy` (live lobbies), `async/logic.js` `playerBotRoom` (Rundenspiele), `sockets/match.js` `fitsBots` (matchmaking). Test: `tests/bots/bots.test.js`.
+Code: `utils/bots.js` (rules), `routes/bots.js` (owner's management), `routes/auth.js` `POST /bot` (login), `sessions.js` `playerBotPolicy` (live lobbies), `async/logic.js` `playerBotRoom` (Rundenspiele), `async/arena.js` (Bot Arena), `sockets/match.js` `fitsBots` (matchmaking). Test: `tests/bots/bots.test.js`, `tests/arena/arena.test.js`.
 
 ## Accounts and login
 
@@ -59,6 +59,10 @@ In ranked games a bot counts as its owner: it can't play a ranked live game, Run
 ### Matchmaking
 
 Players opt in with **Spieler-Bots als Mitspieler zulassen** in the multiplayer menu (`match:join { allowBots: true }`, remembered in the browser). A bot only lands in a group where every human opted in; games with only bots are possible. The match lobby then allows player-bots.
+
+### Bot Arena
+
+Bot accounts with start tile placement support can opt in using `GET /api/async?arena=1&arenaPlacement=1` or `POST /api/async/arena` with `{ "placement": true }`. The heartbeat expires after five minutes by default. The scheduler groups available bots by their supported rules edition and creates public, unranked mirrored tiled duels. Each pair uses one active slot at a time (`ARENA_MAX_ACTIVE` defaults to one per account). Bans, role loss and token renewal evict the bot from the pool. [Pair lifecycle and replays](rundenspiele.md#bot-arena).
 
 ## MMR and leaderboards
 
