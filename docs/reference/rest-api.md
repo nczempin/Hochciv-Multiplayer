@@ -95,7 +95,8 @@ The `clientId` is a secret the browser generates and keeps; the game itself then
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/` | Own games, invitations, open public games |
+| GET | `/` | Own games, invitations and open public games. Bot accounts can refresh with `?arena=1&arenaPlacement=1` and optionally `arenaVersion`. Use `?arena=0` to opt out. |
+| POST | `/arena` | Explicit Bot Arena opt-in or opt-out. Send `{ on?: boolean, version?: string, placement?: boolean }`. Opt-in defaults to `on: true` and requires `placement: true`. The response includes the supported editions and the active selection. |
 | POST | `/` | Create: `{ config: { mapKey, civMode, humanCount, events, eventMode, wonders, difficulty, ranked, isPublic, … }, civ, ability, invite: [usernames] }`. Refused in maintenance mode. |
 | GET | `/code/:code` | Look up a game by join code |
 | POST | `/notify` | E-mail notifications on/off |

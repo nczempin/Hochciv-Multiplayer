@@ -90,7 +90,7 @@ const blankSeat = slot => ({
 });
 const makeKiSeat = (g, s) => Object.assign(s, {
     kind: 'ki', kiLevel: ENG(g).kiLevelFor(g.config.difficulty),
-    ability: isMarathon(g) || !s.civ ? 'basis' : resolveAbility(s.civ, 'random'),
+    ability: isMarathon(g) || !s.civ ? 'basis' : resolveAbility(s.civ, 'random', g),
 });
 /** Random nations, dealt at the start (F32) – and not dealt yet. */
 const awaitsDeal = g => !!(g.config.dealAtStart && !g.config.order);
@@ -114,13 +114,13 @@ function dealRandom(g) {
         const s = seats[slot], h = humans[pos];
         if (!h) return makeKiSeat(g, s);
         Object.assign(s, { userId: h.userId, name: h.name, joinedAt: h.joinedAt, botAccount: !!h.botAccount });
-        s.ability = isMarathon(g) ? 'basis' : resolveAbility(s.civ, 'random');
+        s.ability = isMarathon(g) ? 'basis' : resolveAbility(s.civ, 'random', g);
     });
     g.seats = seats;
     g.config.order = order;
     g.config.startPlayer = order[0];        // slot 0: the host
 }
-const civDef = k => (E().ALL_CIVS || []).find(c => c.k === k) || null;   // every nation, also experimental
+const civDef = (k, g) => (g ? ENG(g) : engine).civDef(k);
 const pick = list => list[Math.floor(Math.random() * list.length)];
 const deepCopy = x => JSON.parse(JSON.stringify(x));
 
@@ -136,8 +136,8 @@ function kiLevels() {
 }
 
 /** Resolve "random" and check an ability key against a civ. Returns the key or null. */
-function resolveAbility(civ, ability) {
-    const def = civDef(civ);
+function resolveAbility(civ, ability, g) {
+    const def = civDef(civ, g);
     if (!def) return null;
     if (!ability || ability === 'random' || ability === 'zufall') return pick(def.abilities).k;
     return def.abilities.some(a => a.k === ability) ? ability : null;
@@ -203,15 +203,20 @@ function create(host, opts) {
     if (config.ranked && config.mapKey !== 'plaettchen') return { error: 'Gewertete Spiele werden auf der Plättchenkarte gespielt.' };
     if (config.ranked && total > appConfig.MAX_RANKED_EMPIRES)
         return { error: `Gewertete Spiele haben höchstens ${appConfig.MAX_RANKED_EMPIRES} Reiche.` };
-    // the weekly challenge (utils/challenge.js) is played alone; only the server creates it
+    // the weekly challenge (utils/challenge.js) is played alone; only the server creates it.
     const challenge = opts && typeof opts.challenge === 'string' ? opts.challenge : null;
-    if (total - ki < 2 && !challenge) return { error: 'Ein Rundenspiel braucht mindestens zwei Menschen.' };
+    const arena = !!(opts && opts.arena);
+    if (total - ki < 2 && !challenge && !arena) return { error: 'Ein Rundenspiel braucht mindestens zwei Menschen.' };
     // fixedDice: tech availability and events fall the same in every attempt of the week, however
     // it is played (the engine's fixed dice; engines before it ignore the field)
     if (challenge) Object.assign(config, { challenge, isPublic: false, ranked: false, seed: Number.isInteger(opts.seed) ? opts.seed : config.seed });
     if (challenge) config.fixedDice = config.seed;
     // the weekly challenge keeps the classic rules; a draft never has the classic order
     if (challenge) Object.assign(config, { civMode: 'fixed', turnOrder: 'classic' });
+    if (arena) {
+        config.arena = true;
+        if (ki > 0) config.turnOrder = 'random';
+    }
     Object.assign(config, CivDraft.modesOf(config));
     Object.assign(config, { playerCount: total, humanCount: total - ki, noKi: ki === 0 });
     // Player-bots (bot accounts, utils/bots.js) take human seats like players, never the KI's;
@@ -220,8 +225,11 @@ function create(host, opts) {
     config.playerBots = !!host.isBot || raw.playerBots === true;
     config.playerBotLimit = Number.isInteger(botLimit) && botLimit >= 1 ? Math.min(botLimit, total) : null;
 
+    const reqEngine = opts && typeof opts.engine === 'string' ? opts.engine : null;
+    const gEngine = reqEngine && (reqEngine === engine.version() || (engine.OLD_VERSIONS || []).includes(reqEngine))
+        ? reqEngine : engine.version();
     const g = {
-        engine: engine.version(),           // played with this engine version to the end
+        engine: gEngine,                    // played with this engine version to the end
         hostUserId: host.id, status: 'setup', config,
         seats: [], invites: [], pre: null, hold: false, state: null, result: null,
     };
@@ -241,7 +249,7 @@ function create(host, opts) {
             const civ = resolveCiv(g, opts.civ, []);
             if (!civ) return { error: 'Unbekannte Nation.' };
             g.seats[hostSlot].civ = civ;
-            g.seats[hostSlot].ability = isMarathon(g) ? 'basis' : (resolveAbility(civ, opts.ability) || 'basis');
+            g.seats[hostSlot].ability = isMarathon(g) ? 'basis' : (resolveAbility(civ, opts.ability, g) || 'basis');
         }
     } else if (config.civMode === 'random') {
         // F32: nothing is dealt yet. Seats without a nation – the humans', then the KI's – and
@@ -258,7 +266,7 @@ function create(host, opts) {
         const civ = resolveCiv(g, opts.civ, []);
         if (!civ) return { error: 'Unbekannte Nation.' };
         g.seats[0].civ = civ;
-        g.seats[0].ability = isMarathon(g) ? 'basis' : (resolveAbility(civ, opts.ability) || 'basis');
+        g.seats[0].ability = isMarathon(g) ? 'basis' : (resolveAbility(civ, opts.ability, g) || 'basis');
         const kiCivs = dealCivs(civs, kiSeats);
         g.seats.slice(total - kiSeats).forEach((s, i) => { s.civ = kiCivs[i]; kiSeat(s); });
     } else {
@@ -269,11 +277,15 @@ function create(host, opts) {
         const civ = resolveCiv(g, opts.civ, []);
         if (!civ) return { error: 'Unbekannte Nation.' };
         hostSlot = civs.indexOf(civ);
-        if (!isMarathon(g)) g.seats[hostSlot].ability = resolveAbility(civ, opts.ability) || 'basis';
+        if (!isMarathon(g)) g.seats[hostSlot].ability = resolveAbility(civ, opts.ability, g) || 'basis';
     }
 
     Object.assign(g.seats[hostSlot], { userId: host.id, name: host.username, joinedAt: Date.now(), botAccount: !!host.isBot });
-    config.startPlayer = hostSlot;          // the host always moves first
+    config.startPlayer = hostSlot;
+    if (arena && kiSeats > 0) {
+        seatPositions(g);
+        return { g };
+    }
 
     /* Start right away (the host plays turn 1 while the others join) when the seats are
        final already: all four nations of a fixed map. Otherwise – always without KI, and with
@@ -360,6 +372,7 @@ function join(g, user, opts) {
     if (g.seats.some(s => s.userId === user.id)) return 'Du bist schon in diesem Spiel.';
     if (!['setup', 'playing'].includes(g.status)) return 'Diesem Spiel kann man nicht mehr beitreten.';
     if (claimedCount(g) >= g.config.humanCount) return 'Das Spiel ist schon voll.';
+    if (g.config.arena && !user.isBot) return 'Die Bot-Arena ist nur für Spieler-Bots.';
     if (user.isBot) {
         const why = playerBotRoom(g);
         if (why) return why;
@@ -378,7 +391,7 @@ function join(g, user, opts) {
             const civ = resolveCiv(g, opts.civ, freeCivs(g) ? [] : taken);
             if (!civ) return 'Unbekannte Nation.';
             if (!freeCivs(g) && taken.includes(civ)) return 'Diese Nation ist schon vergeben.';
-            ability = isMarathon(g) ? 'basis' : resolveAbility(civ, opts.ability);
+            ability = isMarathon(g) ? 'basis' : resolveAbility(civ, opts.ability, g);
             if (ability) seat.civ = civ;
         }
     } else if (awaitsDeal(g)) {
@@ -392,13 +405,13 @@ function join(g, user, opts) {
         if (!civ) return 'Unbekannte Nation.';
         seat = g.seats.find(s => isFree(s) && !s.civ);
         if (seat) seat.civ = civ;
-        ability = isMarathon(g) ? 'basis' : resolveAbility(civ, opts.ability);
+        ability = isMarathon(g) ? 'basis' : resolveAbility(civ, opts.ability, g);
     } else {
         const taken = g.seats.filter(s => !isFree(s)).map(s => s.civ);
         const civ = resolveCiv(g, opts.civ, taken);
         seat = g.seats.find(s => s.civ === civ && isFree(s));
         if (!seat) return 'Diese Nation ist schon vergeben.';
-        ability = isMarathon(g) ? 'basis' : resolveAbility(civ, opts.ability);
+        ability = isMarathon(g) ? 'basis' : resolveAbility(civ, opts.ability, g);
     }
     if (!seat) return 'Kein freier Platz mehr.';
     if (!ability) return 'Unbekannte Fähigkeit.';
@@ -445,6 +458,7 @@ function leave(g, userId) {
     const seat = seatOf(g, userId);
     if (!seat) return 'Du bist nicht in diesem Spiel.';
     if (g.config.challenge) return 'Die Wochen-Challenge kann man nur aufgeben.';
+    if (g.config.arena) return 'Spiele der Bot-Arena kann man nur aufgeben.';
     if (userId === g.hostUserId) return 'Der Host kann das Spiel nur abbrechen, nicht verlassen.';
     const free = g.status === 'setup' || (g.status === 'playing' && !seat.started);
     if (!free) return 'Nach deinem ersten Zug kannst du das Spiel nicht mehr verlassen.';
@@ -468,6 +482,7 @@ function leave(g, userId) {
 function cancel(g, userId) {
     if (userId !== g.hostUserId) return 'Nur der Host kann das Spiel abbrechen.';
     if (g.config.challenge) return 'Die Wochen-Challenge kann man nur aufgeben.';
+    if (g.config.arena) return 'Spiele der Bot-Arena kann man nur aufgeben.';
     const others = g.seats.filter(s => s.userId && s.userId !== userId);
     const ok = g.status === 'setup' || (g.status === 'playing' && others.every(s => !s.started));
     if (!ok) return 'Das Spiel läuft schon – abbrechen geht nicht mehr.';
@@ -495,7 +510,7 @@ function fillBots(g) {
  */
 function makeKi(g, s) {
     if (!s.civ) s.civ = pick(civKeys(g));
-    const ability = isMarathon(g) ? 'basis' : resolveAbility(s.civ, 'random');
+    const ability = isMarathon(g) ? 'basis' : resolveAbility(s.civ, 'random', g);
     Object.assign(s, { kind: 'ki', kiLevel: ENG(g).kiLevelFor(g.config.difficulty), ability, name: null });
     if (g.state) {
         const i = stateIndex(g, s.slot);
@@ -522,7 +537,7 @@ function seatPositions(g) {
     g.config.startPlayer = 0;
     g.config.playerCount = n;
     const marathon = isMarathon(g);
-    const ability = civ => (marathon ? 'basis' : resolveAbility(civ, 'random'));
+    const ability = civ => (marathon ? 'basis' : resolveAbility(civ, 'random', g));
     if (g.config.civMode === 'fixed') {
         // the KI takes nations nobody has (fixed maps), any nation on the free maps
         const taken = g.seats.filter(s => s.kind !== 'ki').map(s => s.civ);
@@ -623,6 +638,43 @@ function finishPlacement(g) {
     g.pre.plan.revealed = true;
     g.config.map = ENG(g).getEngine().tileMap(g.pre.plan);
     startGame(g);
+}
+
+/** Deal one tiled fixture. Both bots place in the opener and inherit the finished map on return. */
+function createArenaPair(a, b, version, seed) {
+    if (!a.isBot || !b.isBot || a.id === b.id) return { error: 'Die Bot-Arena braucht zwei verschiedene Spieler-Bots.' };
+    const { g: first, error } = create(a, {
+        arena: true, engine: version,
+        config: { mapKey: 'plaettchen', playerCount: 2, kiCount: 0, civMode: 'random',
+            turnOrder: 'random', ranked: false, isPublic: true, turnDays: 1 },
+    });
+    if (error) return { error };
+    first.config.seed = seed;
+    const joinError = join(first, b, {});
+    if (joinError) return { error: joinError };
+    if (first.status !== 'placement') return { error: 'Die Bot-Arena braucht eine Plättchenkarte.' };
+
+    const second = deepCopy(first);
+    second.status = 'arena-waiting';
+    second.hostUserId = b.id;
+    second.pre = null;
+    for (const [slot, seat] of second.seats.entries()) {
+        const { userId, name, joinedAt, botAccount } = first.seats[1 - slot];
+        Object.assign(seat, { userId, name, joinedAt, botAccount });
+    }
+    return { first, second };
+}
+
+function finishArenaPairOpener(first, second) {
+    if (first.status !== 'finished' || !first.config.map || first.seats.some(s => s.replaced)
+        || second.seats.some(s => s.kind !== 'human' || !s.userId || s.replaced)) {
+        second.status = 'cancelled';
+        return;
+    }
+    second.config.map = deepCopy(first.config.map);
+    second.config.setup = deepCopy(first.config.setup);
+    // The adapter keeps setup rolls and draws a fresh private play seed for each game.
+    startGame(second);
 }
 
 /** A human picks a Marathon ability. */
@@ -769,6 +821,11 @@ function replaceSeat(g, seat) {
  */
 function timeout(g) {
     const replaced = [], penalized = [];
+    if (g.config.arenaPair) {
+        // An incomplete bot-only fixture never needs a substitute.
+        g.status = 'cancelled';
+        return { replaced, penalized };
+    }
     const takeOver = seat => {
         replaced.push(seat.userId);
         const u = replaceSeat(g, seat);
@@ -900,9 +957,9 @@ function removeUser(g, userId) {
     }
     g.invites = g.invites.filter(i => i.userId !== userId);
     const seat = seatOf(g, userId);
-    if (seat && g.status === 'setup' && userId === g.hostUserId) {
+    if (seat && (g.status === 'arena-waiting' || (g.status === 'setup' && userId === g.hostUserId))) {
         g.status = 'cancelled';
-    } else if (seat && userId !== g.hostUserId && (g.status === 'setup' || (g.status === 'playing' && !seat.started))) {
+    } else if (seat && !g.config.arena && userId !== g.hostUserId && (g.status === 'setup' || (g.status === 'playing' && !seat.started))) {
         leave(g, userId);
     } else if (seat && g.status === 'playing') {
         replaceSeat(g, seat);
@@ -1044,7 +1101,7 @@ function view(g, userId) {
 }
 
 module.exports = {
-    create, join, leave, cancel, place, draftPick, action, drive, timeout, removeUser, resign, DELETED_NAME, IN_PREPHASE,
+    create, createArenaPair, finishArenaPairOpener, join, leave, cancel, place, draftPick, action, drive, timeout, removeUser, resign, DELETED_NAME, IN_PREPHASE,
     civDraftPick, waitingOn, summary, view, freeSeats, playerBotRoom, seatOf, stateIndex, isFree, engineVersionOf, ENG, summaryText,
     MMR_PENALTY, TURN_DAYS,
 };

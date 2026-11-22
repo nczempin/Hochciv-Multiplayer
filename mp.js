@@ -2697,6 +2697,8 @@ const ASYNC = {
 
     row: function (g) {
         const c = g.config;
+        const leg = c.arenaPair?.leg;
+        const arenaLabel = TX('Bot-Arena') + ([1, 2].includes(leg) ? ` ${leg}/2` : '');
         const statusText = {
             setup: TX('Sucht Mitspieler (%s/%s)', g.seats.filter(s => s.userId).length, c.humanCount),
             placement: TX('Startplättchen legen'), draft: TX('Fähigkeiten draften'),
@@ -2723,7 +2725,7 @@ const ASYNC = {
         if (member && g.freeSeats.length) btns.push(`<button class="btn small ghost" onclick="ASYNC.showInvite('${g.id}', '${g.joinCode}')">${TX('Einladen')}</button>`);
         const end = g.status === 'finished' && g.won != null ? (g.won ? ' ended won' : ' ended lost') : '';
         return `<div class="mpa-row${g.yourTurn ? ' turn' : ''}${end}">
-            <div class="mpa-title"><span class="mph-kind">${c.challenge ? '📅 ' + TX('Wochen-Challenge') : TX('Rundenspiel')}</span> <b>${this.mapName(c.mapKey, c)}</b>${joinable ? '' : ` · ${MP.civModeLabel(c)}${c.ranked ? ' · 🔥 ' + TX('Gewertet') : ''}`}${c.isPublic ? ' · ' + TX('öffentlich') : ''} · ${statusText}
+            <div class="mpa-title"><span class="mph-kind">${c.challenge ? '📅 ' + TX('Wochen-Challenge') : c.arena ? '🤖 ' + arenaLabel : TX('Rundenspiel')}</span> <b>${this.mapName(c.mapKey, c)}</b>${joinable ? '' : ` · ${MP.civModeLabel(c)}${c.ranked ? ' · 🔥 ' + TX('Gewertet') : ''}`}${c.isPublic ? ' · ' + TX('öffentlich') : ''} · ${statusText}
               <small class="mpa-c">${g.engine ? this.esc(g.engine) : ''}${member ? `${g.engine ? ' · ' : ''}${TX('Code')} ${g.joinCode}` : ''}</small></div>
             ${joinable ? MP.traitsHtml(MP.lobbyTraits(g, false)) : ''}
             ${this.seatsHtml(g.seats, g.mySlot)}
