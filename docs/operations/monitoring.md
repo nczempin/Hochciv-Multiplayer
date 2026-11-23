@@ -21,6 +21,7 @@ browser ──/admin/grafana/…──▶ game server (admins only) ──X-WEBA
 | `utils/grafana.js` | game server | Passes `/admin/grafana/…` to Grafana (`GRAFANA_URL`) for admins, superadmins and the review admin. It replaces any `X-WEBAUTH-*` header the browser sends, sets the admin's name and role (super admin → Grafana Admin, everyone else → Viewer), and only forwards Grafana's own cookies. |
 | `monitoring/prometheus/prometheus.yml` | Prometheus | Scrapes the server and the exporter every 15 s and keeps the data for `PROMETHEUS_RETENTION` (default `30d`). |
 | `monitoring/grafana/…` | Grafana | Provisions the data source and the dashboard `hochciv-overview` (`dashboards/hochciv.json`). It has no login of its own (auth proxy) and runs on the internal network only. |
+| `utils/monitoringSync.js` | game server | At every start, copies the image's `monitoring/` into the shared volume (`MONITORING_SYNC_DIR`), so a release with a changed dashboard arrives through Watchtower. Off locally. |
 | `postgres-exporter` | container | Reads the statistics views as `hochciv_app`, which `scripts/db-setup.js` gives the read-only role `pg_monitor`. |
 | `pg_stat_statements` | Postgres | Loaded through the database's `command` (`shared_preload_libraries`). `scripts/db-setup.js` then creates the extension. |
 
@@ -50,4 +51,6 @@ To leave monitoring off on a host, set `GRAFANA_URL=` (empty) in `.env`. The tab
 2. Export the copy as JSON.
 3. Replace the file and keep `uid: hochciv-overview`.
 
-The change reaches a host with the next image and `docker compose up -d` (monitoring-setup copies the files again).
+The change reaches a host with the next release: Watchtower recreates the server, the server copies the new file into the volume, and Grafana picks it up within a minute. Changes to `prometheus.yml` or to the provisioning files are copied the same way, but Prometheus and Grafana read them only at their start: run `docker compose restart prometheus grafana` on the host.
+
+Watchtower only updates the server. Prometheus, Grafana and the exporter run fixed versions; a new version, a new container or another change to the compose file needs the current compose file on the host and `docker compose up -d`.
