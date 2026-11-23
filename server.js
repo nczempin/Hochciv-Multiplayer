@@ -246,6 +246,17 @@ process.on('unhandledRejection', err => console.error('[Process] Unhandled rejec
 // Health check
 app.get('/health', (_req, res) => res.json({ ok: true, uptime: process.uptime() }));
 
+// Local tests only (tests/run-all.js, docs/development/testing.md): forgets every rate-limit counter,
+// so each test starts with a full budget, and the caches of what was read from matches, so matches a
+// test wrote straight into the database count at once. Never in production, whatever the environment says.
+if (process.env.TEST_HOOKS === 'on' && process.env.NODE_ENV !== 'production') {
+    console.warn('[Test] TEST_HOOKS=on – POST /api/test/reset resets all rate limits and match caches');
+    app.post('/api/test/reset', async (_req, res) => {
+        require('./utils/facts').changed();
+        res.json({ limiters: await require('./utils/rateLimit').resetAll() });
+    });
+}
+
 // REST API
 const authRoutes = require('./routes/auth');
 app.use('/api/auth', authRoutes);

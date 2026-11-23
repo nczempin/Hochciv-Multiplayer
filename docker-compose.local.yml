@@ -70,6 +70,8 @@ services:
       # Turn timer tests: TURN_TIMER_SCALE=0.05 docker compose -f docker-compose.local.yml up -d
       # makes a 60-second turn last 3 seconds (tests/timer/turn-timer.test.js)
       - TURN_TIMER_SCALE=${TURN_TIMER_SCALE:-1}
+      # tests/run-all.js resets the rate limits before each test and match caches (POST /api/test/reset, server.js)
+      - TEST_HOOKS=on
       # … and TURN_TIMER_AFK_AFTER=2 lets the KI keep a seat after two missed turns (default 3)
       - TURN_TIMER_AFK_AFTER=${TURN_TIMER_AFK_AFTER:-3}
       # Matchmaking tests (tests/match/match.test.js): groups of 2-3 form after this wait, confirm within this time

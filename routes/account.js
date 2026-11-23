@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
-const rateLimitLib = require('express-rate-limit');
+const rateLimitLib = require('../utils/rateLimit');
 const { sequelize, User, Game, Passkey } = require('../models');
 const totp = require('../utils/totp');
 const { sendMail } = require('../utils/mailer');
