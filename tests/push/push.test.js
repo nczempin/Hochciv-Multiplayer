@@ -114,7 +114,7 @@ const post = (c, p, body) => c(p, { method: 'POST', body: JSON.stringify(body) }
 
     // ---- the token alone doesn't move the phone while A's login on it is active (R-19)
     r = await post(cb, '/api/push/token', { token: phone });
-    ok(r.status === 409 && sql(`SELECT "UserId" FROM device_tokens WHERE token = '${phone}'`) === a.id, 'another account can't take the device while its login is active', r.status);
+    ok(r.status === 409 && sql(`SELECT "UserId" FROM device_tokens WHERE token = '${phone}'`) === a.id, 'another account can\'t take the device while its login is active', r.status);
     ok(sql(`SELECT length("sessionHash") FROM device_tokens WHERE token = '${phone}'`) === '64', 'the device keeps a hash of the session, not the id');
 
     // ---- the same phone, A logged out, now logged in as B: the token moves, A gets nothing more on it
