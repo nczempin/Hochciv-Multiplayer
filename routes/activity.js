@@ -284,8 +284,11 @@ router.post('/terms', limit, wrap(async (req, res) => {
     res.json({ ok: true });
 }));
 
+// Anyone could write here (no login, no token), so the endpoint is off unless ACTIVITY_DEBUG=on –
+// only for debugging the Activity; otherwise the bridge's reports go nowhere (404)
 const logLimit = rateLimitLib({ windowMs: 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false });
 router.post('/log', logLimit, (req, res) => {
+    if (process.env.ACTIVITY_DEBUG !== 'on') return res.status(404).end();
     const b = req.body || {};
     const level = b.level === 'error' ? 'error' : 'info';
     const text = String(b.msg || '').replace(/[\u0000-\u001f]/g, ' ').slice(0, 500);
