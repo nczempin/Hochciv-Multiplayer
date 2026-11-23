@@ -93,7 +93,12 @@ if (process.env.NODE_ENV === 'production') {
     if (KNOWN_DEFAULTS.includes(sessionSecret)) {
         throw new Error('CRITICAL: SESSION_SECRET is a publicly known default. Set a long random value.');
     }
-    if (sessionSecret.length < 32) console.warn('[Security] SESSION_SECRET is shorter than 32 characters.');
+    // A short secret can be guessed offline and session cookies forged: below 25 characters the
+    // server refuses to start, below 32 it warns (the generated 64 hex characters are far above)
+    if (sessionSecret.length < 25) {
+        throw new Error('CRITICAL: SESSION_SECRET is shorter than 25 characters. Set a long random value (docs/operations/configuration.md).');
+    }
+    if (sessionSecret.length < 32) console.warn('[Security] SESSION_SECRET is shorter than 32 characters – use a longer random value.');
     if (!config.WEBAUTHN) {
         console.warn('[Config] BASE_URL is not set – Google/Discord login will redirect to http://localhost:3000 and fail. ' +
             'Set BASE_URL=https://<your domain> in the .env next to docker-compose.yml.');
