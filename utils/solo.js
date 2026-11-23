@@ -171,7 +171,7 @@ async function store(user, body) {
         stats: rounds.length ? { players: statsPlayers, rounds, events: [] } : null,
         facts,
     });
-    Facts.changed();
+    Facts.changed(game.id);
     return { ok: true, id: game.id };
 }
 
