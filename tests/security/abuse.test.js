@@ -94,6 +94,25 @@ function fakeSocket() {
         sessions.removeSession(l.sessionId);
     }
 
+    // ── R-17 ─────────────────────────────────────────────────────────────────
+    {
+        const Solo = require('../../utils/solo');
+        const size = r => Buffer.byteLength(JSON.stringify(r));
+        const point = { s: 123456, c: 12, pop: 345, t: 23, a: 45, w: 2, d: 7 };
+        const game = n => ({
+            version: 'v110', durationRounds: n, participants: [{ name: 'A' }], facts: {},
+            stats: { players: [], events: [], rounds: Array.from({ length: n }, (_, i) => ({ r: i + 1, p: Array(8).fill(point) })) },
+        });
+        const small = game(50);
+        ok(Solo.fitSize(small) && small.stats.rounds.length === 50, 'R-17 a normal game is stored as it is');
+        const long = Solo.fitSize(game(2000));
+        ok(long && size(long) <= Solo.MAX_STORED_BYTES && long.stats.rounds.length < 2000 && long.stats.rounds.at(-1).r === 2000,
+            'R-17 a long game keeps a thinned chart under 200 KB, with its last round', long && `${long.stats.rounds.length} rounds, ${size(long)} bytes`);
+        const huge = game(10);
+        huge.facts = { junk: 'x'.repeat(Solo.MAX_STORED_BYTES) };
+        ok(Solo.fitSize(huge) === null, 'R-17 a game that doesn\'t fit even without a chart is refused');
+    }
+
     console.log(failed ? `\n${failed} failed` : '\nall passed');
     process.exit(failed ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });
