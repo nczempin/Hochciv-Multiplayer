@@ -1209,6 +1209,7 @@
         'Bot-Token entfernen': 'Remove bot token',
         'Gespeicherte Secrets werden nie angezeigt. Leer lassen behält sie, ein neuer Wert ersetzt sie.': 'Stored secrets are never shown. Leave empty to keep them, a new value replaces them.',
         'Review-Admin: Du siehst alles, kannst aber nichts ändern.': 'Review admin: you can see everything, but cannot change anything.',
+        'Nur Lesezugriff: Als Review-Admin siehst du keine zweiten Faktoren anderer Nutzer.': 'Read-only access: as a review admin you do not see the second factors of other users.',
         'Nur Lesezugriff: Als Review-Admin kannst du nichts ändern.': 'Read-only access: as a review admin you cannot change anything.',
         'Entbannen': 'Unban',
         'Bannen': 'Ban',

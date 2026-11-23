@@ -9,6 +9,7 @@
 * Use a unique `SESSION_SECRET` and database password per installation (production and staging differ). The server refuses to start with a missing, publicly known or short (under 25 characters) secret.
 * The game code in `HochCiv*/` runs on your server and in your players' browsers – review changes to it like server code.
 * Only superadmins can grant admin rights or change OAuth settings; admins manage normal users only ([Administration](../operations/administration.md)). Changes that could take over an account – a new password, removing second factors, roles, deleting an account – and the OAuth settings need a recent login of the admin (password or authenticator), and every admin change is written to the log (`[Admin] <who> <what>`).
+* The review admin (`reviewadmin`, for outside reviewers) reads but changes nothing, and gets as little personal data as possible: e-mail addresses only masked, no second factors of other users. Give the account only for the time of a review.
 * The image runs the server as `node`, which may only write `public/`; the compose files drop all Linux capabilities, forbid privilege changes, limit processes and memory and wait for the database's health check. `POSTGRES_PASSWORD` has no default.
 * The server connects to PostgreSQL as `hochciv_app`: it reads and writes rows but is no superuser and can't change the schema. Migrations run as `hochciv_owner` before the server starts, and the server process never sees that password; the superuser's password stays with the database ([Roles and migrations](database.md#roles-and-migrations)).
 * Workflow actions are pinned to commit SHAs (Dependabot updates them); pull requests run `.github/workflows/checks.yml` (tests without a server, `npm audit`).
@@ -72,6 +73,8 @@ CORS follows the same rule (`server.js`): only these origins get `Access-Control
 `tests/security/security.test.js` covers the origin check, the authenticator lockout, the second factor after OAuth and bans; `tests/security/regression.test.js` the findings of the security audit of 2026-11-16. The fixes of the findings report of 2026-11-20 (IDs `R-xx`) have their tests in `tests/security/` as well (see [Testing](../development/testing.md)).
 
 ## Discord Activity
+
+Inside the Activity, the bridge compiles only inline handlers that one of our templates produces (an allow-list built from `mp.js` and `client/` at build time, see [Discord Activity](../operations/discord-activity.md#notes)), so an HTML injection cannot use Discord's CSP workaround to run script.
 
 The Activity's Discord access token must have been issued to this server's Discord application (checked with `GET /oauth2/@me`, scope `identify`): a token of another Discord app the player once used is refused.
 
