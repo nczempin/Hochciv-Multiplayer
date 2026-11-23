@@ -51,6 +51,7 @@ These have sensible defaults and are normally left alone. The tests in `tests/` 
 | `ASYNC_TIMEOUT_MS` | 7 days | Rundenspiele: when the KI takes over a seat, for 7 days per turn; 1 and 3 days per turn scale it (see [Rundenspiele](../reference/rundenspiele.md)). |
 | `ASYNC_SWEEP_MS` | 10 minutes | Rundenspiele: how often the server checks for reminders and timeouts. |
 | `REPLAY_KEEP_DAYS` | `180` | Replays older than this are deleted. |
+| `BOT_REPLAY_KEEP_DAYS` | `30` | Matches only bots played (bot accounts and KI, no person): their replays and per-round statistics are deleted after this many days. Result, facts and MMR stay. |
 | `REPORT_KEEP_YEARS` | `3` | Chat reports about guests or deleted accounts are deleted after this time. |
 
 ## Fixed limits (`config.js`)

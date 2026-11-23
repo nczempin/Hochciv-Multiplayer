@@ -195,7 +195,7 @@ async function store(gameId) {
     if (!facts) facts = fromRecord(game);
     // a match without any data stays out of the statistics, but is not tried again
     await game.update(Object.assign({ facts: facts || { v: 1, src: 'none', p: [] } }, stats ? { stats } : {}));
-    if (typeof onChange === 'function') onChange();
+    notify(gameId);
     return facts;
 }
 
@@ -205,11 +205,17 @@ function storeLater(gameId) {
     setImmediate(() => store(gameId).catch(err => console.error(`[Facts] ${gameId}:`, err)));
 }
 
-let onChange = null;
-/** utils/gamestats.js drops its cache when facts change. */
-function setOnChange(fn) { onChange = fn; }
-/** Facts were stored elsewhere (a single-player game, utils/solo.js). */
-function changed() { if (typeof onChange === 'function') onChange(); }
+// Caches of what was read from matches (utils/gamestats.js, routes/profile.js) listen here:
+// fn(gameId) when one match was stored, fn() when any may have changed (deletions, merges).
+const listeners = [];
+function onChange(fn) { listeners.push(fn); }
+function notify(gameId) {
+    for (const fn of listeners) {
+        try { fn(gameId || null); } catch (err) { console.error('[Facts] listener:', err); }
+    }
+}
+/** Facts were stored elsewhere (a single-player game, utils/solo.js) – or, without an id, many matches changed. */
+function changed(gameId) { notify(gameId); }
 
 /** All matches without facts (older ones, or after "recompute"), one after another. */
 async function backfill() {
@@ -226,4 +232,4 @@ function startBackfill() {
     setTimeout(() => backfill().catch(err => console.error('[Facts] Backfill failed:', err)), 30 * 1000).unref();
 }
 
-module.exports = { fromStates, fromRecord, markPlayerBots, markAccounts, victoryOf, store, storeLater, backfill, startBackfill, setOnChange, changed };
+module.exports = { fromStates, fromRecord, markPlayerBots, markAccounts, victoryOf, store, storeLater, backfill, startBackfill, onChange, setOnChange: onChange, changed };
