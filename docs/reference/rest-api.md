@@ -213,4 +213,4 @@ All routes need *admin*; `/oauth*` needs *superadmin*. Admins can only manage ac
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/health` | `{ ok: true, uptime }` |
+| GET | `/health` | `{ ok: true }` (no uptime – the admin dashboard shows it) |

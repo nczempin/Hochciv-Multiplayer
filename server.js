@@ -251,7 +251,8 @@ pgPool.on('error', err => console.error('[DB] Idle session-store connection fail
 process.on('unhandledRejection', err => console.error('[Process] Unhandled rejection:', err));
 
 // Health check
-app.get('/health', (_req, res) => res.json({ ok: true, uptime: process.uptime() }));
+// public, so no uptime: it would reveal restart and deploy times (admins see it in the dashboard)
+app.get('/health', (_req, res) => res.json({ ok: true }));
 
 // Local tests only (tests/run-all.js, docs/development/testing.md): forgets every rate-limit counter,
 // so each test starts with a full budget, and the caches of what was read from matches, so matches a
