@@ -154,7 +154,7 @@ router.get('/users/:id/mfa', async (req, res) => {
 
 // Taking second factors, passwords and roles away needs a recent login: a stolen admin cookie alone
 // must not be enough to take over accounts
-router.delete('/users/:id/mfa/:type/:tokenId?', requireRecentAuth, async (req, res) => {
+router.delete('/users/:id/mfa/:type{/:tokenId}', requireRecentAuth, async (req, res) => {
     try {
         const targetUser = await User.findByPk(req.params.id);
         if (!targetUser) return res.status(404).json({ error: 'Benutzer nicht gefunden' });

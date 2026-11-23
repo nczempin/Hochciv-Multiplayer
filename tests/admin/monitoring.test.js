@@ -93,13 +93,14 @@ function makeUser(role) {
             panels = await frame.locator('.react-grid-item').count();
         } catch (_) { /* counted below */ }
         ok(panels >= 5, 'dashboard renders inside the admin page', `${panels} panels`);
+        const loginForm = await frame.locator('input[name="user"], input[name="password"]').count().catch(() => 0);
         const text = await frame.locator('body').innerText().catch(() => '');
-        ok(!/Unauthorized|Login|failed to load/i.test(text.slice(0, 2000)), 'no login or error page in the frame');
+        ok(!loginForm && !/Unauthorized|failed to load/i.test(text.slice(0, 2000)), 'no login form or error page in the frame');
         ok(!errors.length, 'no script errors on the admin page', errors.join(' | '));
 
         // ── the figures for Prometheus ───────────────────────────────────────────────────
         const metrics = inServer(`require('http').get('http://localhost:9464/metrics', r => { let b = ''; r.on('data', d => b += d);
-            r.on('end', () => { console.log(b); process.exit(0); }); })`);
+            r.on('end', () => process.stdout.write(b)); })`);   // no process.exit: it would cut a long answer off
         for (const m of ['hochciv_http_request_duration_seconds_bucket', 'hochciv_db_query_duration_seconds_bucket',
             'hochciv_db_pool_connections', 'hochciv_sockets', 'hochciv_matches_24h', 'hochciv_nodejs_eventloop_lag_seconds']) {
             ok(metrics.includes(m), `/metrics has ${m}`);

@@ -114,7 +114,11 @@ const jsonSmall = express.json({ limit: '20kb' }), jsonSolo = express.json({ lim
 app.use((req, res, next) => {
     // Grafana's requests go through untouched (utils/grafana.js)
     if (req.path.startsWith(Grafana.PREFIX + '/')) return next();
-    return (req.path.startsWith('/api/solo/') ? jsonSolo : jsonSmall)(req, res, next);
+    // Express 5 leaves req.body undefined without a JSON body; the routes expect {} (as in Express 4)
+    return (req.path.startsWith('/api/solo/') ? jsonSolo : jsonSmall)(req, res, err => {
+        if (req.body === undefined) req.body = {};
+        next(err);
+    });
 });
 app.disable('x-powered-by');
 app.use((req, res, next) => {
