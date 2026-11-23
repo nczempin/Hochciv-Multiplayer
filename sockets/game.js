@@ -1,7 +1,6 @@
 const sessions = require('../sessions');
 const engine = require('../engine-adapter');
-const { User, Game, sequelize } = require('../models');
-const { calculateMMR } = require('../utils/mmr');
+const Rating = require('../utils/rating');
 const { finalPoints } = require('../utils/score');
 const config = require('../config');
 const chat = require('../utils/chat');
@@ -1413,16 +1412,6 @@ async function processGameOverMmr(session, io, sessionId, isRanked = false) {
             });
         }
 
-        // Fetch current MMR for all human users from DB
-        for (let p of playersData) {
-            if (p.dbUserId) {
-                const u = await User.findByPk(p.dbUserId);
-                p.mmr = u ? u.mmr : 1000;
-            } else {
-                p.mmr = 1000; // Fill bot MMR or missing user as baseline
-            }
-        }
-
         // One account on several seats would rate itself against itself – no MMR then; a bot
         // account counts as its owner (as in startGame)
         const userIds = session.players.filter(lp => !lp.resigned && lp.dbUserId).map(lp => lp.dbOwnerId || lp.dbUserId);
@@ -1431,53 +1420,22 @@ async function processGameOverMmr(session, io, sessionId, isRanked = false) {
             isRanked = false;
         }
 
-        if (isRanked) {
-            // Execute Custom ELO/MMR Engine
-            const mmrResults = calculateMMR(playersData);
-
-            // Map results back for DB persistence
-            for (let res of mmrResults) {
-                const p = playersData.find(x => x.dbUserId === res.dbUserId && x.dbUserId != null);
-                if (p) {
-                    p.mmrShift = res.mmrChange;
-                    p.oldMmr = res.oldMmr;
-                    p.newMmr = res.newMmr;
-
-                    // Persist new MMR to DB
-                    await User.update({
-                        mmr: res.newMmr,
-                        gamesPlayed: sequelize.literal('"gamesPlayed" + 1')
-                    }, { where: { id: p.dbUserId } });
-                }
-            }
-        } else {
-            // Unranked games just increment gamesPlayed
-            for (let p of playersData) {
-                if (p.dbUserId) {
-                    await User.update({
-                        gamesPlayed: sequelize.literal('"gamesPlayed" + 1')
-                    }, { where: { id: p.dbUserId } });
-                }
-            }
-        }
-
-        // Resigned accounts: a played (lost) game, in ranked games a fixed penalty
-        for (const p of playersData.filter(x => x.resigned && x.replacedUserId)) {
-            if (isRanked) p.penalty = -Resign.MMR_PENALTY;
-            await User.update({
-                gamesPlayed: sequelize.literal('"gamesPlayed" + 1'),
-                ...(isRanked ? { mmr: sequelize.literal(`GREATEST("mmr" - ${Resign.MMR_PENALTY}, 0)`) } : {}),
-            }, { where: { id: p.replacedUserId } });
-        }
-
-        // Log the Historic Match Record
+        // MMR, games played, the resign penalty and the match record in one transaction
+        // (utils/rating.js, R-18); resigned accounts: a played (lost) game, ranked a fixed penalty
+        const resigned = playersData.filter(x => x.resigned && x.replacedUserId);
+        if (isRanked) resigned.forEach(p => { p.penalty = -Resign.MMR_PENALTY; });
         const version = engine.getEngine().APP_VERSION || 'Unknown';
-        const game = await Game.create({
-            version,
-            durationRounds: session.state.round,
-            winnerUsername: playersData.find(p => p.isWinner)?.dbUsername || null,
-            participants: playersData,
-            stats: Stats.publicStats(session.stats),
+        const game = await Rating.book({
+            players: playersData,
+            ranked: isRanked,
+            penalty: { userIds: resigned.map(p => p.replacedUserId), mmr: Resign.MMR_PENALTY },
+            record: players => ({
+                version,
+                durationRounds: session.state.round,
+                winnerUsername: players.find(p => p.isWinner)?.dbUsername || null,
+                participants: players,
+                stats: Stats.publicStats(session.stats),
+            }),
         });
 
         // The replay (utils/replay.js) – then the end screen can offer it
