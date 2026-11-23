@@ -71,8 +71,8 @@ module.exports = function registerHandlers(io) {
         on(socket, 'session:connect', (data, ack) => {
             const s = sessions.getSession(data.sessionId);
             if (!s) return ack({ error: 'Sitzung nicht gefunden.' });
-            if (typeof data.password !== 'string' || s.password !== data.password)
-                return ack({ error: 'Falsches Passwort.' });
+            // the sessionId is only known to who joined; compared in constant time (R-16)
+            if (!sessions.passwordMatches(s, data.password)) return ack({ error: 'Falsches Passwort.' });
             const player = typeof data.clientId === 'string'
                 ? s.players.find(p => p.kind === 'human' && p.clientId === data.clientId) : null;
             const spectator = !player && typeof data.clientId === 'string'

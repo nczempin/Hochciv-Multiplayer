@@ -5,8 +5,12 @@
  *
  *   · R-15 every socket event goes through a token bucket; a flood gets error acks and is
  *          disconnected, normal play and a bot waiting for its acks are not
+ *   · R-16 wrong lobby passwords are counted per lobby; the lock stops new players even with the
+ *          right password, players of the lobby and the server's own callers get in
  */
+const crypto = require('crypto');
 const SocketLimit = require('../../utils/socket-limit');
+const sessions = require('../../sessions');
 
 let failed = 0;
 const ok = (cond, name, info) => {
@@ -63,6 +67,31 @@ function fakeSocket() {
         let refused = 0;
         for (let t = 0; t < 10000; t += 40) if (!SocketLimit.take(m, m.at + t)) refused++;
         ok(refused === 0, 'R-15 25 moves per second for 10 s pass');
+    }
+
+    // ── R-16 ─────────────────────────────────────────────────────────────────
+    {
+        const id = () => crypto.randomUUID();
+        const host = { name: 'Host', clientId: id() };
+        const l = sessions.createSession({}, host);
+        const pw = l.password;
+        const wrong = pw === '000000' ? '111111' : '000000';
+        const inside = id();
+        ok(typeof sessions.joinSession(l.joinCode, pw, { name: 'Bea', clientId: inside }) === 'object', 'R-16 the right password joins');
+        let last;
+        for (let i = 0; i < sessions.PASSWORD_MAX_FAILS; i++) last = sessions.joinSession(l.joinCode, wrong, { name: 'X', clientId: id() });
+        ok(last === 'Falsches Passwort.', 'R-16 wrong passwords are refused', last);
+        ok(sessions.joinSession(l.joinCode, pw, { name: 'Cem', clientId: id() }) === sessions.PASSWORD_LOCKED, 'R-16 after 10 failures the lobby is locked, also for the right password');
+        ok(sessions.previewSession(l.joinCode, pw) === sessions.PASSWORD_LOCKED, 'R-16 … for the invite preview');
+        ok(sessions.addSpectator(l.joinCode, pw, { name: 'W', clientId: id() }) === sessions.PASSWORD_LOCKED, 'R-16 … and for watching');
+        ok(typeof sessions.joinSession(l.joinCode, pw, { name: 'Bea', clientId: inside }) === 'object', 'R-16 a player of the lobby still gets back in');
+        ok(typeof sessions.joinSession(l.joinCode, pw, { name: 'Dan', clientId: id() }, { trusted: true }) === 'object', 'R-16 the server\'s own callers are not locked out');
+        const s = sessions.getSession(l.sessionId);
+        s.passwordGuard.lockedUntil = Date.now() - 1;
+        ok(typeof sessions.joinSession(l.joinCode, pw, { name: 'Eva', clientId: id() }) === 'object', 'R-16 after the lock the right password works again');
+        ok(sessions.passwordMatches(s, pw) && !sessions.passwordMatches(s, wrong) && !sessions.passwordMatches(s, undefined) && !sessions.passwordMatches(s, pw + '0'),
+            'R-16 the constant-time compare');
+        sessions.removeSession(l.sessionId);
     }
 
     console.log(failed ? `\n${failed} failed` : '\nall passed');
