@@ -42,6 +42,7 @@ CORS follows the same rule (`server.js`): only these origins get `Access-Control
 ## Bans and account deletion
 
 * **A ban** logs the account out everywhere, closes its open game connections and takes it off its live seats (the seat plays on as a guest's).
+* **A host's kick** puts the player's tab (`clientId`) and account on the lobby's ban list: neither can join that session again; a guest seat that logs in with the kicked account is removed. A guest in a new tab gets past it – the host kicks again.
 * **Deleting an account** removes its personal data and anonymizes its seats in other players' matches and replays ([Administration](../operations/administration.md#bans-and-deleted-accounts)).
 
 ## Game integrity

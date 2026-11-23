@@ -137,7 +137,7 @@ function seat(instanceId, user) {
         }
 
         const clientId = rec.clients.get(user.id) || crypto.randomUUID();
-        const r = sessions.joinSession(s.joinCode, s.password, { name, clientId });
+        const r = sessions.joinSession(s.joinCode, s.password, { name, clientId, userId: user.id });
         if (typeof r === 'string') {
             // The game runs already or the lobby is full: watch instead (spectator mode)
             const w = sessions.addSpectator(s.joinCode, s.password, { name, clientId });

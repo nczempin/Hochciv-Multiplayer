@@ -125,7 +125,7 @@ function createSession(gameConfig, hostInfo) {
  * Join an existing session.
  * @param {string} joinCode
  * @param {string} password  – 6-digit numeric
- * @param {object} playerInfo – { name, civ, ability }
+ * @param {object} playerInfo – { name, civ, ability, clientId, userId (the logged-in account, R-23) }
  * @returns {object|string} { sessionId, playerIndex } or error string
  */
 function joinSession(joinCode, password, playerInfo) {
@@ -144,6 +144,8 @@ function joinSession(joinCode, password, playerInfo) {
         return { sessionId, playerIndex: existingPlayer.index };
     }
 
+    // kicked by the host: not again into this lobby, neither from the same tab nor the same account (R-23)
+    if (isBanned(session, clientId, playerInfo.userId)) return BANNED;
     // a seat is found by the secret clientId (sessionStorage of the tab), never by the name
     if (session.status !== 'lobby') return 'Das Spiel hat schon begonnen. Zurück auf deinen Platz kommst du nur im selben Browser-Tab, in dem du beigetreten bist.';
     if (session.players.length >= humanSeats(session)) return 'Sitzung ist voll.';
@@ -257,25 +259,30 @@ function cleanup() {
     for (const [id, s] of sessions) {
         let shouldTerminate = false;
 
-        // 1. Session absolute timeout (REMOVED)
-        // Rely purely on inactivity or empty room timeout.
+        // No absolute lifetime: a session ends when it is empty or idle for too long.
+        const running = ['civdraft', 'placement', 'draft', 'playing'].includes(s.status);
+        // a paused game waits for its players – a lunch or dinner break (R-11)
+        const paused = running && !!s.paused;
 
-        // 2. Empty room termination
+        // 1. Empty: a lobby or a finished game nobody is connected to goes at the next run
+        // (empty for one whole cleanup interval, 5–10 min). A running game survives an outage
+        // where everyone is offline for EMPTY_RUNNING_GRACE_MS – a dropped LAN-party Wi-Fi, phones
+        // in the background (R-10) –, a paused one as long as the pause may last.
         const hasConnectedPlayers = s.players.some(p => p.connected);
         if (!hasConnectedPlayers) {
+            const grace = paused ? config.PAUSE_TIMEOUT_MS : running ? config.EMPTY_RUNNING_GRACE_MS : 0;
             if (!s.emptySince) {
                 s.emptySince = now;
-            } else if (now - s.emptySince > 10 * 1000) { // 10 seconds empty grace period
+            } else if (now - s.emptySince >= grace) {
                 shouldTerminate = true;
             }
         } else {
             s.emptySince = null;
         }
 
-        // 3. Inactivity termination: a running game may sit still longer (no turn timer, a
-        // player thinking) than a lobby or a finished game
-        const running = ['civdraft', 'placement', 'draft', 'playing'].includes(s.status);
-        const idleLimit = running ? config.SESSION_TIMEOUT_MS : config.LOBBY_TIMEOUT_MS;
+        // 2. Inactivity: a running game may sit still longer (no turn timer, a player thinking)
+        // than a lobby or a finished game, a paused one longer still
+        const idleLimit = paused ? config.PAUSE_TIMEOUT_MS : running ? config.SESSION_TIMEOUT_MS : config.LOBBY_TIMEOUT_MS;
         if (s.lastActivity && now - s.lastActivity > idleLimit) {
             shouldTerminate = true;
         }
@@ -289,6 +296,23 @@ function cleanup() {
 // Run cleanup periodically
 const _cleanupTimer = setInterval(cleanup, config.CLEANUP_INTERVAL_MS);
 _cleanupTimer.unref();   // don't prevent Node from exiting
+
+/**
+ * R-23: the host's kick bans the seat's tab (clientId) and account from the session – before, the
+ * kicked player could rejoin at once with code and password. A guest in a new tab gets past it
+ * (a new clientId); the host can kick again. Lasts as long as the session.
+ */
+const BANNED = 'Der Host hat dich aus dieser Lobby entfernt.';
+function banFromSession(session, player) {
+    if (!player || player.kind !== 'human') return;
+    const b = session.banned || (session.banned = { clientIds: [], userIds: [] });
+    if (player.clientId && !b.clientIds.includes(player.clientId)) b.clientIds.push(player.clientId);
+    for (const id of [player.dbUserId, player.botUserId]) if (id && !b.userIds.includes(id)) b.userIds.push(id);
+}
+function isBanned(session, clientId, userId) {
+    const b = session.banned;
+    return !!b && (b.clientIds.includes(clientId) || (!!userId && b.userIds.includes(userId)));
+}
 
 function kickPlayer(sessionId, playerIndex, force = false) {
     const session = sessions.get(sessionId);
@@ -487,6 +511,9 @@ module.exports = {
     removeSession,
     cleanup,
     kickPlayer,
+    banFromSession,
+    isBanned,
+    BANNED,
     cleanHostConfig,
     previewSession,
     activityOf,

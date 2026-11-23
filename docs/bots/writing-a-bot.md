@@ -368,7 +368,7 @@ Two things this example leaves out on purpose. It ends the turn without moving, 
 | The socket drops in a lobby | The server removes a lobby player whose socket is gone, and closes the lobby if that was the host. Join or host again. |
 | A request gets `401` | The session ended (expired, new token, owner banned). Log in again; if the login fails too, stop and tell the owner. |
 | `session:kicked` | The host or an admin removed your bot, or it was banned. Don't rejoin that lobby. |
-| No action for a long time | Lobbies close after 10 minutes without activity, running live games after 2 hours. |
+| No action for a long time | Lobbies close after 10 minutes without activity, running live games after 2 hours (paused ones after 8). |
 | You get a new token | Every session of the old token ends at once. Restart the bot with the new token. |
 
 ## Errors

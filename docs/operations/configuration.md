@@ -45,6 +45,7 @@ These have sensible defaults and are normally left alone. The tests in `tests/` 
 | Variable | Default | Description |
 |---|---|---|
 | `TURN_TIMER_SCALE` | `1` | Factor on the live-game turn timer (tests: `0.05`). *local* |
+| `LOBBY_GRACE_MS` | `45000` | How long a lobby seat waits for its player after a lost connection before it is freed (a host's lobby goes to the next player). |
 | `TURN_TIMER_AFK_AFTER` | `3` | Missed turns in a row after which the KI keeps a live seat. *local* |
 | `MATCH_GROUP_WAIT_MS` | `20000` | Matchmaking: how long the longest-waiting player waits before a game of two or three starts. *local* |
 | `MATCH_CONFIRM_MS` | `20000` | Matchmaking: time to accept a found match. |
@@ -69,4 +70,6 @@ Changed in code, not by environment:
 | Spectators per live game | 20 |
 | Player name length | 30 |
 | Join code / password | 6 characters / 6 digits |
-| Live game removed after inactivity | 2 hours (lobbies and finished games: 10 minutes) |
+| Live game removed after inactivity | 2 hours (paused: 8 hours; lobbies and finished games: 10 minutes) |
+| Live game removed when nobody is connected | after 30 minutes (paused: 8 hours); lobbies and finished games at the next check (every 5 minutes) |
+| Placing the start tiles without a turn timer | 3 minutes, then the KI places (scaled by `TURN_TIMER_SCALE`) |

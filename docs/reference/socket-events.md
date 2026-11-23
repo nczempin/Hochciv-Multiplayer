@@ -16,8 +16,8 @@ Handled by `sockets/game.js`. A live game is a Socket.IO room named after its `s
 
 | Event | Payload | Who | Purpose |
 |---|---|---|---|
-| `session:connect` | `{ sessionId, password, clientId }` | player or spectator | Bind the socket to the seat whose `clientId` matches (or the spectator). Also used for reconnects. After the start, a seat held by an account only takes that account back (another account is refused). Ack: `playerIndex`, `status`, `players`, `gameConfig`, `hostIndex`, `spectators`. |
-| `session:kick` | `{ playerIndex }` | host | Remove a player from the lobby |
+| `session:connect` | `{ sessionId, password, clientId }` | player or spectator | Bind the socket to the seat whose `clientId` matches (or the spectator). Also used for reconnects. A socket bound to another session before gives up that seat first (it goes offline, the socket leaves the old room). A player the host kicked is refused (`Der Host hat dich aus dieser Lobby entfernt.`). After the start, a seat held by an account only takes that account back (another account is refused). Ack: `playerIndex`, `status`, `players`, `gameConfig`, `hostIndex`, `spectators`. |
+| `session:kick` | `{ playerIndex }` | host | Remove a player from the lobby. The player's tab (`clientId`) and account can't join this session again |
 | `lobby:config` | game settings | host | Change the lobby settings (map, empires, KI, events, timer, ranked, player-bots `playerBots` / `playerBotLimit`, public listing `isPublic`, nation mode `civMode` `fixed` / `random` / `draft` / `randomDraft` and turn order `turnOrder` `classic` / `pick` / `random`, …); a custom map is checked with `checkCustomMap`. `randomCivs` still works and follows `civMode` |
 | `lobby:player:update` | `{ civ, ability, pos }` | player | Own nation and ability in the lobby; `pos` (0-based, `null` = none) is the turn position asked for with turn order `pick` – a taken one is refused (`Diese Position ist schon vergeben.`) |
 | `lobby:ready` | `{ ready }` | player | Ready check: tick or take back; new lobby settings clear every tick. The players in `lobby:player:updated` carry `ready` (player-bots always `true`) |
@@ -39,16 +39,16 @@ Handled by `sockets/game.js`. A live game is a Socket.IO room named after its `s
 
 | Event | Purpose |
 |---|---|
-| `player:joined`, `player:left` | Someone joined or left the lobby |
+| `player:joined`, `player:left` | Someone joined or left the lobby. A lobby seat whose player lost the connection stays 45 s (`LOBBY_GRACE_MS`, `connected: false` in `lobby:player:updated`) before `player:left` |
 | `lobby:player:updated` | The lobby's player list changed |
 | `lobby:config:update` | The lobby settings changed |
 | `session:index` | Your seat number / the host changed |
 | `session:kicked` | You were removed (by the host, an admin, a ban) |
 | `spectators:update` | `{ count }` of spectators |
-| `placement:start` | Start-tile placement begins (tile map) |
+| `placement:start` | Start-tile placement begins (tile map). Placing has the turn time, without a turn timer 3 minutes; then the KI places the missing tiles |
 | `draft:update` | Marathon draft state |
 | `civdraft:update` | Nation draft state after every pick: `{ mode, order, at, cur, pool: [{ id, civ, ability, left }], picks: { seat: { civ, ability } }, noAbility, seats, turn: { total, left } }`. The seats sit in turn order already (lobby index = position); the last to move picks first. A pick has the turn time (2 minutes without a timer), then a random one is made. Then `placement:start`, `draft:update` or `game:start` |
-| `game:startFailed` | `{ error }` – the start after the nation draft failed, the lobby is back |
+| `game:startFailed` | `{ error }` – the start after the nation draft failed, the lobby is back as before the start (no KI seats, the players' nations and settings) |
 | `game:start` | `{ state, yourIndex, turn }` – the game begins (or the state after a reconnect) |
 | `state:update` | New state after every action or KI turn, with turn/timer info and the scenes since the last update (`scenes`, `client/scenes.js`) |
 | `turn:timeout` | Your turn ran out; `{ afk }` when the KI keeps the seat |
@@ -60,7 +60,7 @@ Handled by `sockets/game.js`. A live game is a Socket.IO room named after its `s
 | `game:over` | The result |
 | `game:record` | The stored match (id for statistics, replay, profile links) |
 | `game:stats` | Statistics over the rounds |
-| `session:rematch` | The host started a rematch: back to the lobby |
+| `session:rematch` | The host started a rematch: back to the lobby. With `{ error }`: the start failed during the tile placement or the Marathon draft, the lobby is back as before the start |
 | `sys:message` | Admin broadcast |
 
 ## Rundenspiele
