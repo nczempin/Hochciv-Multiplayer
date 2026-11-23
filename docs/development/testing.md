@@ -77,6 +77,7 @@ The server limits logins and other requests per minute, so tests run back to bac
 | `security/security.test.js` | origin check, TOTP limits, auth fixes | default |
 | `security/params.test.js` | action parameters: coordinates and ids must be integers on the map (R-01); runs without a server | – |
 | `security/ranked.test.js` | ranked integrity: a seat stays with its account after the start (R-02), no timeout penalty in a converted ranked game (R-06), the resign penalty survives the conversion (R-07) | default |
+| `security/quickwins.test.js` | small hardening: clientId and join code checked in `sessions.js` (R-13, R-25), short `SESSION_SECRET` refused in production (R-05), CORS only for allowed origins (R-14), Activity log off (R-21), bot deletion needs a recent login (R-20), `/health` without uptime (R-27) | default |
 | `db/migrations.test.js` | database roles and migrations on an empty database: the setup, every migration, models matching the schema, what the server's role may not do | no server – an empty PostgreSQL (see header); runs on every pull request |
 | `security/regression.test.js` | findings of the security audit of 2026-11-16: passkey login, ranked seats, parallel code guesses, sockets after a password change, invitation e-mails, password-change limit (waits a minute three times for the auth limits) | `TURN_TIMER_SCALE=0.05` |
 | `spectators/spectators.test.js` | spectator mode | default |

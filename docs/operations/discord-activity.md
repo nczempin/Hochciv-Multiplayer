@@ -25,7 +25,7 @@ Discord shows the game in an iframe on `https://<client id>.discordsays.com` and
 | `GET /api/activity/config` | the Discord client ID |
 | `POST /api/activity/token` | exchanges the SDK's OAuth code for an access token |
 | `POST /api/activity/lobby` | seats the Discord user in the lobby of their activity instance |
-| `POST /api/activity/log` | progress and errors of the bridge, written to the server log |
+| `POST /api/activity/log` | progress and errors of the bridge, written to the server log – only with `ACTIVITY_DEBUG=on` (anyone can post there), otherwise 404 |
 
 One lobby per activity instance: everyone who launches the Activity in the same call lands in the same lobby. Each Discord user gets a secret clientId per instance, so reopening the Activity puts them back into their seat. If the lobby is gone (host left before the start, game over), the next player to join creates a fresh one.
 

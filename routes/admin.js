@@ -118,7 +118,7 @@ router.get('/users', async (req, res) => {
             if (u.accountType === 'bot') {
                 const owner = byId.get(u.ownerId) || null;
                 j.owner = owner ? { id: owner.id, username: owner.username } : null;
-                j.botDisabled = Bots.botUsable(u, owner);
+                j.botDisabled = Bots.botBlockedReason(u, owner);
             } else if (Bots.canCreateBots(u)) {
                 const limit = Bots.botLimitOf(u);
                 j.bots = { count: owned[u.id] || 0, limit: limit === Infinity ? null : limit };

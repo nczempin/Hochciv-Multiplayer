@@ -10,7 +10,7 @@ Settings that change at runtime (maintenance mode, registration switch, OAuth pr
 
 | Variable | Required | Description |
 |---|---|---|
-| `SESSION_SECRET` | **yes** | Long random string that signs login cookies. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. The server refuses to start with a missing or publicly known value. Changing it logs everyone out. |
+| `SESSION_SECRET` | **yes** | Long random string that signs login cookies. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. The server refuses to start in production with a missing or publicly known value or one shorter than 25 characters, and warns below 32. Changing it logs everyone out. |
 | `BASE_URL` | **yes** for OAuth/passkeys | Public URL, scheme and host only, e.g. `https://hochciv.example` – no path, no trailing characters. Used for OAuth callbacks, links in e-mails and as the passkey origin. A malformed value stops the server at startup. Without it, OAuth redirects to `http://localhost:3000` and fails. |
 | `POSTGRES_PASSWORD` | **yes** | Password of the database superuser – the production and staging compose files refuse to start without it (there is no default). For an existing database it must be the password the volume was created with. Only the database and the db-setup container get it, not the server. |
 | `POSTGRES_OWNER_PASSWORD` / `POSTGRES_APP_PASSWORD` | **yes** | Passwords of the server's roles `hochciv_owner` (migrations) and `hochciv_app` (the server). Two different values, letters and digits only (they go into a URL). The db-setup container creates the roles and sets these passwords at every `docker compose up` – changing them in `.env` and running `docker compose up -d` changes them. See [Roles and migrations](../reference/database.md#roles-and-migrations). |
@@ -53,6 +53,7 @@ These have sensible defaults and are normally left alone. The tests in `tests/` 
 | `ASYNC_REMINDER_MS` | 5 days | Rundenspiele: when the waiting player gets a reminder (for 7 days per turn; shorter times per turn scale it). |
 | `ASYNC_TIMEOUT_MS` | 7 days | Rundenspiele: when the KI takes over a seat, for 7 days per turn; 1 and 3 days per turn scale it (see [Rundenspiele](../reference/rundenspiele.md)). |
 | `ASYNC_SWEEP_MS` | 10 minutes | Rundenspiele: how often the server checks for reminders and timeouts. |
+| `ACTIVITY_DEBUG` | off | `on` writes the Discord Activity bridge's progress and errors to the server log (`POST /api/activity/log`). The endpoint needs no login, so switch it on only while debugging the Activity. |
 | `REPLAY_KEEP_DAYS` | `180` | Replays older than this are deleted. |
 | `BOT_REPLAY_KEEP_DAYS` | `30` | Matches only bots played (bot accounts and KI, no person): their replays and per-round statistics are deleted after this many days. Result, facts and MMR stay. |
 | `REPORT_KEEP_YEARS` | `3` | Chat reports about guests or deleted accounts are deleted after this time. |

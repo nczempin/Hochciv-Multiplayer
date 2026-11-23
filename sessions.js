@@ -58,6 +58,17 @@ function generatePassword() {
 }
 
 /**
+ * The secret clientId that finds a seat: a non-empty string, at most 100 characters. Anything
+ * else is refused here as well (not only in routes/api.js) – String(undefined) would make
+ * "undefined" a seat key anyone could send.
+ */
+const INVALID_CLIENT = 'Ungültige Client-ID.';
+function clientIdOf(info) {
+    const id = info && info.clientId;
+    return typeof id === 'string' && id.trim() ? id.slice(0, 100) : null;
+}
+
+/**
  * Create a new multiplayer session.
  * @param {object} gameConfig  – map, mode, wonders, events, etc.
  * @param {object} hostInfo    – { name, civ, ability }
@@ -65,6 +76,8 @@ function generatePassword() {
  */
 function createSession(gameConfig, hostInfo) {
     if (sessions.size >= config.MAX_SESSIONS) return 'Der Server ist voll. Bitte versuche es später erneut.';
+    const hostClientId = clientIdOf(hostInfo);
+    if (!hostClientId) return INVALID_CLIENT;
     const sessionId = generateId();
     const joinCode = generateJoinCode();
     const password = generatePassword();
@@ -84,7 +97,7 @@ function createSession(gameConfig, hostInfo) {
             {
                 index: 0,
                 name: cleanName(hostInfo.name, 'Host'),
-                clientId: String(hostInfo.clientId).slice(0, 100),
+                clientId: hostClientId,
                 civ: cleanKey(hostInfo.civ, 'griechenland'),
                 ability: cleanKey(hostInfo.ability, 'basis'),
                 kind: 'human',
@@ -116,14 +129,16 @@ function createSession(gameConfig, hostInfo) {
  * @returns {object|string} { sessionId, playerIndex } or error string
  */
 function joinSession(joinCode, password, playerInfo) {
-    const sessionId = codeIndex.get(joinCode.toUpperCase());
+    const clientId = clientIdOf(playerInfo);
+    if (!clientId) return INVALID_CLIENT;
+    const sessionId = codeIndex.get(String(joinCode || '').toUpperCase());
     if (!sessionId) return 'Ungültiger Beitrittscode.';
     const session = sessions.get(sessionId);
     if (!session) return 'Sitzung nicht gefunden.';
     if (session.password !== password) return 'Falsches Passwort.';
 
     // Check if player is reconnecting
-    const existingPlayer = session.players.find(p => p.clientId === playerInfo.clientId);
+    const existingPlayer = session.players.find(p => p.clientId === clientId);
     if (existingPlayer) {
         // It's a reconnection
         return { sessionId, playerIndex: existingPlayer.index };
@@ -147,11 +162,11 @@ function joinSession(joinCode, password, playerInfo) {
     }
 
     // a spectator who takes a free seat stops watching
-    if (session.spectators) session.spectators = session.spectators.filter(w => w.clientId !== String(playerInfo.clientId).slice(0, 100));
+    if (session.spectators) session.spectators = session.spectators.filter(w => w.clientId !== clientId);
     session.players.push({
         index: playerIndex,
         name: fallbackName,
-        clientId: String(playerInfo.clientId).slice(0, 100),
+        clientId,
         civ: cleanKey(playerInfo.civ, 'griechenland'),
         ability: cleanKey(playerInfo.ability, 'basis'),
         kind: 'human',
@@ -170,12 +185,13 @@ function joinSession(joinCode, password, playerInfo) {
  * @returns {object|string} { sessionId, spectator: true } or error string
  */
 function addSpectator(joinCode, password, info) {
-    const sessionId = codeIndex.get(String(joinCode).toUpperCase());
+    const clientId = clientIdOf(info);
+    if (!clientId) return INVALID_CLIENT;
+    const sessionId = codeIndex.get(String(joinCode || '').toUpperCase());
     if (!sessionId) return 'Ungültiger Beitrittscode.';
     const session = sessions.get(sessionId);
     if (!session) return 'Sitzung nicht gefunden.';
     if (session.password !== password) return 'Falsches Passwort.';
-    const clientId = String(info.clientId).slice(0, 100);
     if (session.players.some(p => p.clientId === clientId)) return { sessionId, spectator: false };
     if (!session.spectators) session.spectators = [];
     if (session.spectators.some(w => w.clientId === clientId)) return { sessionId, spectator: true };
@@ -225,11 +241,6 @@ function humanSeats(session) {
 
 function getSession(sessionId) {
     return sessions.get(sessionId) || null;
-}
-
-function getSessionByCode(code) {
-    const id = codeIndex.get(code.toUpperCase());
-    return id ? sessions.get(id) : null;
 }
 
 function removeSession(sessionId) {
@@ -473,7 +484,6 @@ module.exports = {
     spectatorCount,
     playerBotPolicy,
     getSession,
-    getSessionByCode,
     removeSession,
     cleanup,
     kickPlayer,

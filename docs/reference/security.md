@@ -6,7 +6,7 @@
 
 * Never commit `.env` or `secrets.env`; they are excluded from Git and from the Docker build.
 * Audit reports, credentials and other sensitive security notes go into `security/`, which is excluded from Git and from the Docker build.
-* Use a unique `SESSION_SECRET` and database password per installation (production and staging differ). The server refuses to start with a missing or publicly known secret.
+* Use a unique `SESSION_SECRET` and database password per installation (production and staging differ). The server refuses to start with a missing, publicly known or short (under 25 characters) secret.
 * The game code in `HochCiv*/` runs on your server and in your players' browsers – review changes to it like server code.
 * Only superadmins can grant admin rights or change OAuth settings; admins manage normal users only ([Administration](../operations/administration.md)). Changes that could take over an account – a new password, removing second factors, roles, deleting an account – and the OAuth settings need a recent login of the admin (password or authenticator), and every admin change is written to the log (`[Admin] <who> <what>`).
 * The image runs the server as `node`, which may only write `public/`; the compose files drop all Linux capabilities, forbid privilege changes, limit processes and memory and wait for the database's health check. `POSTGRES_PASSWORD` has no default.
@@ -25,6 +25,8 @@
 `utils/origin.js`. Socket.IO connections and changing API requests (POST, PUT, PATCH, DELETE) from a web page are only accepted from this site, the Discord Activity (`*.discordsays.com`) and `ALLOWED_ORIGINS`.
 
 Why: the login cookie is `SameSite=Lax`, which other sites never get – but a page of the same site (e.g. `staging.hochciv.de` next to `hochciv.de`) would, and CORS doesn't cover WebSockets; simple form POSTs also get through before CORS blocks the answer. Requests without an `Origin` header (the Android app's native code, scripts) pass.
+
+CORS follows the same rule (`server.js`): only these origins get `Access-Control-Allow-Origin` (their own origin, never `*`) with credentials; any other site's page can't read answers with the visitor's cookie.
 
 ## Logins and second factors
 

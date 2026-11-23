@@ -43,7 +43,7 @@ For bot creators and admins ([Bot accounts](bot-accounts.md)). Admins may act on
 | POST | `/:id/description` | owner or admin | Set public plain text `{ description }` → `{ description }`. The string is trimmed and limited to 280 Unicode code points. An empty string clears it and returns null |
 | POST | `/:id/token` | recent | New token → `{ token }`; the old one and its sessions end |
 | POST | `/:id/transfer` | recent | Hand the bot over `{ username }` to another bot creator |
-| DELETE | `/:id` | login | Delete the bot |
+| DELETE | `/:id` | recent | Delete the bot (irreversible – a stolen session cookie alone is not enough) |
 
 ## Account – `/api/account` (login)
 
@@ -213,4 +213,4 @@ All routes need *admin*; `/oauth*` needs *superadmin*. Admins can only manage ac
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/health` | `{ ok: true, uptime }` |
+| GET | `/health` | `{ ok: true }` (no uptime – the admin dashboard shows it) |

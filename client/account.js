@@ -531,7 +531,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const typed = prompt(tx('Bot „%s“ endgültig löschen? Gib zur Bestätigung seinen Namen ein:', bot.username));
             if (typed === null) return;
             if (typed.trim() !== bot.username) return botMsg(tx('Der Name stimmt nicht – nichts gelöscht.'));
-            res = await fetch(`/api/bots/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
+            res = await authFetch(`/api/bots/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => null);
         }
         if (res) data = await res.json().catch(() => ({}));
         if (!res || !res.ok) botMsg(data.error ? txs(data.error) : tx('Netzwerkfehler.'));
