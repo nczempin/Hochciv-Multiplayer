@@ -17,6 +17,10 @@ const passport = require('passport');
 const LocalStrategy = require('passport-local').Strategy;
 const bcrypt = require('bcryptjs');
 const { sequelize, User } = require('./models');
+// Performance figures for Prometheus / Grafana (utils/metrics.js, docs/operations/monitoring.md)
+const Metrics = require('./utils/metrics');
+const Grafana = require('./utils/grafana');
+Metrics.instrumentSequelize(sequelize);
 const { Op } = require('sequelize');
 const { refreshOAuthStrategies } = require('./utils/oauth');
 const { str } = require('./utils/auth');
@@ -99,13 +103,18 @@ const pgPool = new pg.Pool({ connectionString: dbUrl });
 
 // gzip for pages and API answers – scripts and styles are gzipped once (utils/assets.js);
 // Socket.IO handles its own traffic before Express
+app.use(Metrics.httpMiddleware);
 app.use(compression());
 app.use(cors({ origin: config.CORS_ORIGINS, credentials: true }));
 // Changing requests only from this site's pages (utils/origin.js): staging is the same site
 app.use(checkOrigin);
 // JSON bodies up to 20 KB – a finished single-player game (routes/solo.js, F28) up to 2 MB
 const jsonSmall = express.json({ limit: '20kb' }), jsonSolo = express.json({ limit: '2mb' });
-app.use((req, res, next) => (req.path.startsWith('/api/solo/') ? jsonSolo : jsonSmall)(req, res, next));
+app.use((req, res, next) => {
+    // Grafana's requests go through untouched (utils/grafana.js)
+    if (req.path.startsWith(Grafana.PREFIX + '/')) return next();
+    return (req.path.startsWith('/api/solo/') ? jsonSolo : jsonSmall)(req, res, next);
+});
 app.disable('x-powered-by');
 app.use((req, res, next) => {
     res.set({
@@ -195,6 +204,9 @@ app.use(sessionMiddleware);
 
 app.use(passport.initialize());
 app.use(passport.session());
+
+// The Grafana dashboards of the admin page (tab "Leistung"), for admins only
+app.use(Grafana.PREFIX, Grafana.proxy);
 
 // Database schema: migrations (migrations/, utils/migrate.js). In Docker entrypoint.sh has applied
 // them already with the owner role – this finds nothing to do; the server's own role (DATABASE_URL)
@@ -298,6 +310,8 @@ registerAsync(io);
 require('./sockets/match')(io);
 // Friends: online status and live invitations (sockets/friends.js)
 require('./sockets/friends')(io);
+Metrics.instrumentGame({ io, sessions: require('./sessions'), sequelize });
+Metrics.serve();
 
 // ── Start ────────────────────────────────────────────────────────────────────
 

@@ -69,6 +69,9 @@ function isSuperAdmin(req, res, next) {
 router.use(isAdmin);
 router.use(readOnly);
 
+// Is Grafana there for the tab "Leistung" (utils/grafana.js)?
+router.get('/monitoring', (req, res) => res.json({ enabled: require('../utils/grafana').enabled() }));
+
 // Every change an admin makes goes to the log: who, what, on whom (never passwords or secrets)
 router.use((req, res, next) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
