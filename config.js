@@ -25,7 +25,6 @@ module.exports = {
     PORT: process.env.PORT || 3000,
     BASE_URL: BASE_URL || 'http://localhost:3000',
     WEBAUTHN,
-    CORS_ORIGINS: '*',
     JOIN_CODE_LENGTH: 6,
     PASSWORD_LENGTH: 6,        // 6-digit numeric password
     MAX_PLAYERS: 8,              // empires per game (the tile map and custom maps go up to 8)

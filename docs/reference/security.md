@@ -26,6 +26,8 @@
 
 Why: the login cookie is `SameSite=Lax`, which other sites never get – but a page of the same site (e.g. `staging.hochciv.de` next to `hochciv.de`) would, and CORS doesn't cover WebSockets; simple form POSTs also get through before CORS blocks the answer. Requests without an `Origin` header (the Android app's native code, scripts) pass.
 
+CORS follows the same rule (`server.js`): only these origins get `Access-Control-Allow-Origin` (their own origin, never `*`) with credentials; any other site's page can't read answers with the visitor's cookie.
+
 ## Logins and second factors
 
 * **Second factor:** an account with 2FA (authenticator app, passkey, e-mail code) is asked for it after the password, and once when a Google/Discord account is linked to it, also through the verified e-mail address (`/?oauth=mfa` opens the dialog; the Android app forwards the same reason). The link is only saved after that. Logging in with a linked Google/Discord account needs no second factor, but such a login doesn't count as a recent one: sensitive changes ask for the password or the second factor. The first factor counts for 10 minutes.

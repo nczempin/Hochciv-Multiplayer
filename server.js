@@ -26,7 +26,7 @@ const { Op } = require('sequelize');
 const { refreshOAuthStrategies } = require('./utils/oauth');
 const { str } = require('./utils/auth');
 const { botUsable } = require('./utils/bots');
-const { checkOrigin, allowSocket } = require('./utils/origin');
+const { allowedOrigin, checkOrigin, allowSocket } = require('./utils/origin');
 const Assets = require('./utils/assets');
 
 // ── Passport Configuration ──────────────────────────────────────────────────
@@ -111,7 +111,9 @@ const pgPool = new pg.Pool({ connectionString: dbUrl });
 // Socket.IO handles its own traffic before Express
 app.use(Metrics.httpMiddleware);
 app.use(compression());
-app.use(cors({ origin: config.CORS_ORIGINS, credentials: true }));
+// CORS answers only the pages that utils/origin.js allows (never `*` – with credentials a
+// reflected or wildcard origin would let any site read the visitor's account data)
+app.use(cors((req, cb) => cb(null, { origin: allowedOrigin(req.get('origin'), req.get('host')), credentials: true })));
 // Changing requests only from this site's pages (utils/origin.js): staging is the same site
 app.use(checkOrigin);
 // JSON bodies up to 20 KB – a finished single-player game (routes/solo.js, F28) up to 2 MB
@@ -305,7 +307,8 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
     cors: {
-        origin: config.CORS_ORIGINS,
+        // same rule as Express; same-origin requests need no CORS headers (utils/origin.js)
+        origin: (origin, cb) => cb(null, allowedOrigin(origin)),
         methods: ['GET', 'POST'],
         credentials: true
     },
