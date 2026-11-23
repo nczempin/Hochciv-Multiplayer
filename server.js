@@ -20,6 +20,7 @@ const { sequelize, User } = require('./models');
 // Performance figures for Prometheus / Grafana (utils/metrics.js, docs/operations/monitoring.md)
 const Metrics = require('./utils/metrics');
 const Grafana = require('./utils/grafana');
+require('./utils/monitoringSync').syncOnStart();
 Metrics.instrumentSequelize(sequelize);
 const { Op } = require('sequelize');
 const { refreshOAuthStrategies } = require('./utils/oauth');

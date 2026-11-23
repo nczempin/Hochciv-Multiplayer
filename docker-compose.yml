@@ -59,6 +59,8 @@ services:
     depends_on:
       hochciv-db-setup:
         condition: service_completed_successfully
+      monitoring-setup:
+        condition: service_completed_successfully
     # The server needs no Linux capabilities and no privilege changes; limits keep a runaway
     # process (or a flood) from taking the whole host down
     security_opt:
@@ -100,12 +102,16 @@ services:
       # Prometheus on METRICS_PORT inside the internal network
       - GRAFANA_URL=${GRAFANA_URL-http://grafana:3000}
       - METRICS_PORT=9464
+      # the dashboards of this release into the monitoring volume (utils/monitoringSync.js)
+      - MONITORING_SYNC_DIR=/monitoring
     networks:
       nginx:
       internal:
         # Prometheus finds the server under this name (monitoring/prometheus/prometheus.yml)
         aliases:
           - hochciv-app
+    volumes:
+      - monitoring-config:/monitoring
 
   # ── Monitoring (docs/operations/monitoring.md) ──────────────────────────────────────────────
   # Prometheus collects the server's figures (utils/metrics.js) and the database's; Grafana shows
@@ -113,12 +119,13 @@ services:
   # is reachable from outside: internal network only, no published ports.
   monitoring-setup:
     # One-shot: copies the Prometheus and Grafana configuration (monitoring/ in the image) into a
-    # volume, so the host needs no files besides this one
+    # volume, so the host needs no files besides this one. The server (uid 1000) may write it and
+    # copies its own monitoring/ there at every start, so Watchtower updates bring new dashboards
     image: peterswode/hochciv-multiplayer:${HOCHCIV_IMAGE_TAG:-latest}
     container_name: hochciv-monitoring-setup
     restart: "no"
     user: "0"
-    entrypoint: ["sh", "-c", "rm -rf /monitoring/* && cp -r /app/monitoring/. /monitoring/ && chmod -R a+rX /monitoring"]
+    entrypoint: ["sh", "-c", "rm -rf /monitoring/* && cp -r /app/monitoring/. /monitoring/ && chown -R 1000:1000 /monitoring && chmod -R a+rX /monitoring"]
     security_opt:
       - no-new-privileges:true
     network_mode: none
