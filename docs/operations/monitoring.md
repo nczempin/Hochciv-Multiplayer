@@ -24,18 +24,21 @@ browser ──/admin/grafana/…──▶ game server (admins only) ──X-WEBA
 | `postgres-exporter` | container | Reads the statistics views as `hochciv_app`, which `scripts/db-setup.js` gives the read-only role `pg_monitor`. |
 | `pg_stat_statements` | Postgres | Loaded through the database's `command` (`shared_preload_libraries`). `scripts/db-setup.js` then creates the extension. |
 
-On the host, `monitoring-setup` copies `monitoring/` from the server image into a volume, so the host needs nothing besides `docker-compose.yml` and `.env`. Locally, `docker-compose.local.yml` mounts `./monitoring` directly, and Prometheus is also reachable at `http://127.0.0.1:9090`.
+On the host, `monitoring-setup` copies `monitoring/` from the server image into a volume, so the host needs no files besides `docker-compose.yml` and `.env` – but it does need the current `docker-compose.yml` (see below). Locally, `docker-compose.local.yml` mounts `./monitoring` directly, and Prometheus is also reachable at `http://127.0.0.1:9090`.
 
 ## Setting it up on a host
 
-Watchtower only replaces the server image. The new containers and the database's new start command need one manual step on the host:
+Watchtower only replaces the server image, and `docker compose pull` only fetches images – neither changes the compose file on the host. The new containers and the database's new start command are in that file, so once per host:
 
-```sh
-docker compose pull
-docker compose up -d        # restarts hochciv-db once (pg_stat_statements), starts prometheus, grafana, postgres-exporter
-```
+1. Replace the host's `docker-compose.yml` with the current one from this repository (no `.env` changes needed).
+2. Then:
+   ```sh
+   docker compose pull
+   docker compose up -d        # restarts hochciv-db once (pg_stat_statements), starts prometheus, grafana, postgres-exporter
+   ```
+3. Check: `docker logs hochciv-db-setup` ends with `[DB setup] Done`, `docker logs hochciv-multiplayer` shows `[Metrics] Prometheus figures on port 9464`, and the admin tab **Leistung** shows the dashboard.
 
-Do the same for staging with `docker-compose.staging.yml`. The database restart takes a few seconds, and the server reconnects on its own.
+For staging, replace `docker-compose.staging.yml` in the staging folder and run the same commands with `-f docker-compose.staging.yml`. The database restart takes a few seconds, and the server reconnects on its own. Live games end when the server container is recreated, as with every update.
 
 To leave monitoring off on a host, set `GRAFANA_URL=` (empty) in `.env`. The tab then says that monitoring isn't set up.
 
