@@ -9,7 +9,7 @@
  * client/profile.js – new profile content goes there and here.
  */
 const express = require('express');
-const rateLimitLib = require('express-rate-limit');
+const rateLimitLib = require('../utils/rateLimit');
 const { sequelize, User, Game } = require('../models');
 const engine = require('../engine-adapter');
 const seasons = require('../utils/seasons');
