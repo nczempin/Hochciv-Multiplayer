@@ -378,6 +378,7 @@
         'Hart (jede Runde)': 'Hard (every round)',
         'Leicht (selten)': 'Easy (rare)',
         'Mit Weltwundern': 'With wonders',
+        'Experimentelle Zivilisationen': 'Experimental civilisations',
         'Reiche insgesamt': 'Empires in total',
         '1 gegen 1': '1 vs 1',
         'davon KI (feste Plätze)': 'of them AI (fixed seats)',

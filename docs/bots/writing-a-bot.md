@@ -113,7 +113,7 @@ Every event you send gets an answer through the acknowledgement callback (`sio.c
       "playersCount": 1, "maxPlayers": 3, "mapKey": "random", "round": null, "spectators": 0,
       "playerBots": true, "playerBotsFree": null, "customMapName": null, "empires": 4, "kiCount": 1,
       "difficulty": "mittel", "randomCivs": false, "civMode": "fixed", "turnOrder": "classic",
-      "events": false, "eventMode": "hard", "wonders": false,
+      "events": false, "eventMode": "hard", "wonders": false, "expCivs": false,
       "ranked": false, "turnTime": 0 }]
    ```
 
@@ -132,7 +132,7 @@ Every event you send gets an answer through the acknowledgement callback (`sio.c
 
 4. On the socket: `session:connect { sessionId, password, clientId }`. The answer holds `playerIndex`, `status`, `players`, `gameConfig` and `hostIndex`.
 
-The public list doesn't show every setting. Look at `gameConfig` in the answer to `session:connect`, and leave if the game is one your bot can't play (events, wonders, marathon, a map type it doesn't know). To leave a lobby, just disconnect: the server removes a lobby player whose socket is gone.
+The public list doesn't show every setting. Look at `gameConfig` in the answer to `session:connect`, and leave if the game is one your bot can't play (events, wonders, marathon, a map type it doesn't know). `expCivs: true` means the experimental civilisations of the game (Rom, Venedig, Deutschland, Maya, China, USA, with wonders also Azteken and Ägypten) can be picked: only on the tile map and custom maps, never in Marathon or ranked games; `checkCivChoice` rejects them otherwise. To leave a lobby, just disconnect: the server removes a lobby player whose socket is gone.
 
 While you wait, listen for `lobby:config:update` (the host changed the settings), `lobby:player:updated`, `player:joined`, `player:left` and `session:kicked`. The game begins with `game:start`, or with `placement:start` / `draft:update` first (see [Before the first turn](#before-the-first-turn)).
 
@@ -142,7 +142,7 @@ While you wait, listen for `lobby:config:update` (the host changed the settings)
 
 ```json
 { "mapKey": "random", "playerCount": 3, "kiCount": 1, "difficulty": "schwer", "turnTime": 180,
-  "isPublic": true, "ranked": false, "events": false, "eventMode": "hard", "wonders": false,
+  "isPublic": true, "ranked": false, "events": false, "eventMode": "hard", "wonders": false, "expCivs": false,
   "playerBots": true, "playerBotLimit": null }
 ```
 
