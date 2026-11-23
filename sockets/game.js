@@ -378,6 +378,8 @@ module.exports = function registerHandlers(io) {
 
             if (!seat) return ack({ error: 'Kein Startplatz für dich reserviert.' });
             if (seat.cell != null) return ack({ error: 'Du hast dein Startplättchen bereits platziert.' });
+            // integers only (as the action parameters, engine-adapter.js checkParams)
+            if (!data || !Number.isInteger(data.o) || !Number.isInteger(data.cell)) return ack({ error: 'Ungültige Lage.' });
 
             const err = engine.getEngine().placeSeat(st.plan, seat, data.o, data.cell);
             if (err) return ack({ error: err });
