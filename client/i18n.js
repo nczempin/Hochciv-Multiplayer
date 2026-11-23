@@ -706,6 +706,7 @@
         'Ungültiges Feld.': 'Invalid hex.',
         'Leere Nachricht.': 'Empty message.',
         'Zu viele Nachrichten – warte einen Moment.': 'Too many messages – wait a moment.',
+        'Zu viele Anfragen – warte einen Moment.': 'Too many requests – wait a moment.',
         'Nur Mitspieler können schreiben.': 'Only players of this game can write.',
 
         'Revanche': 'Rematch',
