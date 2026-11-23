@@ -1349,6 +1349,7 @@
         '%s: Unbekannte Fähigkeit.': '%s: Unknown ability.',
         '%s: Diese Fähigkeit gehört nicht zu der Nation.': '%s: This ability does not belong to the nation.',
         'Sitzung ist voll.': 'The session is full.',
+        'Der Host hat dich aus dieser Lobby entfernt.': 'The host has removed you from this lobby.',
         'host.name und host.clientId sind erforderlich.': 'host.name and host.clientId are required.',
         'Ungültige Konfiguration.': 'Invalid configuration.',
         'joinCode, password, player.name und player.clientId sind erforderlich.': 'joinCode, password, player.name and player.clientId are required.',

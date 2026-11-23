@@ -87,6 +87,16 @@ module.exports = function registerHandlers(io) {
             // reconnecting with the same clientId from another account would book the result
             // (MMR) to that account (R-02 of the findings report).
             const started = s.status !== 'lobby';
+            if (!started && u && sessions.isBanned(s, player.clientId, u.id)) {
+                // joined with a new tab as a guest, then logged in with the kicked account (R-23)
+                const idx = s.players.indexOf(player);
+                if (sessions.kickPlayer(s.id, idx, true)) {
+                    fixHostAfterRemoval(s, idx);
+                    io.to(s.id).emit('player:left', { playerIndex: idx, name: player.name, players: publicPlayers(s), newHostIndex: s.hostIndex });
+                    sendIndices(io, s);
+                }
+                return ack({ error: sessions.BANNED });
+            }
             if (started && u && player.dbUserId && u.id !== player.dbUserId)
                 return ack({ error: 'Dieser Platz gehört einem anderen Konto. Melde dich mit dem Konto an, mit dem du das Spiel begonnen hast.' });
 
@@ -192,6 +202,7 @@ module.exports = function registerHandlers(io) {
             const kickedPlayer = session.players[targetIndex];
 
             if (sessions.kickPlayer(sessionId, targetIndex)) {
+                sessions.banFromSession(session, kickedPlayer);     // no rejoin (R-23)
                 // If the kicked player is currently connected, disconnect them
                 if (kickedPlayer && kickedPlayer.socketId) {
                     const targetSocket = io.sockets.sockets.get(kickedPlayer.socketId);

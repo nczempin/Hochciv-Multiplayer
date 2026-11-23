@@ -125,7 +125,7 @@ function createSession(gameConfig, hostInfo) {
  * Join an existing session.
  * @param {string} joinCode
  * @param {string} password  – 6-digit numeric
- * @param {object} playerInfo – { name, civ, ability }
+ * @param {object} playerInfo – { name, civ, ability, clientId, userId (the logged-in account, R-23) }
  * @returns {object|string} { sessionId, playerIndex } or error string
  */
 function joinSession(joinCode, password, playerInfo) {
@@ -144,6 +144,8 @@ function joinSession(joinCode, password, playerInfo) {
         return { sessionId, playerIndex: existingPlayer.index };
     }
 
+    // kicked by the host: not again into this lobby, neither from the same tab nor the same account (R-23)
+    if (isBanned(session, clientId, playerInfo.userId)) return BANNED;
     // a seat is found by the secret clientId (sessionStorage of the tab), never by the name
     if (session.status !== 'lobby') return 'Das Spiel hat schon begonnen. Zurück auf deinen Platz kommst du nur im selben Browser-Tab, in dem du beigetreten bist.';
     if (session.players.length >= humanSeats(session)) return 'Sitzung ist voll.';
@@ -294,6 +296,23 @@ function cleanup() {
 // Run cleanup periodically
 const _cleanupTimer = setInterval(cleanup, config.CLEANUP_INTERVAL_MS);
 _cleanupTimer.unref();   // don't prevent Node from exiting
+
+/**
+ * R-23: the host's kick bans the seat's tab (clientId) and account from the session – before, the
+ * kicked player could rejoin at once with code and password. A guest in a new tab gets past it
+ * (a new clientId); the host can kick again. Lasts as long as the session.
+ */
+const BANNED = 'Der Host hat dich aus dieser Lobby entfernt.';
+function banFromSession(session, player) {
+    if (!player || player.kind !== 'human') return;
+    const b = session.banned || (session.banned = { clientIds: [], userIds: [] });
+    if (player.clientId && !b.clientIds.includes(player.clientId)) b.clientIds.push(player.clientId);
+    for (const id of [player.dbUserId, player.botUserId]) if (id && !b.userIds.includes(id)) b.userIds.push(id);
+}
+function isBanned(session, clientId, userId) {
+    const b = session.banned;
+    return !!b && (b.clientIds.includes(clientId) || (!!userId && b.userIds.includes(userId)));
+}
 
 function kickPlayer(sessionId, playerIndex, force = false) {
     const session = sessions.get(sessionId);
@@ -492,6 +511,9 @@ module.exports = {
     removeSession,
     cleanup,
     kickPlayer,
+    banFromSession,
+    isBanned,
+    BANNED,
     cleanHostConfig,
     previewSession,
     activityOf,
