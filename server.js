@@ -25,7 +25,7 @@ Metrics.instrumentSequelize(sequelize);
 const { Op } = require('sequelize');
 const { refreshOAuthStrategies } = require('./utils/oauth');
 const { str } = require('./utils/auth');
-const { botUsable } = require('./utils/bots');
+const { botBlockedReason } = require('./utils/bots');
 const { allowedOrigin, checkOrigin, allowSocket } = require('./utils/origin');
 const Assets = require('./utils/assets');
 
@@ -70,7 +70,7 @@ passport.deserializeUser(async (id, done) => {
         if (!user || user.isBanned) return done(null, false);
         if (user.accountType === 'bot') {
             const owner = user.ownerId ? await User.findByPk(user.ownerId) : null;
-            if (botUsable(user, owner)) return done(null, false);
+            if (botBlockedReason(user, owner)) return done(null, false);
         }
         done(null, user);
     } catch (err) {

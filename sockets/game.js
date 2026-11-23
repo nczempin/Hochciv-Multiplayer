@@ -645,6 +645,8 @@ module.exports = function registerHandlers(io) {
                 }
             }
         }, 15000);
+        // like the turn timer: the loop alone must not keep the process alive (tests, shutdown)
+        io.__syncInterval.unref();
     }
     // Turn timer: once a second, end the turns whose time is up
     if (!io.__turnInterval) {
@@ -1103,6 +1105,8 @@ function broadcastState(io, session) {
 
     // Instead of deep cloning per-player in a loop, clone the state exactly once.
     // The engine's stateForPlayer currently treats the state as fully visible for all players.
+    // WARNING: everyone in the room gets this one copy. If the game ever gets hidden information
+    // (fog of war, secret cards), this must become one stateForPlayer per player.
     const sharedState = engine.stateForPlayer(session.state, 0);
 
     // Broadcast universally to everyone in the room. This avoids individual serialization per socket.

@@ -46,7 +46,7 @@ function botJson(bot, owner) {
         isBanned: bot.isBanned,
         owner: owner ? { id: owner.id, username: owner.username } : null,
         // why it can't play right now (owner banned, role taken away, …), null when it can
-        disabled: Bots.botUsable(bot, owner),
+        disabled: Bots.botBlockedReason(bot, owner),
     };
 }
 
