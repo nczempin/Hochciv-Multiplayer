@@ -24,6 +24,7 @@ const Facts = require('../utils/facts');
 const Replay = require('../utils/replay');
 const Summary = require('../utils/summary');
 const Scenes = require('../utils/scenes');
+const Discord = require('../utils/discord');
 
 const DAY = 24 * 60 * 60 * 1000;
 const TIMEOUT_MS = Number(process.env.ASYNC_TIMEOUT_MS) || 7 * DAY;
@@ -596,6 +597,9 @@ async function list(user) {
     return {
         notifyEmail: u ? u.notifyEmail : true,
         notifyPush: u ? u.notifyPush : true,
+        // the Discord switch is shown only with a linked Discord account and a bot token
+        notifyDiscord: u ? u.notifyDiscord : false,
+        discord: !!(u && u.discordId) && await Discord.enabled(),
         timeoutDays: TIMEOUT_MS / DAY,
         mine: mine.map(summarize),
         invites: invites.map(summarize).filter(s => s.freeSeats.length && s.mySlot == null),
@@ -800,6 +804,33 @@ async function setNotifyEmail(user, on) {
 }
 
 /**
+ * Discord direct messages. Switching on sends a test message first: if the bot can't write to the
+ * player (no shared server, DMs from server members off), the switch stays off and the answer says why.
+ */
+async function setNotifyDiscord(user, on) {
+    const u = await User.findByPk(user.id);
+    if (!u) return { error: 'Konto nicht gefunden.' };
+    if (on) {
+        if (!u.discordId) return { error: 'Verknüpfe zuerst dein Discord-Konto (Mein Konto).' };
+        if (!(await Discord.enabled())) return { error: 'Discord-Nachrichten sind auf diesem Server nicht eingerichtet.' };
+        const result = await Discord.sendDm(u.discordId, Discord.messageFor({
+            subject: 'Discord-Nachrichten an',
+            text: 'Ab jetzt bekommst du hier eine Nachricht, wenn du in einem Rundenspiel am Zug bist, eingeladen wirst oder ein Spiel endet.',
+        }));
+        if (result !== 'sent') {
+            return {
+                error: result === 'closed'
+                    ? 'Der Hochciv-Bot kann dir keine Direktnachricht schicken. Tritt dem Hochciv-Discord bei und erlaube dort Direktnachrichten von Servermitgliedern.'
+                    : 'Discord ist gerade nicht erreichbar. Bitte versuche es später erneut.',
+                invite: Discord.INVITE_URL || undefined,
+            };
+        }
+    }
+    await User.update({ notifyDiscord: !!on }, { where: { id: u.id } });
+    return { ok: true, notifyDiscord: !!on };
+}
+
+/**
  * Account deletion: take the player out of every Rundenspiel, invitations included
  * (logic.removeUser). Nothing changes if one of them can't be left right now – returns { error }.
  */
@@ -834,6 +865,6 @@ function evict(id) {
 
 module.exports = {
     init, evict, create, fromLive, info, join, leave, cancel, invite, decline, list, open, action, place, draftPick, civDraftPick, chat, report, resign,
-    setNotifyEmail, sweep, room, removeUser, purgeEndedChats,
+    setNotifyEmail, setNotifyDiscord, sweep, room, removeUser, purgeEndedChats,
     processResult,      // for tests/score
 };
