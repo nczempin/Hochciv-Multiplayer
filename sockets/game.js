@@ -83,6 +83,12 @@ module.exports = function registerHandlers(io) {
             const isBotUser = !!u && u.accountType === 'bot';
             if (isBotUser !== !!player.playerBot || (player.playerBot && player.botUserId !== u.id))
                 return ack({ error: isBotUser ? 'Bot-Konten treten nur als Spieler-Bot bei.' : 'Dieser Platz gehört einem Spieler-Bot.' });
+            // Once the game has started, a seat belongs to the account that held it at the start:
+            // reconnecting with the same clientId from another account would book the result
+            // (MMR) to that account (R-02 of the findings report).
+            const started = s.status !== 'lobby';
+            if (started && u && player.dbUserId && u.id !== player.dbUserId)
+                return ack({ error: 'Dieser Platz gehört einem anderen Konto. Melde dich mit dem Konto an, mit dem du das Spiel begonnen hast.' });
 
             sessionId = s.id;
             session = s;
@@ -98,7 +104,8 @@ module.exports = function registerHandlers(io) {
             // Mark connected
             me.connected = true;
             me.socketId = socket.id;
-            if (socket.request.user) {
+            // the account is taken over in the lobby only; after the start it stays bound (R-02)
+            if (socket.request.user && !started) {
                 me.dbUserId = socket.request.user.id;
                 me.dbUsername = socket.request.user.username;
                 me.mmr = socket.request.user.mmr;
@@ -378,6 +385,8 @@ module.exports = function registerHandlers(io) {
 
             if (!seat) return ack({ error: 'Kein Startplatz für dich reserviert.' });
             if (seat.cell != null) return ack({ error: 'Du hast dein Startplättchen bereits platziert.' });
+            // integers only (as the action parameters, engine-adapter.js checkParams)
+            if (!data || !Number.isInteger(data.o) || !Number.isInteger(data.cell)) return ack({ error: 'Ungültige Lage.' });
 
             const err = engine.getEngine().placeSeat(st.plan, seat, data.o, data.cell);
             if (err) return ack({ error: err });
@@ -1289,8 +1298,9 @@ async function processGameOverMmr(session, io, sessionId, isRanked = false) {
             }
         }
 
-        // One account on several seats would rate itself against itself – no MMR then
-        const userIds = playersData.map(p => p.dbUserId).filter(Boolean);
+        // One account on several seats would rate itself against itself – no MMR then; a bot
+        // account counts as its owner (as in startGame)
+        const userIds = session.players.filter(lp => !lp.resigned && lp.dbUserId).map(lp => lp.dbOwnerId || lp.dbUserId);
         if (isRanked && new Set(userIds).size !== userIds.length) {
             console.warn(`[Stats] Game ${sessionId}: one account held several seats – not rated.`);
             isRanked = false;

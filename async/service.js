@@ -425,13 +425,18 @@ async function fromLive(hostUser, session, opts) {
         g.replay = { key: rec.key, seq: rec.frames.length };
     }
     cache.set(g.id, { g, queue: Promise.resolve(), touched: now, busy: 0 });
+    // Seats resigned in the live game: the live result (processGameOverMmr) never comes, so their
+    // ranked penalty is booked now, as a resign in a Rundenspiel does (R-07 of the findings report)
+    const resigned = seats.filter(s => s.resigned && s.userId && s.penalty).map(s => s.userId);
+    if (resigned.length) await applyPenalties(resigned);
     // saved, the KI moves on if it is its turn, the players whose turn it is are notified
     await withGame(g.id, () => ({ ok: true }));
     const others = seats.filter(s => s.kind === 'human' && s.userId && s.userId !== hostUser.id).map(s => s.userId);
     if (others.length) notify(others, {
         type: 'invite', gameId: g.id,
         subject: 'Euer Spiel geht als Rundenspiel weiter',
-        text: `${hostUser.username} hat euer Live-Spiel als Rundenspiel fortgesetzt. Ziehe, wann es dir passt – ${config.turnDays === 1 ? '1 Tag' : config.turnDays + ' Tage'} pro Zug.`,
+        text: `${hostUser.username} hat euer Live-Spiel als Rundenspiel fortgesetzt. Ziehe, wann es dir passt – ${config.turnDays === 1 ? '1 Tag' : config.turnDays + ' Tage'} pro Zug.`
+            + (ranked ? ' Wer in dieser Zeit nicht zieht, dessen Reich übernimmt die KI – ohne MMR-Abzug, weil ihr diese Regeln nicht gewählt habt.' : ''),
     });
     return { id: g.id, guests };
 }
@@ -722,7 +727,7 @@ async function sweep() {
                         subject: 'Erinnerung: dein Rundenspiel wartet',
                         text: w.userIds.length
                             ? `Dein Rundenspiel wartet seit ${duration(age)} auf dich. Spielst du nicht innerhalb von ${left}, übernimmt die KI deinen Platz` +
-                            (g.config.ranked ? ` und du verlierst ${L.MMR_PENALTY} MMR.` : '.')
+                            (g.config.ranked && !g.config.fromLive ? ` und du verlierst ${L.MMR_PENALTY} MMR.` : '.')
                             : g.config.noKi
                                 ? `Dein Rundenspiel wartet auf ${w.label}. In ${left} beginnt es mit den Spielern, die da sind – oder wird abgebrochen, wenn es zu wenige sind.`
                                 : `Dein Rundenspiel wartet auf ${w.label}. In ${left} wird der Platz mit der KI besetzt.`,

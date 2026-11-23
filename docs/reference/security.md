@@ -44,6 +44,8 @@ Why: the login cookie is `SameSite=Lax`, which other sites never get – but a p
 ## Game integrity
 
 * The server is authoritative: every action is checked by the game engine on the server; a client can only act for its own seat, found by its secret `clientId` – never by an index it picks.
+* Action parameters are plain values (`engine-adapter.js` `checkParams`): coordinates and ids (`r`, `c`, `cityId`, `armyId`, `target`) must be integers, coordinates on the map; tech/wonder keys are short identifiers; counts small positive integers. The engine compares positions with `===`, so a string coordinate would slip past its occupied-tile and stacking rules. The start-tile placement (`o`, `cell`) is checked the same way.
+* Once a live game has started, a seat stays bound to the account that held it at the start: a reconnect with the seat's `clientId` from another account is refused, so a result (MMR) can't be booked to another account. Before the start, the seat takes over the login of whoever connects with it.
 * Lobbies need code **and** 6-digit password.
 * Ranked games are rated between different logged-in people only: no guest seats, no account twice, no bot with its owner ([Points and MMR](ranking.md#which-games-are-ranked)).
 * Custom maps are checked with `checkCustomMap` and only a clean copy is stored.
@@ -65,7 +67,7 @@ Why: the login cookie is `SameSite=Lax`, which other sites never get – but a p
 
 ## Tests
 
-`tests/security/security.test.js` covers the origin check, the authenticator lockout, the second factor after OAuth and bans; `tests/security/regression.test.js` the findings of the security audit of 2026-11-16.
+`tests/security/security.test.js` covers the origin check, the authenticator lockout, the second factor after OAuth and bans; `tests/security/regression.test.js` the findings of the security audit of 2026-11-16. The fixes of the findings report of 2026-11-20 (IDs `R-xx`) have their tests in `tests/security/` as well (see [Testing](../development/testing.md)).
 
 ## Discord Activity
 

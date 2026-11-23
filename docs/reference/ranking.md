@@ -29,8 +29,8 @@ Every pair of seats (A, B) is compared. KI seats and guests take part at a basel
 
 ## Penalties
 
-* **Rundenspiel takeover:** a player whose ranked Rundenspiel seat is taken over by the KI after 7 days of inactivity loses an extra **15 MMR** ([Rundenspiele](rundenspiele.md)).
-* **Resign:** a player who resigns (live game or Rundenspiel) is out of the MMR calculation; the KI plays the seat. In ranked games it costs the same **15 MMR**, and it always counts as a played game.
+* **Rundenspiel takeover:** a player whose ranked Rundenspiel seat is taken over by the KI after 7 days of inactivity loses an extra **15 MMR** ([Rundenspiele](rundenspiele.md)). Not in a ranked live game the host continued as a Rundenspiel: the other players did not choose its time per turn, so the takeover there costs no MMR (it still counts as a played game).
+* **Resign:** a player who resigns (live game or Rundenspiel) is out of the MMR calculation; the KI plays the seat. In ranked games it costs the same **15 MMR**, and it always counts as a played game. A live game's penalty is booked when the game ends – or, if the host continues it as a Rundenspiel, at that moment.
 
 ## Seasons and tiers
 
