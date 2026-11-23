@@ -20,7 +20,8 @@ services:
       timeout: 5s
       retries: 10
     volumes:
-      # A named volume, or a folder (POSTGRES_DATA=./postgres in .env, for an existing installation)
+      # A named volume, or a folder next to this file (POSTGRES_DATA=./data/postgres in .env);
+      # see docs/operations/deployment.md#data-next-to-the-compose-file
       - ${POSTGRES_DATA:-pgdata}:/var/lib/postgresql/data
     networks:
       - internal
@@ -111,7 +112,7 @@ services:
         aliases:
           - hochciv-app
     volumes:
-      - monitoring-config:/monitoring
+      - ${MONITORING_CONFIG:-monitoring-config}:/monitoring
 
   # ── Monitoring (docs/operations/monitoring.md) ──────────────────────────────────────────────
   # Prometheus collects the server's figures (utils/metrics.js) and the database's; Grafana shows
@@ -125,12 +126,16 @@ services:
     container_name: hochciv-monitoring-setup
     restart: "no"
     user: "0"
-    entrypoint: ["sh", "-c", "rm -rf /monitoring/* && cp -r /app/monitoring/. /monitoring/ && chown -R 1000:1000 /monitoring && chmod -R a+rX /monitoring"]
+    entrypoint: ["sh", "-c", "rm -rf /monitoring/* && cp -r /app/monitoring/. /monitoring/ && chown -R 1000:1000 /monitoring && chmod -R a+rX /monitoring && ([ $$(stat -c %u /prometheus-data) = 65534 ] || chown -R 65534:65534 /prometheus-data) && ([ $$(stat -c %u /grafana-data) = 472 ] || chown -R 472:0 /grafana-data)"]
     security_opt:
       - no-new-privileges:true
     network_mode: none
     volumes:
-      - monitoring-config:/monitoring
+      - ${MONITORING_CONFIG:-monitoring-config}:/monitoring
+      # gives the data folders to the users of Prometheus (65534) and Grafana (472) – a folder
+      # Docker creates for a bind mount belongs to root
+      - ${PROMETHEUS_DATA:-prometheus-data}:/prometheus-data
+      - ${GRAFANA_DATA:-grafana-data}:/grafana-data
 
   prometheus:
     image: prom/prometheus:v2.53.0
@@ -147,8 +152,9 @@ services:
     security_opt:
       - no-new-privileges:true
     volumes:
-      - monitoring-config:/monitoring:ro
-      - prometheus-data:/prometheus
+      - ${MONITORING_CONFIG:-monitoring-config}:/monitoring:ro
+      # a named volume, or a folder (PROMETHEUS_DATA=./data/prometheus, owned by uid 65534)
+      - ${PROMETHEUS_DATA:-prometheus-data}:/prometheus
     networks:
       - internal
 
@@ -206,8 +212,9 @@ services:
     security_opt:
       - no-new-privileges:true
     volumes:
-      - monitoring-config:/monitoring:ro
-      - grafana-data:/var/lib/grafana
+      - ${MONITORING_CONFIG:-monitoring-config}:/monitoring:ro
+      # a named volume, or a folder (GRAFANA_DATA=./data/grafana, owned by uid 472)
+      - ${GRAFANA_DATA:-grafana-data}:/var/lib/grafana
     networks:
       - internal
 
