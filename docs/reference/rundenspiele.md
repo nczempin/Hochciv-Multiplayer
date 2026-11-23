@@ -49,7 +49,7 @@ At the 7-day timeout:
 | playing, unclaimed seat | The KI plays that nation; one human fewer |
 | playing, a player's turn | The KI takes over the seat for the rest of the game (`replaced`) |
 
-A seat taken over by the KI plays at level *mittel*, in ranked games *schwer*. In ranked games the player who was replaced loses **15 MMR** on top of the result ([Points and MMR](ranking.md)). Replaced players still see the game in their history (`replacedUserId`).
+A seat taken over by the KI plays at level *mittel*, in ranked games *schwer*. In ranked games the player who was replaced loses **15 MMR** on top of the result ([Points and MMR](ranking.md)) – except in a ranked live game the host continued as a Rundenspiel (`config.fromLive`): there the takeover costs no MMR, since only the host picked the time per turn. Players who had resigned in the live game get their 15 MMR penalty when the game is converted. Replaced players still see the game in their history (`replacedUserId`).
 
 ## Weekly challenge
 

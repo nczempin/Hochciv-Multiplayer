@@ -16,7 +16,7 @@ Handled by `sockets/game.js`. A live game is a Socket.IO room named after its `s
 
 | Event | Payload | Who | Purpose |
 |---|---|---|---|
-| `session:connect` | `{ sessionId, password, clientId }` | player or spectator | Bind the socket to the seat whose `clientId` matches (or the spectator). Also used for reconnects. Ack: `playerIndex`, `status`, `players`, `gameConfig`, `hostIndex`, `spectators`. |
+| `session:connect` | `{ sessionId, password, clientId }` | player or spectator | Bind the socket to the seat whose `clientId` matches (or the spectator). Also used for reconnects. After the start, a seat held by an account only takes that account back (another account is refused). Ack: `playerIndex`, `status`, `players`, `gameConfig`, `hostIndex`, `spectators`. |
 | `session:kick` | `{ playerIndex }` | host | Remove a player from the lobby |
 | `lobby:config` | game settings | host | Change the lobby settings (map, empires, KI, events, timer, ranked, player-bots `playerBots` / `playerBotLimit`, public listing `isPublic`, nation mode `civMode` `fixed` / `random` / `draft` / `randomDraft` and turn order `turnOrder` `classic` / `pick` / `random`, …); a custom map is checked with `checkCustomMap`. `randomCivs` still works and follows `civMode` |
 | `lobby:player:update` | `{ civ, ability, pos }` | player | Own nation and ability in the lobby; `pos` (0-based, `null` = none) is the turn position asked for with turn order `pick` – a taken one is refused (`Diese Position ist schon vergeben.`) |
@@ -33,7 +33,7 @@ Handled by `sockets/game.js`. A live game is a Socket.IO room named after its `s
 | `game:trend` | – | player, spectator | The statistics so far for the player report (`client/report.js`): `{ trend }`, only points, cities, population, techs, armies, wonders and key moments (`utils/stats.js` `trend`, no income); a finished game answers with its full statistics. Rundenspiele have `trend` in their view while they run |
 | `game:resign` | – | player | Resign: the KI plays the seat to the end; may end the game ([Resign](#resign)) |
 | `game:pause` | `{ pause }` | host | Pause / resume a running game: moves are refused (`Das Spiel ist pausiert.`), the turn timer stands still; everybody gets `game:paused`, and `state:update` / `game:start` carry `paused` (`{ by, at }` or null) and `turn.paused` |
-| `game:toAsync` | `{ turnDays }` (1 / 3 / 7, default 3) | host with an account | Continue the game as a Rundenspiel (`async/service.js` fromLive): same state, statistics, chat and replay frames; accounts keep their seats, the KI takes the guests' empires (and those of players who resigned). Refused while a KI turn is being played. Ack `{ ok, asyncId }`; everybody gets `game:toAsync`, then the live session is removed |
+| `game:toAsync` | `{ turnDays }` (1 / 3 / 7, default 3) | host with an account | Continue the game as a Rundenspiel (`async/service.js` fromLive): same state, statistics, chat and replay frames; accounts keep their seats, the KI takes the guests' empires (and those of players who resigned; in ranked games they get their resign penalty now). In a converted ranked game a missed deadline costs no MMR. Refused while a KI turn is being played. Ack `{ ok, asyncId }`; everybody gets `game:toAsync`, then the live session is removed |
 
 ### Server → client
 
