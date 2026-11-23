@@ -460,7 +460,8 @@ const MP = {
     rematch: function () {
         this.socket.emit('session:rematch', {}, res => { if (res && res.error) toast(TXS(res.error)); });
     },
-    /** The host started a rematch: leave the finished game for the lobby. */
+    /** The host started a rematch: leave the finished game for the lobby. Also the way back
+     *  when the start failed during the placement or the Marathon draft (data.error, R-09). */
     enterRematch: async function (data) {
         this.lobbyIndex = this.spectator ? null : data.playerIndex;
         this.hostIndex = data.hostIndex;
@@ -483,7 +484,7 @@ const MP = {
         show('screen-menu');
         await this.showLobby();
         this.setMode(this.spectator ? 'watching' : 'waiting');
-        toast(TX('Revanche! Ihr seid zurück in der Lobby.'));
+        toast(data.error ? TXS(data.error) : TX('Revanche! Ihr seid zurück in der Lobby.'));
     },
 
     /** Lobby code and password in the game's header (spectators: the code only). */

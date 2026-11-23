@@ -681,8 +681,88 @@ module.exports = function registerHandlers(io) {
  * nations and abilities, then the tile placement, the Marathon draft or the game itself.
  * Called by the host's 'game:start' and by the matchmaking (sockets/match.js).
  * Returns an error message (German) or null.
+ *
+ * R-09: the start changes the lobby (KI seats, seat order, nations, settings). A start that fails
+ * – here, or later after the nation draft, the Marathon draft or the tile placement – puts the
+ * lobby back as it was (restoreLobby), so the next attempt starts from the players' choices.
  */
 function startGame(io, session) {
+    // kept until the game runs (emitGameStart): a draft or the placement may still fail
+    const snap = session.startSnapshot = lobbySnapshot(session);
+    let err;
+    try {
+        err = beginGame(io, session);
+    } catch (e) {
+        console.error(`[Start] Session ${session.id}:`, e);
+        err = 'Fehler beim Spielstart.';
+    }
+    if (err) restoreLobby(io, session, snap);
+    return err || null;
+}
+
+// what a seat keeps when the lobby is restored: the connection may have changed meanwhile
+const LIVE_SEAT_FIELDS = ['connected', 'socketId', 'offlineSince'];
+
+/** The lobby before a start (R-09): the seat objects themselves – a socket finds its seat by
+ *  reference – with a copy of their fields, the host and the settings. */
+function lobbySnapshot(session) {
+    return {
+        players: session.players.slice(),
+        fields: session.players.map(p => ({ ...p })),
+        hostIndex: session.hostIndex,
+        gameConfig: structuredClone(session.gameConfig),
+    };
+}
+
+/**
+ * A start failed (R-09): back to the lobby as it was before. `error` (draft, placement – the
+ * clients have left the lobby screen): every seat is sent back to the lobby with the message.
+ */
+function restoreLobby(io, session, snap, error) {
+    const left = ['placement', 'draft'].includes(session.status);
+    session.players.splice(0, session.players.length, ...snap.players);
+    snap.players.forEach((p, i) => {
+        const live = {};
+        LIVE_SEAT_FIELDS.forEach(k => { live[k] = p[k]; });
+        for (const k of Object.keys(p)) delete p[k];
+        Object.assign(p, snap.fields[i], live);
+    });
+    session.hostIndex = snap.hostIndex;
+    session.gameConfig = snap.gameConfig;
+    Object.assign(session, { status: 'lobby', startSnapshot: null, civDraft: null, placementState: null, draft: null, state: null, turnClock: null });
+    if (!error) {
+        // the host has the error as the answer to game:start
+        io.to(session.id).emit('lobby:player:updated', publicPlayers(session));
+        sendIndices(io, session);
+        return;
+    }
+    console.error(`[Start] Session ${session.id}: back to the lobby – ${error}`);
+    if (!left) {
+        // the nation draft is a dialog over the lobby
+        io.to(session.id).emit('lobby:player:updated', publicPlayers(session));
+        sendIndices(io, session);
+        io.to(session.id).emit('game:startFailed', { error });
+        return;
+    }
+    // placement and Marathon draft show the game: the way back is the rematch's
+    session.players.forEach((p, i) => {
+        if (p.socketId) io.to(p.socketId).emit('session:rematch', { playerIndex: i, hostIndex: session.hostIndex, players: publicPlayers(session), gameConfig: session.gameConfig, error });
+    });
+    for (const w of session.spectators || []) {
+        if (w.connected && w.socketId) io.to(w.socketId).emit('session:rematch', { playerIndex: -1, spectator: true, hostIndex: session.hostIndex, players: publicPlayers(session), gameConfig: session.gameConfig, error });
+    }
+}
+
+/** A failed step after startGame (nation draft, Marathon draft, placement): restore the lobby. */
+function startFailed(io, session, error) {
+    if (session.startSnapshot) return restoreLobby(io, session, session.startSnapshot, error);
+    // no snapshot (cannot happen – startGame keeps one until the game runs): at least out of the dead end
+    session.status = 'lobby';
+    io.to(session.id).emit('game:startFailed', { error });
+}
+
+/** startGame's checks and preparation (see there). */
+function beginGame(io, session) {
     if (session.players.filter(p => p.kind === 'human').length < 1)
         return 'Mindestens ein Spieler nötig.';
     // the host turned player-bots off or lowered the limit after they joined: kick them first
@@ -952,12 +1032,9 @@ function finishCivDraft(io, session) {
     });
     io.to(session.id).emit('civdraft:update', civDraftPayload(session));
     session.civDraft = null;
-    const err = launch(io, session, opts);
-    if (err) {
-        console.error(`[Draft] Session ${session.id}: start after the draft failed: ${err}`);
-        session.status = 'lobby';
-        io.to(session.id).emit('game:startFailed', { error: err });
-    }
+    let err;
+    try { err = launch(io, session, opts); } catch (e) { console.error(`[Draft] Session ${session.id}:`, e); err = 'Fehler beim Spielstart.'; }
+    if (err) startFailed(io, session, err);
 }
 
 /** The nation draft for the clients: the draft, who sits where, and the pick's time. */
@@ -1043,6 +1120,7 @@ function emitGameStart(io, session) {
         if (!w.connected || !w.socketId) continue;
         io.to(w.socketId).emit('game:start', { state: engine.stateForPlayer(session.state, -1), yourIndex: -1, turn: turnInfo(session), paused: session.paused || null });
     }
+    session.startSnapshot = null;           // the game runs: no way back to the lobby (R-09)
 }
 
 /** Marathon: all abilities are drafted – start the real game with them. */
@@ -1054,6 +1132,7 @@ function finishDraft(io, session) {
         emitGameStart(io, session);
     } catch (e) {
         console.error('Error starting game after draft', e);
+        startFailed(io, session, 'Fehler beim Spielstart.');
     }
 }
 
@@ -1170,13 +1249,14 @@ function newScenes(session) {
 /** Everyone has a start tile: the map is made and the game begins. */
 function finishPlacement(io, session) {
     const st = session.placementState;
-    session.gameConfig.map = engine.getEngine().tileMap(st.plan);
     try {
+        session.gameConfig.map = engine.getEngine().tileMap(st.plan);
         session.state = engine.createGame(session);
         session.status = 'playing';
         emitGameStart(io, session);
     } catch (e) {
         console.error('Error starting game after placement', e);
+        startFailed(io, session, 'Fehler beim Spielstart.');
     }
 }
 
