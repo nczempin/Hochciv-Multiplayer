@@ -1188,7 +1188,7 @@
         'Google speichern': 'Save Google',
         '🎮 Discord OAuth': '🎮 Discord OAuth',
         'Bot-Token (Discord Activity, optional)': 'Bot token (Discord Activity, optional)',
-        'Damit prüft der Server, dass nur Spieler aus dem Anruf der Lobby ihrer Activity beitreten.': 'With it the server checks that only players from the call join the lobby of their Activity.',
+        'Damit prüft der Server, dass nur Spieler aus dem Anruf der Lobby ihrer Activity beitreten, und der Bot schickt Rundenspiel-Benachrichtigungen als Direktnachricht. Für Direktnachrichten muss der Bot auf einem Server sein, auf dem auch die Spieler sind.': 'With it the server checks that only players from the call join the lobby of their Activity, and the bot sends turn-based game notifications as direct messages. For direct messages the bot must be on a server the players are on too.',
         'Aktiviert (Website-Login)': 'Enabled (website login)',
         'Discord speichern': 'Save Discord',
         '📋 Callback URLs': '📋 Callback URLs',

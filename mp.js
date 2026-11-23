@@ -2146,7 +2146,7 @@ window.addEventListener('DOMContentLoaded', () => {
             position: fixed; top: 52px; left: 50%; transform: translateX(-50%); z-index: 1001;
             background: #fffbe8; color: #333; border: 2px solid #9d3b2f; border-radius: 6px;
             padding: 8px 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); display: flex; gap: 10px; align-items: center;
-            /* % of the body: the game turns the body on phones held upright (html.turn) */
+            /* % of the body: the kept versions v102–v110 turn the body on phones held upright (html.turn) */
             width: max-content; max-width: calc(100% - 32px); box-sizing: border-box; font-size: 14px;
         }
         #mp-afk-banner[hidden] { display: none; }
@@ -3527,8 +3527,8 @@ window.addEventListener('DOMContentLoaded', () => {
         .mph .mpa-notify { border-top-color:var(--rule); }
         .mph .row { font-size:14px; }
         .mph a { color:var(--red); }
-        /* phones: the new games one below the other, title and line side by side. Not on a page the
-           game turned (html.turn, phone held upright in a game): the query measures the screen,
+        /* phones: the new games one below the other, title and line side by side. Not on a page a kept
+           version turned (html.turn, v102–v110, phone held upright in a game): the query measures the screen,
            the turned page is as wide as the screen is tall. */
         @media (max-width:640px) {
             html:not(.turn) .mph-new { grid-auto-flow:row; align-items:stretch; gap:8px; }
