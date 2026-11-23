@@ -2432,6 +2432,7 @@ const ACTIONS = {
     buildRoad: (state, pi, r, c, target) => ({ type: 'buildRoad', params: { r, c, target } }),
     buyTile: (state, pi, r, c) => ({ type: 'buyTile', params: { r, c } }),          // Kolonialismus up to v100
     claimTile: (state, pi, r, c) => ({ type: 'claimTile', params: { r, c } }),      // Kolonialismus since v103
+    collectIncomeNow: (state, pi) => ({ type: 'collectIncomeNow', params: {} }),     // China since v111
     coverPop: (state, pi, kind, amount) => ({ type: 'coverPop', params: { kind, amount } }),
     uncoverPop: (state, pi, kind, amount) => ({ type: 'uncoverPop', params: { kind, amount } }),
     buildWonder: (state, pi, city, wonder) => ({ type: 'buildWonder', params: { cityId: city.id, wonder } }),

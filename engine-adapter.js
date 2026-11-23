@@ -438,6 +438,11 @@ function makeAdapter(engineDir, label) {
                     if (typeof E.buyTile !== 'function') return `Unbekannte Aktion: ${action}`;
                     return E.buyTile(state, pi, params.r, params.c);
 
+                // China "Mandat des Himmels" (v111): once per game, collect the income now
+                case 'collectIncomeNow':
+                    if (typeof E.collectIncomeNow !== 'function') return `Unbekannte Aktion: ${action}`;
+                    return E.collectIncomeNow(state, pi);
+
                 case 'coverPop':
                     return E.coverPop(state, pi, params.kind, params.amount);
 
