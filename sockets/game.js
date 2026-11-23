@@ -90,6 +90,8 @@ module.exports = function registerHandlers(io) {
             if (started && u && player.dbUserId && u.id !== player.dbUserId)
                 return ack({ error: 'Dieser Platz gehört einem anderen Konto. Melde dich mit dem Konto an, mit dem du das Spiel begonnen hast.' });
 
+            // Bound to another session (or another seat) before: give that one up first (R-08)
+            if (session && (session !== s || (me && me !== player) || watcher)) release();
             sessionId = s.id;
             session = s;
             me = player;
@@ -161,6 +163,7 @@ module.exports = function registerHandlers(io) {
 
         /** Spectator mode: bind this socket as a viewer – sees everything, can't act or write. */
         function watch(s, w, ack) {
+            if (session && (session !== s || me || watcher !== w)) release();     // R-08
             sessionId = s.id;
             session = s;
             me = null;
@@ -571,59 +574,54 @@ module.exports = function registerHandlers(io) {
             checkGameOver(io, session);
         });
 
+        /**
+         * Give up this socket's seat or spectator place: on disconnect, and before the socket binds
+         * to another session (R-08 – otherwise the old seat stayed "connected" with a dead socket,
+         * the socket kept getting the old room's updates and the old game never handed over host).
+         */
+        function release() {
+            const s = session, sid = sessionId, p = me, w = watcher;
+            session = null; sessionId = null; me = null; watcher = null;
+            if (!s) return;
+            socket.leave(sid);
+            if (w) {
+                if (w.socketId !== socket.id) return;     // replaced by a newer connection
+                w.connected = false;
+                w.socketId = null;
+                io.to(sid).emit('spectators:update', { count: sessions.spectatorCount(s) });
+                return;
+            }
+            // Ignore if this socket was kicked or replaced by a newer connection of the same player
+            const playerIndex = p ? s.players.indexOf(p) : -1;
+            if (playerIndex === -1 || p.socketId !== socket.id) return;
+            p.connected = false;
+            p.socketId = null;
+
+            if (s.status === 'lobby') {
+                // R-12: a reload, a short network drop or a phone in the background must not cost
+                // the seat – it stays (shown as offline) and is only given up after a grace period
+                io.to(sid).emit('lobby:player:updated', publicPlayers(s));
+                const since = p.offlineSince = Date.now();
+                const t = setTimeout(() => lobbyGraceOver(io, s, p, since), config.LOBBY_GRACE_MS);
+                if (t.unref) t.unref();
+                return;
+            }
+            if (s.hostIndex === playerIndex) {
+                const nextHost = s.players.find(q => q.connected && q !== p);
+                if (nextHost) s.hostIndex = s.players.indexOf(nextHost);
+            }
+            io.to(sid).emit('player:left', {
+                playerIndex,
+                name: p.name,
+                players: publicPlayers(s),
+                newHostIndex: s.hostIndex
+            });
+        }
+
         // ── Disconnect ───────────────────────────────────────────────────────
         socket.on('disconnect', () => {
             try {
-                if (watcher) {
-                    if (watcher.socketId !== socket.id) return;     // replaced by a newer connection
-                    watcher.connected = false;
-                    watcher.socketId = null;
-                    io.to(sessionId).emit('spectators:update', { count: sessions.spectatorCount(session) });
-                    return;
-                }
-                // Ignore if this socket was kicked or replaced by a newer connection of the same player
-                if (!bound() || me.socketId !== socket.id) return;
-                const playerIndex = myIndex();
-                const wasHost = session.hostIndex === playerIndex;
-                const pName = me.name;
-
-                if (session.status === 'lobby') {
-                    if (wasHost) {
-                        sessions.removeSession(sessionId);
-                        io.to(sessionId).emit('session:kicked', { reason: 'Der Host hat die Lobby geschlossen.' });
-                    } else {
-                        sessions.kickPlayer(sessionId, playerIndex, true);
-                        if (session.players.length === 0) {
-                            sessions.removeSession(sessionId);
-                        } else {
-                            fixHostAfterRemoval(session, playerIndex);
-                            io.to(sessionId).emit('player:left', {
-                                playerIndex,
-                                name: pName,
-                                players: publicPlayers(session),
-                                newHostIndex: session.hostIndex
-                            });
-                            sendIndices(io, session);
-                        }
-                    }
-                } else {
-                    me.connected = false;
-                    me.socketId = null;
-
-                    if (wasHost) {
-                        const nextHost = session.players.find(p => p.connected && p !== me);
-                        if (nextHost) {
-                            session.hostIndex = session.players.indexOf(nextHost);
-                        }
-                    }
-
-                    io.to(sessionId).emit('player:left', {
-                        playerIndex,
-                        name: pName,
-                        players: publicPlayers(session),
-                        newHostIndex: session.hostIndex
-                    });
-                }
+                release();
             } catch (err) {
                 console.error('[Socket] disconnect failed:', err);
             }
@@ -974,6 +972,35 @@ function civDraftPayload(session) {
 }
 
 /** A lobby player was removed at `removedIndex` – keep hostIndex pointing at the same player. */
+/**
+ * R-12: a lobby seat whose player stayed away for LOBBY_GRACE_MS is given up – as a disconnect in
+ * the lobby used to do at once. Nobody left: the lobby is closed; the host gone: the next
+ * connected player takes over.
+ */
+function lobbyGraceOver(io, session, player, since) {
+    // back in the meantime (perhaps gone again since: then that later timer decides)
+    if (player.connected || player.offlineSince !== since || session.status !== 'lobby' || sessions.getSession(session.id) !== session) return;
+    const playerIndex = session.players.indexOf(player);
+    if (playerIndex === -1) return;
+    const wasHost = playerIndex === session.hostIndex;
+    sessions.kickPlayer(session.id, playerIndex, true);
+    const next = session.players.findIndex(p => p.kind === 'human' && p.connected);
+    if (next === -1) {
+        io.to(session.id).emit('session:kicked', { reason: 'Der Host hat die Lobby geschlossen.' });
+        sessions.removeSession(session.id);
+        return;
+    }
+    if (wasHost) session.hostIndex = next;
+    else fixHostAfterRemoval(session, playerIndex);
+    io.to(session.id).emit('player:left', {
+        playerIndex,
+        name: player.name,
+        players: publicPlayers(session),
+        newHostIndex: session.hostIndex
+    });
+    sendIndices(io, session);
+}
+
 function fixHostAfterRemoval(session, removedIndex) {
     if (session.hostIndex > removedIndex) session.hostIndex--;
     if (session.hostIndex >= session.players.length) session.hostIndex = 0;
