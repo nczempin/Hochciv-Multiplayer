@@ -183,14 +183,14 @@ Rate limit: 60 requests a minute per account.
 
 ## Admin – `/api/admin`
 
-All routes need *admin*; `/oauth*` needs *superadmin*. Admins can only manage accounts with the role `user` or `botcreator`. *Recent* (a re-confirmation within 10 minutes, the admin page asks for it) is needed for `DELETE /users/:id/mfa/…`, `DELETE /users/:id`, `POST /oauth/:provider` and the user actions other than `ban`, `unban`, `set_mmr` and `set_bot_limit`.
+All routes need *admin*; `/oauth*` needs *superadmin*. The review admin (`reviewadmin`) may use every GET route (and `POST /words/check`), with the exceptions noted below; every change is refused with 403. Admins can only manage accounts with the role `user` or `botcreator`. *Recent* (a re-confirmation within 10 minutes, the admin page asks for it) is needed for `DELETE /users/:id/mfa/…`, `DELETE /users/:id`, `POST /oauth/:provider` and the user actions other than `ban`, `unban`, `set_mmr` and `set_bot_limit`.
 
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/metrics` | Uptime, memory, CPU, maintenance/registration state, lobbies and players online |
 | POST | `/config` | `{ maintenanceMode?, registrationEnabled? }` |
-| GET | `/users` | All accounts; bots with `owner` and `botDisabled`, bot creators with `bots { count, limit }` |
-| GET | `/users/:id/mfa` | A user's second factors |
+| GET | `/users` | All accounts; bots with `owner` and `botDisabled`, bot creators with `bots { count, limit }`. For the review admin the e-mail is masked (`p***@gmail.com`) |
+| GET | `/users/:id/mfa` | A user's second factors (not for the review admin: 403) |
 | DELETE | `/users/:id/mfa/:type/:tokenId?` | Remove a second factor |
 | POST | `/users/:id/action` | `{ action }`: `ban`, `unban`, `set_mmr` (`mmr`), `force_password` (`newPassword`), `make_admin`, `set_role` (`role`), `reset_mfa`, `set_bot_limit` (`botLimit`, null = default). Bots: only ban/unban and `set_mmr`. |
 | DELETE | `/users/:id` | Delete the account |

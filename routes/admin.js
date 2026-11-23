@@ -31,11 +31,18 @@ const ROLES = ['user', 'botcreator', 'reviewadmin', 'admin', 'superadmin'];
 const isPrivileged = role => role === 'admin' || role === 'superadmin' || role === 'reviewadmin';
 
 /*
- * The review admin ('reviewadmin') sees everything a superadmin sees, but may never change
- * anything: only reading requests (plus the word check, which changes nothing) – see readOnly.
+ * The review admin ('reviewadmin') sees what a superadmin sees, but may never change anything:
+ * only reading requests (plus the word check, which changes nothing) – see readOnly. The account
+ * is meant for outside reviewers, so it gets as little personal data as possible: e-mail
+ * addresses only masked (p***@gmail.com), no second factors of other users.
  */
 const READ_ONLY_POSTS = new Set(['/words/check']);
 const isReviewAdmin = user => !!user && user.role === 'reviewadmin';
+function maskEmail(email) {
+    if (!email) return email;
+    const at = String(email).lastIndexOf('@');
+    return at < 1 ? '***' : email[0] + '***' + email.slice(at);
+}
 
 /**
  * Admins manage normal users. Anything that touches an admin/superadmin/review admin account,
@@ -113,8 +120,10 @@ router.get('/users', async (req, res) => {
         const byId = new Map(users.map(u => [u.id, u]));
         const owned = {};
         users.forEach(u => { if (u.accountType === 'bot' && u.ownerId) owned[u.ownerId] = (owned[u.ownerId] || 0) + 1; });
+        const masked = isReviewAdmin(req.user);
         res.json(users.map(u => {
             const j = u.toJSON();
+            if (masked) j.email = maskEmail(j.email);
             if (u.accountType === 'bot') {
                 const owner = byId.get(u.ownerId) || null;
                 j.owner = owner ? { id: owner.id, username: owner.username } : null;
@@ -131,6 +140,7 @@ router.get('/users', async (req, res) => {
 });
 
 router.get('/users/:id/mfa', async (req, res) => {
+    if (isReviewAdmin(req.user)) return res.status(403).json({ error: 'Nur Lesezugriff: Als Review-Admin siehst du keine zweiten Faktoren anderer Nutzer.' });
     try {
         const targetUser = await User.findByPk(req.params.id);
         if (!targetUser) return res.status(404).json({ error: 'Benutzer nicht gefunden' });
