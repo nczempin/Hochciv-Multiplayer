@@ -29,7 +29,7 @@ const limit = rateLimitLib({
 
 /** Display name of a civ key ("griechenland" → "Griechenland"), the key if unknown. */
 function civName(key) {
-    const civs = (engine.getEngine() || {}).CIVS || [];
+    const civs = engine.allCivs();       // also the experimental nations (v111)
     const c = civs.find(x => x.k === key);
     return c ? c.n : key || null;
 }

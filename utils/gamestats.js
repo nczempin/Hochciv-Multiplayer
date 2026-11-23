@@ -54,7 +54,7 @@ let namesCache = null;
 function names() {
     if (namesCache) return namesCache;
     const get = n => { try { return engine.engineConst(n); } catch (_) { return undefined; } };
-    const CIVS = get('CIVS') || [], WONDERS = get('WONDERS') || [];
+    const CIVS = get('ALL_CIVS') || get('CIVS') || [], WONDERS = get('WONDERS') || [];
     // the Singularity is a technology of its own outside TECHS
     const TECHS = (get('TECHS') || []).concat(get('SINGULARITY') ? [get('SINGULARITY')] : []);
     const EN = get('DATA_EN') || {}, ageOfCost = get('ageOfCost');
