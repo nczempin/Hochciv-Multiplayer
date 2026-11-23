@@ -19,6 +19,7 @@ Settings that change at runtime (maintenance mode, registration switch, OAuth pr
 | `SMTP_REQUIRE_TLS` | no | `off` allows a mail server without STARTTLS (not recommended). |
 | `MAIL_LOG_CODES` | no | `on` writes the codes of logged mails in full in production mode, e.g. to test registration on a staging server without SMTP. Off by default: whoever reads the logs could use anybody's reset or 2FA code. |
 | `HOCHCIV_MEM_LIMIT` | no | Memory limit of the server container (default `2g`). |
+| `DISCORD_INVITE_URL` | optional | Invitation to the Discord server the Hochciv bot is on. Shown when a player switches on Discord messages but the bot can't reach them. See [Discord direct messages](login-providers.md#discord-direct-messages). |
 | `FCM_SERVICE_ACCOUNT` | for push | Firebase service account key, base64-encoded on one line. Without it, push is off. See [Push notifications](push-notifications.md). |
 | `ALLOWED_ORIGINS` | no | Further web origins (comma-separated, e.g. `https://second.example`) whose pages may use a visitor's login. By default only this site (the request's host or `BASE_URL`) and the Discord Activity may connect a socket or send changing API requests – see [Security](../reference/security.md). |
 | `PROXY_NETWORK` | no | Docker network of the reverse proxy (default `proxy`); production and staging must use the same one. |

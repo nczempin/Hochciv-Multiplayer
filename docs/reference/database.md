@@ -46,7 +46,7 @@ Relations: a `User` has many `Passkey`, `TotpToken` and `DeviceToken` rows (devi
 | `totpSecret`, `totpEnabled`, `totpAttempts`, `totpLockedUntil` | Authenticator (and its lockout) |
 | `emailOtpEnabled`, `emailOtpCode`, `emailOtpExpiry` | E-mail code as second factor |
 | `currentChallenge` | Pending WebAuthn challenge |
-| `notifyEmail`, `notifyPush` | Rundenspiel notifications |
+| `notifyEmail`, `notifyPush`, `notifyDiscord` | Rundenspiel notifications (e-mail and push opt-out, Discord direct message opt-in) |
 | `blockedPlayers` | Chat blocks |
 
 ## `games`

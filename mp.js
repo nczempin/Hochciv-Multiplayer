@@ -1369,7 +1369,10 @@ const MP = {
             <label class="row mpa-notify"><span>${TX('E-Mail, wenn ich am Zug bin')}</span>
               <input type="checkbox" ${rs.notifyEmail ? 'checked' : ''} onchange="ASYNC.setNotify(this.checked)"></label>
             ${/HochcivApp\//.test(navigator.userAgent) ? `<label class="row"><span>${TX('Push-Nachricht, wenn ich am Zug bin')}</span>
-              <input type="checkbox" ${rs.notifyPush ? 'checked' : ''} onchange="ASYNC.setPush(this.checked)"></label>` : ''}</div>`;
+              <input type="checkbox" ${rs.notifyPush ? 'checked' : ''} onchange="ASYNC.setPush(this.checked)"></label>` : ''}
+            ${rs.discord ? `<label class="row"><span>${TX('Discord-Nachricht, wenn ich am Zug bin')}</span>
+              <input type="checkbox" id="mpa-notify-discord" ${rs.notifyDiscord ? 'checked' : ''} onchange="ASYNC.setDiscord(this.checked)"></label>
+              <p class="sub" id="mpa-discord-hint" hidden></p>` : ''}</div>`;
 
         // Offen: invitations, lobbies and Rundenspiele with a free seat – the last two through the
         // filters (invitations always show)
@@ -2730,6 +2733,38 @@ const ASYNC = {
             headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on }),
         }).then(r => r.ok ? toast(on ? TX('Push-Nachrichten an.') : TX('Push-Nachrichten aus.')) : Promise.reject(new Error(TX('Speichern fehlgeschlagen'))))
             .catch(e => toast(e.message));
+    },
+
+    /**
+     * Direct messages from the Hochciv Discord bot (shown with a linked Discord account). Switching
+     * on sends a test message; if the bot can't reach the player, the switch goes back off and the
+     * hint below it says why (with the server invitation, if there is one).
+     */
+    setDiscord: function (on) {
+        const box = document.getElementById('mpa-notify-discord');
+        const hint = document.getElementById('mpa-discord-hint');
+        if (hint) hint.hidden = true;
+        fetch(`${MP.serverUrl}/api/async/notify/discord`, {
+            method: 'POST', credentials: 'include',
+            headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on }),
+        }).then(async r => {
+            const data = await r.json().catch(() => ({}));
+            if (r.ok) return toast(on ? TX('Discord-Nachrichten an.') : TX('Discord-Nachrichten aus.'));
+            if (box) box.checked = !on;
+            const msg = data.error ? TXS(data.error) : TX('Speichern fehlgeschlagen');
+            if (!hint) return toast(msg);
+            hint.textContent = msg + ' ';
+            if (data.invite && /^https:\/\//.test(data.invite)) {
+                const a = document.createElement('a');
+                a.href = data.invite; a.target = '_blank'; a.rel = 'noopener';
+                a.textContent = TX('Zum Hochciv-Discord');
+                hint.appendChild(a);
+            }
+            hint.hidden = false;
+        }).catch(() => {
+            if (box) box.checked = !on;
+            toast(TX('Speichern fehlgeschlagen'));
+        });
     },
 
     // ── Create ───────────────────────────────────────────────────────────────

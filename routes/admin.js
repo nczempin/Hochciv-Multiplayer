@@ -547,11 +547,12 @@ router.post('/oauth/:provider', isSuperAdmin, requireRecentAuth, async (req, res
         if (clientId !== undefined) oauthProvider.clientId = clientId;
         // The page never has the stored secrets: an empty field keeps them, a new value replaces them
         if (typeof clientSecret === 'string' && clientSecret.trim()) oauthProvider.clientSecret = clientSecret.trim();
-        // Bot token: Discord Activity only
+        // Bot token: Discord only (Activity instance check, direct messages of utils/discord.js)
         if (provider === 'discord' && clearBotToken === true) oauthProvider.botToken = '';
         else if (provider === 'discord' && typeof botToken === 'string' && botToken.trim()) oauthProvider.botToken = botToken.trim();
         if (enabled !== undefined) oauthProvider.enabled = enabled;
         await oauthProvider.save();
+        if (provider === 'discord') require('../utils/discord').resetCache();
 
         // Refresh Passport strategies
         await refreshOAuthStrategies();
