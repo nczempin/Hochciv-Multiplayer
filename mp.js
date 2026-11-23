@@ -1354,10 +1354,12 @@ const MP = {
             turn = active.filter(g => g.yourTurn);
             const waiting = active.filter(g => !g.yourTurn);
             const takenOver = rs.mine.filter(g => !active.includes(g));
-            mine = active.length;
+            const ended = rs.ended || [];             // ended, not opened since: one last click (async/service.js)
+            mine = active.length + ended.length;
+            if (ended.length) run += section(TX('Beendet – wer hat gewonnen?'), ended.map(g => ASYNC.row(g)), '', 'mph-async mph-ended');
             run += `<p class="sub mph-async">${TX('Gespielt wird nacheinander, ohne dass die anderen online sein müssen. Wer %s Tage nicht zieht, wird von der KI ersetzt (gewertet: −15 MMR).', rs.timeoutDays)}</p>`
                 // nothing running: one empty box instead of two
-                + (mine ? section(TX('Du bist am Zug'), turn.map(g => ASYNC.row(g)), TX('Gerade nirgends.'), 'mph-async')
+                + (active.length ? section(TX('Du bist am Zug'), turn.map(g => ASYNC.row(g)), TX('Gerade nirgends.'), 'mph-async')
                     + section(TX('Warten auf andere'), waiting.map(g => ASYNC.row(g)), TX('Keine.'), 'mph-async')
                     : section(TX('Rundenspiele'), [], TX('Keine laufenden Rundenspiele.'), 'mph-async'))
                 + (takenOver.length ? section(TX('Von der KI übernommen'), takenOver.slice(0, 15).map(g => ASYNC.row(g)), '', 'mph-async') : '');
@@ -1398,11 +1400,12 @@ const MP = {
         put('mph-running', run);
         put('mph-open', open);
         const count = (k, n, hot) => { const el = $('mph-count-' + k); if (el) { el.textContent = n || ''; el.classList.toggle('hot', !!hot); } };
-        count('running', turn.length || mine, turn.length);
+        const endedN = rs && rs.ended ? rs.ended.length : 0;
+        count('running', turn.length + endedN || mine, turn.length + endedN);
         count('open', shown + invites.length, invites.length);
         // until the player picks a tab: open on "Laufend" when one of their Rundenspiele runs
         if (!this.hubPicked && mine) this.hubShow('running', true);
-        ASYNC.badgeCount = turn.length;
+        ASYNC.badgeCount = turn.length + endedN;
         ASYNC.drawBadge();
     },
 
@@ -2314,6 +2317,8 @@ if (originalGameOver) {
             MP.updatePlayerList();
             MP.setTurnClock(null);
         }
+        // full screen: "<name> gewinnt das Spiel", then the end screen above (client/victory.js)
+        if (typeof VICTORY !== 'undefined') VICTORY.play();
         return r;
     };
 }
@@ -2670,7 +2675,7 @@ const ASYNC = {
         if (!btn) return;
         let n = 0;
         if (MP.user) {
-            try { n = (await this.api('')).mine.filter(g => g.yourTurn).length; } catch (_) { }
+            try { const d = await this.api(''); n = d.mine.filter(g => g.yourTurn).length + (d.ended || []).length; } catch (_) { }
         }
         this.badgeCount = n;
         this.drawBadge();
@@ -2701,6 +2706,8 @@ const ASYNC = {
         const left = leftMs == null ? '' : leftMs >= 864e5 ? TX('noch %s Tag(e)', Math.ceil(leftMs / 864e5)) : TX('noch %s Std.', Math.max(1, Math.ceil(leftMs / 36e5)));
         let info = '';
         if (g.yourTurn) info = `<span class="mpa-badge">${TX('Du bist am Zug')}</span>` + (left ? ' ' + left : '');
+        else if (g.status === 'finished' && g.won === true) info = `<span class="mpa-badge won">🏆 ${TX('Du hast gewonnen!')}</span>`;
+        else if (g.status === 'finished' && g.won === false) info = `<span class="mpa-badge lost">${TX('Verloren')}</span> ` + TX('Gewonnen: %s', (g.winners || []).map(this.esc).join(', ') || '—');
         else if (g.status === 'finished') info = TX('Gewonnen: %s', (g.winners || []).map(this.esc).join(', ') || '—');
         else if (g.resigned) info = TX('Aufgegeben');
         else if (g.replaced) info = TX('Von der KI übernommen');
@@ -2709,12 +2716,13 @@ const ASYNC = {
         // a game to join shows all its settings (as the live lobbies, MP.traitsHtml)
         const joinable = !member && g.freeSeats && g.freeSeats.length;
         const btns = [];
-        if (member) btns.push(`<button class="btn small primary" onclick="ASYNC.open('${g.id}')">${TX('Öffnen')}</button>`);
+        if (member) btns.push(`<button class="btn small primary" onclick="ASYNC.open('${g.id}')">${g.status === 'finished' ? '🏁 ' + TX('Ergebnis ansehen') : TX('Öffnen')}</button>`);
         else if (g.status === 'playing' && !g.freeSeats.length) btns.push(`<button class="btn small" onclick="ASYNC.open('${g.id}')">${TX('Zuschauen')}</button>`);
         else btns.push(`<button class="btn small primary" onclick="ASYNC.showJoin('${g.id}')">${TX('Beitreten')}</button>`);
         if (g.invited && !member) btns.push(`<button class="btn small ghost" onclick="ASYNC.decline('${g.id}')">${TX('Ablehnen')}</button>`);
         if (member && g.freeSeats.length) btns.push(`<button class="btn small ghost" onclick="ASYNC.showInvite('${g.id}', '${g.joinCode}')">${TX('Einladen')}</button>`);
-        return `<div class="mpa-row${g.yourTurn ? ' turn' : ''}">
+        const end = g.status === 'finished' && g.won != null ? (g.won ? ' ended won' : ' ended lost') : '';
+        return `<div class="mpa-row${g.yourTurn ? ' turn' : ''}${end}">
             <div class="mpa-title"><span class="mph-kind">${c.challenge ? '📅 ' + TX('Wochen-Challenge') : TX('Rundenspiel')}</span> <b>${this.mapName(c.mapKey, c)}</b>${joinable ? '' : ` · ${MP.civModeLabel(c)}${c.ranked ? ' · 🔥 ' + TX('Gewertet') : ''}`}${c.isPublic ? ' · ' + TX('öffentlich') : ''} · ${statusText}
               <small class="mpa-c">${g.engine ? this.esc(g.engine) : ''}${member ? `${g.engine ? ' · ' : ''}${TX('Code')} ${g.joinCode}` : ''}</small></div>
             ${joinable ? MP.traitsHtml(MP.lobbyTraits(g, false)) : ''}
@@ -3547,6 +3555,10 @@ window.addEventListener('DOMContentLoaded', () => {
         .mpa-h { margin:14px 0 6px; }
         .mpa-row { border:1px solid rgba(0,0,0,.15); border-radius:6px; padding:8px 10px; margin-bottom:8px; background:rgba(255,255,255,.4); }
         .mpa-row.turn { border-color:#c0392b; box-shadow:0 0 0 1px #c0392b inset; }
+        .mpa-row.ended.won { border-color:#c8952c; box-shadow:0 0 0 1px #c8952c inset, 0 0 14px rgba(200,149,44,.35); }
+        .mpa-row.ended.lost { border-color:#7a6a58; }
+        .mpa-badge.won { background:linear-gradient(135deg,#f5d76e,#c8952c); color:#3a2300; }
+        .mpa-badge.lost { background:#6b5d50; }
         .mpa-title { font-size:14px; }
         .mpa-c { float:right; font-family:monospace; opacity:.6; }
         .mpa-traits { font-size:12px; color:var(--ink-soft); margin:3px 0 2px; line-height:1.4; }

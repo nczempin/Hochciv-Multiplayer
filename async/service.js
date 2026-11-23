@@ -28,6 +28,7 @@ const Discord = require('../utils/discord');
 
 const DAY = 24 * 60 * 60 * 1000;
 const TIMEOUT_MS = Number(process.env.ASYNC_TIMEOUT_MS) || 7 * DAY;
+const ENDED_LIST_DAYS = 14;        // ended Rundenspiele stay in the game list until opened, at most this long
 const REMINDER_MS = Number(process.env.ASYNC_REMINDER_MS) || 5 * DAY;
 const SWEEP_MS = Number(process.env.ASYNC_SWEEP_MS) || 10 * 60 * 1000;
 /* The host's time per turn (F19, config.turnDays: 1, 3 or 7) scales both: 7 days are the base,
@@ -61,6 +62,7 @@ function fromRow(row) {
         config: d.config, seats: d.seats || [], invites: d.invites || [], pre: d.pre || null,
         hold: !!d.hold, result: d.result || null, meta: d.meta || {}, chat: d.chat || [], chatMutes: d.chatMutes || {}, stats: d.stats || null,
         replay: d.replay || null, marks: d.marks || null, scenes: d.scenes || null,
+        endSeen: d.endSeen || [],          // players who opened the game after it ended (the game list keeps it until then)
         state: row.state || null,
         waitSince: row.waitSince ? new Date(row.waitSince).getTime() : Date.now(),
         reminded: !!row.reminded,
@@ -84,7 +86,7 @@ function rowFields(g) {
         waitSince: new Date(g.waitSince),
         reminded: !!g.reminded,
         round: S ? S.round : 0,
-        data: { engine: g.engine || null, config: g.config, seats: g.seats, invites: g.invites, pre: g.pre, hold: g.hold, result: g.result, meta: g.meta, chat: g.chat || [], chatMutes: g.chatMutes || {}, stats: g.stats || null, replay: g.replay || null, marks: g.marks || null, scenes: g.status === 'playing' ? g.scenes || null : null },
+        data: { engine: g.engine || null, config: g.config, seats: g.seats, invites: g.invites, pre: g.pre, hold: g.hold, result: g.result, meta: g.meta, chat: g.chat || [], chatMutes: g.chatMutes || {}, stats: g.stats || null, replay: g.replay || null, marks: g.marks || null, scenes: g.status === 'playing' ? g.scenes || null : null, endSeen: g.endSeen || [] },
         state: S,
     };
 }
@@ -194,7 +196,14 @@ async function settle(g, before) {
         const key = waitKey(g);
         if (key !== before.key) { g.waitSince = Date.now(); g.reminded = false; }
     }
-    if (g.status === 'finished' && !g.result) await processResult(g);
+    if (g.status === 'finished' && !g.result) {
+        await processResult(g);
+        // who has the game open sees the end right now – the game list does not keep it for them
+        g.endSeen = g.endSeen || [];
+        for (const u of await viewers(g.id)) {
+            if (g.seats.some(s => s.userId === u) && !g.endSeen.includes(u)) g.endSeen.push(u);
+        }
+    }
     await save(g);
     await broadcast(g);
     if (!before) return;
@@ -571,6 +580,8 @@ async function list(user) {
             yourTurn: (row.waitingIds || []).includes(user.id),
             round: row.round, winners: g.meta.winners || [], result: g.result,
             updatedAt: row.updatedAt,
+            // an ended game the player has not opened since: did they win?
+            won: g.status === 'finished' ? (g.meta.winners || []).includes((g.seats.find(x => x.userId === user.id) || {}).name) : undefined,
             deadline: ACTIVE.includes(g.status) ? g.waitSince + timeoutOf(g) : null,
         });
         return s;
@@ -580,6 +591,12 @@ async function list(user) {
         where: { participantIds: { [Op.contains]: [user.id] }, status: { [Op.notIn]: ['cancelled', 'finished'] } },
         attributes: attrs, order: [['updatedAt', 'DESC']], limit: 100,
     });
+    // … except the ones that ended in the last ENDED_LIST_DAYS and that the player has not opened
+    // since (open() marks them): one last click to see who won
+    const ended = (await AsyncGame.findAll({
+        where: { participantIds: { [Op.contains]: [user.id] }, status: 'finished', updatedAt: { [Op.gt]: new Date(Date.now() - ENDED_LIST_DAYS * DAY) } },
+        attributes: attrs, order: [['updatedAt', 'DESC']], limit: 20,
+    })).filter(row => !((row.data || {}).endSeen || []).includes(user.id));
     const invites = await AsyncGame.findAll({
         where: { invitedIds: { [Op.contains]: [user.id] }, status: { [Op.in]: ['setup', 'playing'] } },
         attributes: attrs, order: [['updatedAt', 'DESC']], limit: 50,
@@ -602,6 +619,7 @@ async function list(user) {
         discord: !!(u && u.discordId) && await Discord.enabled(),
         timeoutDays: TIMEOUT_MS / DAY,
         mine: mine.map(summarize),
+        ended: ended.map(summarize),
         invites: invites.map(summarize).filter(s => s.freeSeats.length && s.mySlot == null),
         open: open.map(summarize).filter(s => s.freeSeats.length),
         watch: watch.map(summarize).filter(s => !s.freeSeats.length),
@@ -617,6 +635,12 @@ async function open(user, id) {
     if (!e.g) return { error: 'Spiel nicht gefunden.' };
     const watchable = e.g.config.isPublic && ['playing', 'finished'].includes(e.g.status);
     if (!e.g.seats.some(s => s.userId === user.id) && !watchable) return { error: 'Du spielst in diesem Spiel nicht mit.' };
+    // the last click on an ended game: from now on it is only in the game history
+    e.g.endSeen = e.g.endSeen || [];
+    if (e.g.status === 'finished' && e.g.seats.some(s => s.userId === user.id) && !e.g.endSeen.includes(user.id)) {
+        e.g.endSeen.push(user.id);
+        await save(e.g).catch(err => console.error(`[Async] Saving endSeen failed for ${e.g.id}:`, err));
+    }
     return { view: JSON.parse(JSON.stringify(L.view(e.g, user.id))), chat: e.g.chat || [], chatMute: (e.g.chatMutes || {})[user.id] || null };
 }
 
