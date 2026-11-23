@@ -389,6 +389,8 @@ The server answers in German; the game page translates the same texts. The ones 
 | `Unbekannte Aktion: …` / `Ungültiger Parameter: …` | Wrong `type`, or a parameter that isn't a plain value |
 | `Diese Technologie ist nicht erforschbar.` | `research` for a tech your sheet doesn't offer: not available, already known, or the Singularity before a modern tech in every field |
 | `Zu viele Anfragen …` (HTTP 429) | Rate limit: slow down |
+| `Zu viele Anfragen – warte einen Moment.` (socket) | Socket event limit: game moves 30 a second (100 at once), other events 10 a second (40 at once). Wait for each acknowledgement before the next event; a connection that keeps flooding is disconnected |
+| `Zu viele falsche Passwörter für diese Lobby. …` | Too many wrong passwords for this lobby: try again in 5 minutes |
 
 Any other refusal of a move comes from the engine and says what is missing, for example `Zu wenig Münzen.`
 

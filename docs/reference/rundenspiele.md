@@ -17,7 +17,7 @@ setup ──▶ placement (tile map) ──┐
 * **Starting early** – when the seats are already final (nations dealt at random, or all four nations of a fixed map), the game starts right away: the host plays turn 1 while the others join. A turn of a seat nobody has claimed yet waits (`hold`) until someone takes it. Otherwise – and always without KI – the game starts once everybody is there.
 * **placement / draft** – pre-phases of the tile map (everyone places a start tile) and of Marathon (ability draft).
 * **playing** – one action at a time per game; the state is saved after every action and every KI turn, and everyone who has the game open gets the new view.
-* **finished** – result, points and MMR are stored as a match (`games`), the turn states become a replay.
+* **finished** – result, points and MMR are stored as a match (`games`), the turn states become a replay. MMR, match and the game's `result` are written in one transaction ([Security](security.md#results-and-mmr)); if that fails, the scheduler tries again every 10 minutes, up to 5 times.
 * **cancelled** – by the host, when not enough players joined (games without KI), or when the host's account is deleted during setup.
 
 Leaving is free until your seat has had its first turn (or the pre-phase began).

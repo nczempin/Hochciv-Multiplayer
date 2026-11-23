@@ -62,8 +62,19 @@ CORS follows the same rule (`server.js`): only these origins get `Access-Control
 * A Rundenspiel invitation sends one e-mail / push: inviting again while it is open sends nothing, a declined one can be renewed once a day.
 * A live lobby nobody connects to within a minute is removed (`UNUSED_LOBBY_MS`), so creating lobbies can't fill the 500 slots.
 * Socket.IO messages: at most 100 KB.
+* Socket.IO events (`utils/socket-limit.js`): two token buckets per connection – game moves (`action`, `placement:action`) 100 at once, refilled at 30 a second; every other event 40, refilled at 10 a second. An event over the limit is not handled and its acknowledgement gets `Zu viele Anfragen – warte einen Moment.`; a connection that keeps sending into the empty bucket (about 10 seconds flat out) is disconnected. A player or a bot that waits for each acknowledgement never gets near it.
+* Lobby passwords (`sessions.js` `checkPassword`): 10 wrong passwords within 10 minutes lock the lobby for 5 minutes for everyone not yet in it – also with the right password, so the lock gives a guesser nothing. Its players and spectators (by their `clientId`) still get back in, and so do the server's own joins (Discord Activity, matchmaking). Passwords are compared in constant time.
+* Single-player games (`utils/solo.js`): at most 200 KB stored per game (a long chart over the rounds keeps every second round until it fits) and 100 games per account and 24 hours; uploads 30 an hour and 150 a day per account. A game over the daily cap gets a `429` and waits on the device.
 * Chat: 5 messages per 10 seconds per sender; word filter with auto-reports.
 * At most 500 live lobbies/games and 20 spectators per game.
+
+## Results and MMR
+
+A finished game is booked in one transaction (`utils/rating.js`): the MMR of every account, the played games, the resign penalty and the match record – all or nothing. The accounts' rows are locked while their MMR is read, so a live and a Rundenspiel result of the same account at the same moment can't overwrite each other. A Rundenspiel writes its result into its own row in the same transaction: a restart before the game is saved doesn't count it twice. A Rundenspiel whose evaluation failed is tried again by the scheduler (every 10 minutes, up to 5 times).
+
+## Push devices
+
+A push device (`device_tokens`) keeps a SHA-256 of the session id that registered it. Another account takes the device over only once that login has ended (logout or expiry); before that `POST /api/push/token` answers `409`. The app unregisters the device on logout, so changing accounts on one phone works as before – knowing someone's FCM token alone doesn't redirect their notifications.
 
 ## HTTP headers
 
