@@ -14,7 +14,8 @@
  * back afterwards; test accounts are removed.
  *
  * Uses an installed Chrome or Edge (no browser download); set HOCHCIV_BROWSER to its path if
- * it is not found.
+ * it is not found. A screenshot of the admin page goes to the temp folder (SHOT sets another
+ * path) – never into the repository: it shows account names and the OAuth layout.
  */
 const { execFileSync } = require('child_process');
 const crypto = require('crypto');
@@ -151,7 +152,7 @@ function makeUser(role) {
             await page.waitForTimeout(600);
             ok(await page.$eval('#oauth-discord-secret', e => e.value === '' && e.disabled), `${width}px: OAuth secret empty and locked`);
             ok(!(await page.isVisible('[onclick="saveOAuthConfig(\'discord\')"]')), `${width}px: no save button`);
-            if (width === 1280) await page.screenshot({ path: process.env.SHOT || 'review-admin.png', fullPage: true });
+            if (width === 1280) await page.screenshot({ path: process.env.SHOT || require('path').join(require('os').tmpdir(), 'review-admin.png'), fullPage: true });
             ok(errors.length === 0, `${width}px: no page errors`, errors.join(' | '));
             await page.close();
         }
