@@ -55,7 +55,7 @@ Tests create their own test accounts and delete them afterwards.
 | `resign/resign.test.js` | resigning: when it ends the game, a ranked live duel (MMR, match record), a live game with KI, Rundenspiele | default |
 | `ready/ready.test.js` | lobby ready check: status column, the count on the start button, settings clear the ticks, the host's question, English | default |
 | `placement/world.test.js` | the "Welt" button while start tiles are placed in a live game | default |
-| `placement/hex.test.js` | the experimental tile mode in lobbies and Rundenspiele (since v107: 14 triangles with four empires) | default |
+| `placement/hex.test.js` | the tile map shapes in lobbies and Rundenspiele (14 triangles with four empires; no experimental entry since v111) | default |
 | `rematch/rematch.test.js` | rematch of a live game | default |
 | `report/report.test.js` | in-game player list: turn order and positions; the player report (score, rank, victory progress, empire, abilities, read-only tech tree, trend via `game:trend` without income), English | default |
 | `replay/replay.test.js` | replays | default |

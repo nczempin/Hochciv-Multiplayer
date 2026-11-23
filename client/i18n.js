@@ -321,7 +321,6 @@
         'Karte': 'Map',
         'Originalkarte (12 × 18)': 'Original map (12 × 18)',
         'Plättchenkarte (2–8 Reiche)': 'Tile map (2–8 empires)',
-        'Plättchenkarte, experimentell (Dreiecke)': 'Tile map, experimental (triangles)',
         // F34: nation draft and turn order
         'Draft vor dem Start': 'Draft before the start',
         'Zufallsdraft vor dem Start': 'Random draft before the start',
@@ -727,7 +726,6 @@
         'Originalkarte': 'Original map',
         'Große Karte': 'Large map',
         'Experimenteller Plättchenmodus': 'Experimental tile mode',
-        'Zu viert die Plättchenkarte aus 14 Dreiecken: die Startdreiecke liegen außen. Mit anderer Zahl von Reichen die übliche Plättchenkarte.': 'With four empires the tile map of 14 triangles: the starting triangles lie outside. With any other number of empires the usual tile map.',
         'Plättchenkarte': 'Tile map',
         'Marathon': 'Marathon',
         'KI (für %s)': 'AI (for %s)',

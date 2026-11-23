@@ -4,7 +4,7 @@ const escHtml = t => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/
 
 /* Older game versions served at /<version>/ for Rundenspiele started on them (GAME_DIRS in
    engine-adapter.js), and the version of this page. */
-const OLD_VERSIONS = ['v109', 'v108', 'v107', 'v106', 'v100', 'v98'];
+const OLD_VERSIONS = ['v110', 'v108', 'v107'];
 const APP_VERSION_HERE = typeof APP_VERSION !== 'undefined' ? APP_VERSION : null;
 
 /* Texts in the player's language (client/i18n.js, loaded before this file): TX() for our own
@@ -1201,8 +1201,7 @@ const MP = {
           <div class="mp-settings" style="pointer-events:${isHost ? 'all' : 'none'}; opacity:${isHost ? 1 : 0.4}; filter:${isHost ? 'none' : 'grayscale(100%)'}">
               <label class="row"><span>${TX('Karte')}</span>
                 <select id="mp-set-map" onchange="MP.updateLobbyConfig()">
-                  <option value="random" ${this.gameConfig.mapKey === 'random' && !this.gameConfig.hexTiles ? 'selected' : ''}>${TX('Plättchenkarte (2–8 Reiche)')}</option>
-                  <option value="random-hex" ${this.gameConfig.mapKey === 'random' && this.gameConfig.hexTiles ? 'selected' : ''}>${TX('Plättchenkarte, experimentell (Dreiecke)')}</option>
+                  <option value="random" ${this.gameConfig.mapKey === 'random' ? 'selected' : ''}>${TX('Plättchenkarte (2–8 Reiche)')}</option>
                   ${typeof marathonMap === 'function' ? `<option value="marathon" ${isMarathon ? 'selected' : ''}>${TX('Marathon (24 × 36)')}</option>` : ''}
                   ${typeof checkCustomMap === 'function' ? `<option value="eigene" ${this.gameConfig.mapKey === 'eigene' ? 'selected' : ''}>${TX('Eigene Karte')}</option>` : ''}
                 </select>
@@ -1210,7 +1209,6 @@ const MP = {
               ${this.gameConfig.mapKey === 'eigene' ? this.customMapRow(isHost)
                     : isHost && typeof MAPBROWSER !== 'undefined' ? `<p class="hint" style="margin:4px 0 8px">${TX('Oder eine Karte anderer Spieler:')} ${this.browseLink('MP.browseMaps()').replace(/ · $/, '')}</p>` : ''}
               ${isMarathon ? `<p class="hint" style="margin:4px 0 8px">${TX('Marathon: vier Reiche auf einer neuen Zufallskarte, Technologien kosten je Zeitalter das Zwei- bis Fünffache. Vor dem ersten Zug sehen alle Karte und Starttechnologien und draften je zwei Fähigkeiten (Schlangenreihenfolge, auch fremde). Bots draften nicht.')}</p>` : ''}
-              ${this.gameConfig.mapKey === 'random' && this.gameConfig.hexTiles ? `<p class="hint" style="margin:4px 0 8px">${TX('Zu viert die Plättchenkarte aus 14 Dreiecken: die Startdreiecke liegen außen. Mit anderer Zahl von Reichen die übliche Plättchenkarte.')}</p>` : ''}
               <label class="row"><span>${TX('Mit Ereignissen')}</span>
                 <input type="checkbox" id="mp-set-events" onchange="MP.updateLobbyConfig()" ${this.gameConfig.events ? 'checked' : ''}>
               </label>
@@ -1590,15 +1588,15 @@ const MP = {
             if ($('mp-set-diff')) $('mp-set-diff').value = diff;
         }
 
-        // the experimental tile mode is its own entry in the map picker: the tile map with hexTiles
-        const mapPick = $('mp-set-map').value, hexPick = mapPick === 'random-hex';
-        const mapKey = hexPick ? 'random' : mapPick;
+        // v107–v110 had an experimental tile-map entry (hexTiles); since v111 four empires always
+        // play the 14-triangle map, so new lobbies no longer set it (older Rundenspiele keep theirs)
+        const mapKey = $('mp-set-map').value;
         const newConfig = {
             mapKey,
             events: $('mp-set-events').checked,
             eventMode: evModeEl ? evModeEl.value : (this.gameConfig.eventMode || 'hard'),
             wonders: $('mp-set-wonders').checked,
-            hexTiles: hexPick,
+            hexTiles: false,
             difficulty: diff,
             ranked: isRanked,
             // empires in all and KI seats; "noKi" of older lobbies is replaced by them
@@ -2766,8 +2764,7 @@ const ASYNC = {
             ${typeof PRESETS !== 'undefined' ? PRESETS.rowHtml('async') : ''}
             <div class="mp-settings">
               <label class="row"><span>${TX('Karte')}</span><select id="mpa-map">
-                ${opt('plaettchen', f.mapKey === 'plaettchen' && f.hexTiles ? '' : f.mapKey, TX('Plättchenkarte (2–8 Reiche)'))}
-                ${opt('plaettchen-hex', f.mapKey === 'plaettchen' && f.hexTiles ? 'plaettchen-hex' : '', TX('Plättchenkarte, experimentell (Dreiecke)'))}
+                ${opt('plaettchen', f.mapKey, TX('Plättchenkarte (2–8 Reiche)'))}
                 ${typeof marathonMap === 'function' ? opt('marathon', f.mapKey, TX('Marathon (24 × 36)')) : ''}
                 ${typeof checkCustomMap === 'function' ? opt('eigene', f.mapKey, TX('Eigene Karte')) : ''}</select></label>
               ${f.mapKey === 'eigene' ? `<label class="row"><span>${TX('Karte wählen')}</span><select id="mpa-custom">
@@ -2778,7 +2775,6 @@ const ASYNC = {
                 <a href="#" onclick="ASYNC.importCustomMap(); return false">${TX('aus Datei laden')}</a> – ${TX('eigene Karten baust du im Karteneditor (Hauptmenü).')}`)}`
                 : typeof MAPBROWSER !== 'undefined' ? note(`${TX('Oder eine Karte anderer Spieler:')} ${MP.browseLink('ASYNC.browseMaps()').replace(/ · $/, '')}`) : ''}
               ${marathon ? note(TX('Marathon: vier Reiche auf einer neuen Zufallskarte, Technologien kosten je Zeitalter das Zwei- bis Fünffache. Vor dem ersten Zug sehen alle Karte und Starttechnologien und draften je zwei Fähigkeiten (Schlangenreihenfolge, auch fremde). Bots draften nicht.')) : ''}
-              ${f.mapKey === 'plaettchen' && f.hexTiles ? note(TX('Zu viert die Plättchenkarte aus 14 Dreiecken: die Startdreiecke liegen außen. Mit anderer Zahl von Reichen die übliche Plättchenkarte.')) : ''}
               <label class="row"><span>${TX('Mit Ereignissen')}</span><input type="checkbox" id="mpa-events" ${f.events ? 'checked' : ''}></label>
               ${f.events ? `<label class="row"><span>${TX('Ereignisstärke')}</span><select id="mpa-evmode">
                 ${opt('hard', f.eventMode, TX('Hart (jede Runde)'))}${opt('easy', f.eventMode, TX('Leicht (selten)'))}</select></label>` : ''}
@@ -2818,12 +2814,11 @@ const ASYNC = {
         const f = this.form, v = id => $(id) ? $(id).value : null, c = id => $(id) ? $(id).checked : false;
         const civBefore = f.civ;
         Object.assign(f, {
-            // 'plaettchen-hex': the experimental tile mode, its own entry in the map picker
-            mapKey: v('mpa-map') === 'plaettchen-hex' ? 'plaettchen' : v('mpa-map'), civMode: v('mpa-civmode') || f.civMode || 'fixed',
+            mapKey: v('mpa-map'), civMode: v('mpa-civmode') || f.civMode || 'fixed',
             turnOrder: v('mpa-order') || f.turnOrder || 'classic', pos: v('mpa-pos') != null ? +v('mpa-pos') : f.pos,
             playerCount: +v('mpa-total') || f.playerCount, kiCount: v('mpa-ki') != null ? +v('mpa-ki') : f.kiCount,
             civ: v('mpa-civ') || f.civ, ability: v('mpa-ab') || f.ability,
-            events: c('mpa-events'), eventMode: v('mpa-evmode') || f.eventMode, wonders: c('mpa-wonders'), hexTiles: v('mpa-map') === 'plaettchen-hex',
+            events: c('mpa-events'), eventMode: v('mpa-evmode') || f.eventMode, wonders: c('mpa-wonders'), hexTiles: false,
             difficulty: v('mpa-diff') || f.difficulty, ranked: c('mpa-ranked'), isPublic: c('mpa-public'),
             turnDays: +v('mpa-days') || f.turnDays || 7,
             customName: (v('mpa-custom') || '').startsWith('fav:') ? f.customName
