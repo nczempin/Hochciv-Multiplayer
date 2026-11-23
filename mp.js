@@ -315,14 +315,16 @@ const MP = {
                 ${favOpts ? `<optgroup label="${esc(TX('Favoriten'))}">${favOpts}</optgroup>` : ''}
               </select></label>
             <p class="hint" style="margin:4px 0 8px">${TX('Eigene Karte: %s', info)} ·
-              ${this.browseLink('MP.browseMaps()')}
+              ${this.browseLink('MP')}
               <a href="#" onclick="MP.customMapByCode(); return false">${TX('Code eingeben')}</a> ·
               <a href="#" onclick="MP.importCustomMap(); return false">${TX('aus Datei laden')}</a>
               – ${TX('Karten baust du im Karteneditor (Hauptmenü).')}</p>`;
     },
     /** "Karten entdecken" link (map browser, client/maps) – nothing without it. */
-    browseLink: function (onclick) {
-        return typeof MAPBROWSER !== 'undefined' ? `<a href="#" onclick="${onclick}; return false"><b>${TX('Karten entdecken')}</b></a> · ` : '';
+    browseLink: function (owner) {
+        // the handler is written out (not passed in): the Activity compiles only known handlers (R-04)
+        const handler = owner === 'ASYNC' ? 'onclick="ASYNC.browseMaps(); return false"' : 'onclick="MP.browseMaps(); return false"';
+        return typeof MAPBROWSER !== 'undefined' ? `<a href="#" ${handler}><b>${TX('Karten entdecken')}</b></a> · ` : '';
     },
     /** A map from the map browser becomes the lobby's map. */
     browseMaps: function () {
@@ -1103,23 +1105,24 @@ const MP = {
                 const name = (this.user && this.user.username) || localStorage.getItem('mp-name') || TX('Spieler');
                 const tabBtn = (k, label) => `<button type="button" class="mph-tab" data-tab="${k}" onclick="MP.hubShow('${k}')">${label} <span class="mph-count" id="mph-count-${k}"></span></button>`;
                 // a new game: title as the button's own text (tests click 'text=…'), one line below
-                const newGame = (cls, onclick, title, desc, attrs) =>
-                    `<button class="btn mph-mode ${cls}" onclick="${onclick}" ${attrs || ''}>${title}<small>${desc}</small></button>`;
+                // (handler: the whole onclick="…" attribute – the Activity compiles only known handlers, R-04)
+                const newGame = (cls, handler, title, desc, attrs) =>
+                    `<button class="btn mph-mode ${cls}" ${handler} ${attrs || ''}>${title}<small>${desc}</small></button>`;
                 h = `<div class="mph">
           <label class="mph-name"><span>${TX('Dein Name')}</span><input type="text" id="mp-n" value="${escHtml(name)}" maxlength="24" autocomplete="nickname"></label>
           <div class="mph-new">
-            ${newGame('primary', 'MP.host()', TX('Live-Spiel hosten'), TX('Alle spielen gleichzeitig.'))}
-            ${newGame('mph-async', 'ASYNC.newGame()', TX('Neues Rundenspiel'), this.user ? TX('Nacheinander ziehen, wann es dir passt.') : TX('Nur mit Anmeldung.'))}
+            ${newGame('primary', 'onclick="MP.host()"', TX('Live-Spiel hosten'), TX('Alle spielen gleichzeitig.'))}
+            ${newGame('mph-async', 'onclick="ASYNC.newGame()"', TX('Neues Rundenspiel'), this.user ? TX('Nacheinander ziehen, wann es dir passt.') : TX('Nur mit Anmeldung.'))}
             ${typeof MATCH !== 'undefined' ? `<div class="mph-ranked">
-              ${newGame('', 'MATCH.start()', '🔥 ' + TX('Gewertetes Spiel suchen'), this.user ? TX('Gegner mit ähnlicher MMR, gewertet.') : TX('Nur mit Anmeldung.'),
+              ${newGame('', 'onclick="MATCH.start()"', '🔥 ' + TX('Gewertetes Spiel suchen'), this.user ? TX('Gegner mit ähnlicher MMR, gewertet.') : TX('Nur mit Anmeldung.'),
                     this.user ? '' : `disabled title="${escHtml(TX('Für gewertete Spiele musst du angemeldet sein.'))}"`)}
               ${this.user ? `<label class="mph-bots"><input type="checkbox" id="mpm-allow-bots" onchange="MATCH.allowBots()" ${MATCH.allowBots() ? 'checked' : ''}> 🤖 ${TX('Spieler-Bots in der Suche zulassen')}</label>` : ''}
               ${typeof RANKING !== 'undefined' ? `<a href="#" class="mph-rank-link" onclick="RANKING.open(null); return false">🏆 ${TX('Rangliste und Saison')}</a>` : ''}
             </div>` : ''}
           </div>
           <div class="mph-more">
-            ${typeof MAPBROWSER !== 'undefined' ? newGame('mph-maps', 'MAPBROWSER.open()', '🗺 ' + TX('Karten entdecken'), TX('Karten anderer Spieler ansehen, favorisieren und spielen.')) : ''}
-            ${typeof CHALLENGE !== 'undefined' ? newGame('mph-challenge', 'CHALLENGE.open()', '📅 ' + TX('Wochen-Challenge'), CHALLENGE.hubText()) : ''}
+            ${typeof MAPBROWSER !== 'undefined' ? newGame('mph-maps', 'onclick="MAPBROWSER.open()"', '🗺 ' + TX('Karten entdecken'), TX('Karten anderer Spieler ansehen, favorisieren und spielen.')) : ''}
+            ${typeof CHALLENGE !== 'undefined' ? newGame('mph-challenge', 'onclick="CHALLENGE.open()"', '📅 ' + TX('Wochen-Challenge'), CHALLENGE.hubText()) : ''}
           </div>
           ${typeof ALERTS !== 'undefined' ? ALERTS.checkboxHtml(TX('Töne bei deinem Zug, neuen Mitspielern, Spielstart und Nachrichten')) : ''}
           <div class="mph-tabs" id="mph-tabs">${tabBtn('running', TX('Laufende Spiele'))}${tabBtn('open', TX('Offene Spiele'))}${typeof FRIENDS !== 'undefined' ? tabBtn('friends', '👥 ' + TX('Freunde')) : ''}</div>
@@ -1222,7 +1225,7 @@ const MP = {
                 </select>
               </label>
               ${this.gameConfig.mapKey === 'eigene' ? this.customMapRow(isHost)
-                    : isHost && typeof MAPBROWSER !== 'undefined' ? `<p class="hint" style="margin:4px 0 8px">${TX('Oder eine Karte anderer Spieler:')} ${this.browseLink('MP.browseMaps()').replace(/ · $/, '')}</p>` : ''}
+                    : isHost && typeof MAPBROWSER !== 'undefined' ? `<p class="hint" style="margin:4px 0 8px">${TX('Oder eine Karte anderer Spieler:')} ${this.browseLink('MP').replace(/ · $/, '')}</p>` : ''}
               ${isMarathon ? `<p class="hint" style="margin:4px 0 8px">${TX('Marathon: vier Reiche auf einer neuen Zufallskarte, Technologien kosten je Zeitalter das Zwei- bis Fünffache. Vor dem ersten Zug sehen alle Karte und Starttechnologien und draften je zwei Fähigkeiten (Schlangenreihenfolge, auch fremde). Bots draften nicht.')}</p>` : ''}
               <label class="row"><span>${TX('Mit Ereignissen')}</span>
                 <input type="checkbox" id="mp-set-events" onchange="MP.updateLobbyConfig()" ${this.gameConfig.events ? 'checked' : ''}>
@@ -2794,9 +2797,9 @@ const ASYNC = {
                 ${myMaps.map(m => `<option value="${this.esc(m.name)}" ${m.name === f.customName ? 'selected' : ''}>${this.esc(m.name)} (${m.marathon ? TX('bis %s Reiche, Marathon', m.maxPlayers || 4) : TX('bis %s Reiche', m.maxPlayers || 4)})</option>`).join('') || `<option value="">${TX('– keine gespeichert –')}</option>`}
                 ${typeof MAPBROWSER !== 'undefined' && MAPBROWSER.favs.length ? `<optgroup label="${this.esc(TX('Favoriten'))}">${MAPBROWSER.favs.map(m =>
                     `<option value="fav:${this.esc(m.id)}">★ ${this.esc(m.name)}${m.author ? ' – ' + this.esc(m.author) : ''}</option>`).join('')}</optgroup>` : ''}</select></label>
-                ${note(`${MP.browseLink('ASYNC.browseMaps()')}<a href="#" onclick="ASYNC.customMapByCode(); return false">${TX('Karte mit Code laden')}</a> ·
+                ${note(`${MP.browseLink('ASYNC')}<a href="#" onclick="ASYNC.customMapByCode(); return false">${TX('Karte mit Code laden')}</a> ·
                 <a href="#" onclick="ASYNC.importCustomMap(); return false">${TX('aus Datei laden')}</a> – ${TX('eigene Karten baust du im Karteneditor (Hauptmenü).')}`)}`
-                : typeof MAPBROWSER !== 'undefined' ? note(`${TX('Oder eine Karte anderer Spieler:')} ${MP.browseLink('ASYNC.browseMaps()').replace(/ · $/, '')}`) : ''}
+                : typeof MAPBROWSER !== 'undefined' ? note(`${TX('Oder eine Karte anderer Spieler:')} ${MP.browseLink('ASYNC').replace(/ · $/, '')}`) : ''}
               ${marathon ? note(TX('Marathon: vier Reiche auf einer neuen Zufallskarte, Technologien kosten je Zeitalter das Zwei- bis Fünffache. Vor dem ersten Zug sehen alle Karte und Starttechnologien und draften je zwei Fähigkeiten (Schlangenreihenfolge, auch fremde). Bots draften nicht.')) : ''}
               <label class="row"><span>${TX('Mit Ereignissen')}</span><input type="checkbox" id="mpa-events" ${f.events ? 'checked' : ''}></label>
               ${f.events ? `<label class="row"><span>${TX('Ereignisstärke')}</span><select id="mpa-evmode">
@@ -3001,7 +3004,7 @@ const ASYNC = {
     },
 
     showInvite: function (id, code) {
-        const back = MP.asyncId === id ? 'ASYNC.reopenModal()' : 'ASYNC.showList()';
+        const back = MP.asyncId === id ? 'onclick="ASYNC.reopenModal()"' : 'onclick="ASYNC.showList()"';
         modal(TX('Mitspieler einladen'), `
             <p>${TX('Code zum Weitergeben:')} <b style="font-family:monospace;font-size:16px">${code}</b></p>
             <p class="sub">${TX('Oder Link:')} <span id="mpa-inv-link" style="user-select:all">${this.esc(MP.inviteUrl(code))}</span></p>
@@ -3009,7 +3012,7 @@ const ASYNC = {
             <label class="row"><span>${TX('Benutzername')}</span><input type="text" id="mpa-inv-name"></label>
             ${typeof FRIENDS !== 'undefined' ? FRIENDS.chipsHtml('mpa-inv-name') : ''}
             <button class="btn wide primary" onclick="ASYNC.invite('${id}')">${TX('Einladen')}</button>
-            <button class="btn wide ghost" onclick="${back}">${TX('Zurück')}</button>`);
+            <button class="btn wide ghost" ${back}>${TX('Zurück')}</button>`);
     },
 
     reopenModal: function () {

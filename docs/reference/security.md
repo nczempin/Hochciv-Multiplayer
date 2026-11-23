@@ -74,6 +74,8 @@ CORS follows the same rule (`server.js`): only these origins get `Access-Control
 
 ## Discord Activity
 
+Inside the Activity, the bridge compiles only inline handlers that one of our templates produces (an allow-list built from `mp.js` and `client/` at build time, see [Discord Activity](../operations/discord-activity.md#notes)), so an HTML injection cannot use Discord's CSP workaround to run script.
+
 The Activity's Discord access token must have been issued to this server's Discord application (checked with `GET /oauth2/@me`, scope `identify`): a token of another Discord app the player once used is refused.
 
 ## E-mails in the log
