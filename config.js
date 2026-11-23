@@ -36,6 +36,8 @@ module.exports = {
     MAX_SPECTATORS: 20,        // watching a live game without a seat
     SESSION_TIMEOUT_MS: 2 * 60 * 60 * 1000,  // a running live game without any action for 2 hours is removed
     LOBBY_TIMEOUT_MS: 10 * 60 * 1000,        // lobbies and finished games: 10 minutes
+    PAUSE_TIMEOUT_MS: 8 * 60 * 60 * 1000,    // a paused live game: 8 hours, even with nobody connected (R-11)
+    EMPTY_RUNNING_GRACE_MS: 30 * 60 * 1000,  // a running game everyone lost the connection to: 30 minutes (R-10)
     CLEANUP_INTERVAL_MS: 5 * 60 * 1000,       // check every 5 min
     UNUSED_LOBBY_MS: 60 * 1000,               // a lobby nobody ever connected to is removed after a minute
     // A player who loses the connection in the lobby keeps the seat this long (reload, network

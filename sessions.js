@@ -257,25 +257,30 @@ function cleanup() {
     for (const [id, s] of sessions) {
         let shouldTerminate = false;
 
-        // 1. Session absolute timeout (REMOVED)
-        // Rely purely on inactivity or empty room timeout.
+        // No absolute lifetime: a session ends when it is empty or idle for too long.
+        const running = ['civdraft', 'placement', 'draft', 'playing'].includes(s.status);
+        // a paused game waits for its players – a lunch or dinner break (R-11)
+        const paused = running && !!s.paused;
 
-        // 2. Empty room termination
+        // 1. Empty: a lobby or a finished game nobody is connected to goes at the next run
+        // (empty for one whole cleanup interval, 5–10 min). A running game survives an outage
+        // where everyone is offline for EMPTY_RUNNING_GRACE_MS – a dropped LAN-party Wi-Fi, phones
+        // in the background (R-10) –, a paused one as long as the pause may last.
         const hasConnectedPlayers = s.players.some(p => p.connected);
         if (!hasConnectedPlayers) {
+            const grace = paused ? config.PAUSE_TIMEOUT_MS : running ? config.EMPTY_RUNNING_GRACE_MS : 0;
             if (!s.emptySince) {
                 s.emptySince = now;
-            } else if (now - s.emptySince > 10 * 1000) { // 10 seconds empty grace period
+            } else if (now - s.emptySince >= grace) {
                 shouldTerminate = true;
             }
         } else {
             s.emptySince = null;
         }
 
-        // 3. Inactivity termination: a running game may sit still longer (no turn timer, a
-        // player thinking) than a lobby or a finished game
-        const running = ['civdraft', 'placement', 'draft', 'playing'].includes(s.status);
-        const idleLimit = running ? config.SESSION_TIMEOUT_MS : config.LOBBY_TIMEOUT_MS;
+        // 2. Inactivity: a running game may sit still longer (no turn timer, a player thinking)
+        // than a lobby or a finished game, a paused one longer still
+        const idleLimit = paused ? config.PAUSE_TIMEOUT_MS : running ? config.SESSION_TIMEOUT_MS : config.LOBBY_TIMEOUT_MS;
         if (s.lastActivity && now - s.lastActivity > idleLimit) {
             shouldTerminate = true;
         }
