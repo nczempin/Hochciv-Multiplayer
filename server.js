@@ -328,6 +328,8 @@ app.locals.io = io;
 io.engine.use(sessionMiddleware);
 io.engine.use(passport.initialize());
 io.engine.use(passport.session());
+// A rate limit for every event of every socket (utils/socket-limit.js, R-15)
+io.on('connection', socket => require('./utils/socket-limit').attach(socket));
 
 registerGame(io);
 registerAsync(io);

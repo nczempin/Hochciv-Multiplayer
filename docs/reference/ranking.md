@@ -32,6 +32,8 @@ Every pair of seats (A, B) is compared. KI seats and guests take part at a basel
 * **Rundenspiel takeover:** a player whose ranked Rundenspiel seat is taken over by the KI after 7 days of inactivity loses an extra **15 MMR** ([Rundenspiele](rundenspiele.md)). Not in a ranked live game the host continued as a Rundenspiel: the other players did not choose its time per turn, so the takeover there costs no MMR (it still counts as a played game).
 * **Resign:** a player who resigns (live game or Rundenspiel) is out of the MMR calculation; the KI plays the seat. In ranked games it costs the same **15 MMR**, and it always counts as a played game. A live game's penalty is booked when the game ends – or, if the host continues it as a Rundenspiel, at that moment.
 
+Booking a result is one transaction (`utils/rating.js`): the MMR is read with the accounts' rows locked, then MMR, played games, penalties and the match record are written together ([Security](security.md#results-and-mmr)).
+
 ## Seasons and tiers
 
 `utils/seasons.js`. A season is a calendar quarter (`2026-Q4`, in UTC). The first season the server saw began without a reset. When a quarter ends (checked at startup and every hour):

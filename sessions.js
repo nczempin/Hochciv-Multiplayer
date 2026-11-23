@@ -126,16 +126,18 @@ function createSession(gameConfig, hostInfo) {
  * @param {string} joinCode
  * @param {string} password  – 6-digit numeric
  * @param {object} playerInfo – { name, civ, ability, clientId, userId (the logged-in account, R-23) }
+ * @param {object} [opts] – { trusted: true } for the server's own callers (R-16, checkPassword)
  * @returns {object|string} { sessionId, playerIndex } or error string
  */
-function joinSession(joinCode, password, playerInfo) {
+function joinSession(joinCode, password, playerInfo, opts) {
     const clientId = clientIdOf(playerInfo);
     if (!clientId) return INVALID_CLIENT;
     const sessionId = codeIndex.get(String(joinCode || '').toUpperCase());
     if (!sessionId) return 'Ungültiger Beitrittscode.';
     const session = sessions.get(sessionId);
     if (!session) return 'Sitzung nicht gefunden.';
-    if (session.password !== password) return 'Falsches Passwort.';
+    const pwError = checkPassword(session, password, clientId, opts);
+    if (pwError) return pwError;
 
     // Check if player is reconnecting
     const existingPlayer = session.players.find(p => p.clientId === clientId);
@@ -186,14 +188,15 @@ function joinSession(joinCode, password, playerInfo) {
  * clientId comes back as the same spectator (reconnect). A player of the session stays a player.
  * @returns {object|string} { sessionId, spectator: true } or error string
  */
-function addSpectator(joinCode, password, info) {
+function addSpectator(joinCode, password, info, opts) {
     const clientId = clientIdOf(info);
     if (!clientId) return INVALID_CLIENT;
     const sessionId = codeIndex.get(String(joinCode || '').toUpperCase());
     if (!sessionId) return 'Ungültiger Beitrittscode.';
     const session = sessions.get(sessionId);
     if (!session) return 'Sitzung nicht gefunden.';
-    if (session.password !== password) return 'Falsches Passwort.';
+    const pwError = checkPassword(session, password, clientId, opts);
+    if (pwError) return pwError;
     if (session.players.some(p => p.clientId === clientId)) return { sessionId, spectator: false };
     if (!session.spectators) session.spectators = [];
     if (session.spectators.some(w => w.clientId === clientId)) return { sessionId, spectator: true };
@@ -296,6 +299,37 @@ function cleanup() {
 // Run cleanup periodically
 const _cleanupTimer = setInterval(cleanup, config.CLEANUP_INTERVAL_MS);
 _cleanupTimer.unref();   // don't prevent Node from exiting
+
+/**
+ * R-16: the lobby password (6 digits) against guessing. Wrong passwords are counted per lobby:
+ * PASSWORD_MAX_FAILS within PASSWORD_WINDOW_MS lock the lobby for PASSWORD_LOCK_MS – for
+ * everyone who is not in it yet, right password or not, so a lock gives a guesser nothing.
+ * Players and spectators of the lobby (their secret clientId) still get back in; the server's
+ * own callers (Discord Activity, matchmaking) pass { trusted: true }. Compared in constant time.
+ */
+const PASSWORD_MAX_FAILS = 10;
+const PASSWORD_WINDOW_MS = 10 * 60 * 1000;
+const PASSWORD_LOCK_MS = 5 * 60 * 1000;
+const WRONG_PASSWORD = 'Falsches Passwort.';
+const PASSWORD_LOCKED = 'Zu viele falsche Passwörter für diese Lobby. Versuche es in ein paar Minuten erneut.';
+const sha = s => crypto.createHash('sha256').update(String(s)).digest();
+function passwordMatches(session, password) {
+    return typeof password === 'string' && crypto.timingSafeEqual(sha(password), sha(session.password));
+}
+/** null if `password` opens `session`, else the error. */
+function checkPassword(session, password, clientId, opts = {}) {
+    const known = !!opts.trusted || (typeof clientId === 'string' && (session.players.some(p => p.clientId === clientId)
+        || (session.spectators || []).some(w => w.clientId === clientId)));
+    const now = Date.now();
+    const g = session.passwordGuard || (session.passwordGuard = { fails: 0, since: now, lockedUntil: 0 });
+    if (!known && g.lockedUntil > now) return PASSWORD_LOCKED;
+    if (passwordMatches(session, password)) return null;
+    if (!known) {
+        if (now - g.since > PASSWORD_WINDOW_MS) Object.assign(g, { fails: 0, since: now });
+        if (++g.fails >= PASSWORD_MAX_FAILS) Object.assign(g, { fails: 0, since: now, lockedUntil: now + PASSWORD_LOCK_MS });
+    }
+    return WRONG_PASSWORD;
+}
 
 /**
  * R-23: the host's kick bans the seat's tab (clientId) and account from the session – before, the
@@ -420,7 +454,8 @@ function previewSession(joinCode, password) {
     if (!sessionId) return 'Ungültiger Beitrittscode.';
     const s = sessions.get(sessionId);
     if (!s) return 'Sitzung nicht gefunden.';
-    if (s.password !== password) return 'Falsches Passwort.';
+    const pwError = checkPassword(s, password, null);
+    if (pwError) return pwError;
     const { password: _pw, id: _id, ...summary } = sessionSummary(s);
     summary.players = s.players.map(p => p.name);
     return summary;
@@ -514,6 +549,10 @@ module.exports = {
     banFromSession,
     isBanned,
     BANNED,
+    checkPassword,
+    passwordMatches,
+    PASSWORD_LOCKED,
+    PASSWORD_MAX_FAILS,
     cleanHostConfig,
     previewSession,
     activityOf,

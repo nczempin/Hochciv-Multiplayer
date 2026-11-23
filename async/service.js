@@ -8,11 +8,11 @@
  */
 const { Op } = require('sequelize');
 const crypto = require('crypto');
-const { AsyncGame, User, Game, sequelize } = require('../models');
+const { AsyncGame, User, sequelize } = require('../models');
 const L = require('./logic');
 const engine = require('../engine-adapter');
 const { notify } = require('../utils/notify');
-const { calculateMMR } = require('../utils/mmr');
+const Rating = require('../utils/rating');
 const { finalPoints } = require('../utils/score');
 const chatLib = require('../utils/chat');
 const reports = require('../utils/reports');
@@ -269,28 +269,28 @@ async function processResult(g) {
                 async: true,
             };
         });
-        for (const p of players) {
-            const u = p.dbUserId ? await User.findByPk(p.dbUserId) : null;
-            p.mmr = u ? u.mmr : 1000;
-        }
-        if (ranked) {
-            for (const r of calculateMMR(players)) {
-                const p = players.find(x => x.dbUserId && x.dbUserId === r.dbUserId);
-                if (!p) continue;
-                Object.assign(p, { mmrShift: r.mmrChange, oldMmr: r.oldMmr, newMmr: r.newMmr });
-                await User.update({ mmr: r.newMmr, gamesPlayed: sequelize.literal('"gamesPlayed" + 1') }, { where: { id: p.dbUserId } });
-            }
-        } else {
-            for (const p of players.filter(x => x.dbUserId))
-                await User.update({ gamesPlayed: sequelize.literal('"gamesPlayed" + 1') }, { where: { id: p.dbUserId } });
-        }
-        const game = await Game.create({
-            version: E.APP_VERSION || 'Unknown',
-            durationRounds: S.round,
-            winnerUsername: players.find(p => p.isWinner && p.dbUsername)?.dbUsername || null,
-            participants: players,
-            stats: Stats.publicStats(g.stats),
+        // MMR, games played, the match record and the result marker of the game row in one
+        // transaction (utils/rating.js, R-18): a restart before save(g) finds the result and
+        // doesn't count the game twice
+        let result;
+        const game = await Rating.book({
+            players,
+            ranked,
+            record: ps => ({
+                version: E.APP_VERSION || 'Unknown',
+                durationRounds: S.round,
+                winnerUsername: ps.find(p => p.isWinner && p.dbUsername)?.dbUsername || null,
+                participants: ps,
+                stats: Stats.publicStats(g.stats),
+            }),
+            after: async (created, transaction) => {
+                result = { winners: players.filter(p => p.isWinner).map(p => p.name), ranked, players: players.map(p => ({ name: p.name, points: p.points, mmrShift: p.mmrShift || 0, replaced: p.replaced })),
+                    gameId: created.id, replay: false };
+                await sequelize.query(`UPDATE async_games SET data = jsonb_set(data, '{result}', CAST(:result AS jsonb)) WHERE id = :id`,
+                    { replacements: { result: JSON.stringify(result), id: g.id }, transaction });
+            },
         });
+        g.result = result;
         let replay = false;
         try {
             replay = await Replay.saveAsync(g, game.id, E.APP_VERSION || null, stateNames(g));
@@ -302,11 +302,31 @@ async function processResult(g) {
             try { await require('../utils/challenge').recordResult(g, players, game.id); }
             catch (err) { console.error(`[Challenge] Result of ${g.id} failed:`, err); }
         }
-        g.result = { winners: players.filter(p => p.isWinner).map(p => p.name), ranked, players: players.map(p => ({ name: p.name, points: p.points, mmrShift: p.mmrShift || 0, replaced: p.replaced })),
-            gameId: game.id, replay };
+        g.result = { ...result, replay };
     } catch (err) {
         console.error(`[Async] Result processing failed for ${g.id}:`, err);
-        g.result = { error: true };
+        // nothing was booked: the sweep tries again (retryResults)
+        if (!g.result || g.result.error) g.result = { error: true, tries: ((g.result && g.result.tries) || 0) + 1 };
+    }
+}
+
+/** Finished games whose result failed (processResult): evaluated again, up to RESULT_TRIES times. */
+const RESULT_TRIES = 5;
+async function retryResults() {
+    const rows = await AsyncGame.findAll({
+        where: {
+            status: 'finished',
+            [Op.and]: sequelize.literal(`(data->'result'->>'error') = 'true' AND COALESCE((data->'result'->>'tries')::int, 1) < ${RESULT_TRIES}`),
+        },
+        attributes: ['id'],
+    });
+    for (const row of rows) {
+        await withGame(row.id, async g => {
+            if (g.status !== 'finished' || !g.result || !g.result.error) return;
+            if (!g.result.tries) g.result.tries = 1;
+            await processResult(g);
+            console.log(`[Async] Game ${g.id}: result evaluated again – ${g.result.error ? 'failed (' + g.result.tries + ')' : 'booked'}.`);
+        });
     }
 }
 
@@ -746,6 +766,7 @@ async function sweep() {
                 });
             }
         }
+        await retryResults();
         // Evict idle games from memory
         for (const [id, e] of cache) if (!e.busy && Date.now() - e.touched > 30 * 60 * 1000) cache.delete(id);
     } catch (err) {

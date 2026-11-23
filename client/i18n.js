@@ -706,6 +706,8 @@
         'Ungültiges Feld.': 'Invalid hex.',
         'Leere Nachricht.': 'Empty message.',
         'Zu viele Nachrichten – warte einen Moment.': 'Too many messages – wait a moment.',
+        'Zu viele Anfragen – warte einen Moment.': 'Too many requests – wait a moment.',
+        'Zu viele falsche Passwörter für diese Lobby. Versuche es in ein paar Minuten erneut.': 'Too many wrong passwords for this lobby. Try again in a few minutes.',
         'Nur Mitspieler können schreiben.': 'Only players of this game can write.',
 
         'Revanche': 'Rematch',

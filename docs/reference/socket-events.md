@@ -2,7 +2,7 @@
 
 # Socket.IO events
 
-One Socket.IO connection per browser tab carries live games, the open Rundenspiel and matchmaking. Connections must pass the [origin check](security.md#origin-check). Every handler takes an object payload and answers through the acknowledgement callback with `{ ok: true, … }` or `{ error: "<German message>" }`; a handler error never takes the server down.
+One Socket.IO connection per browser tab carries live games, the open Rundenspiel and matchmaking. Connections must pass the [origin check](security.md#origin-check). Every handler takes an object payload and answers through the acknowledgement callback with `{ ok: true, … }` or `{ error: "<German message>" }`; a handler error never takes the server down. Every event passes a rate limit per connection (`utils/socket-limit.js`: game moves 30 a second, 100 at once; other events 10 a second, 40 at once): over it the event is not handled and the acknowledgement is `{ error: 'Zu viele Anfragen – warte einen Moment.' }`; a connection that keeps flooding is disconnected ([Security](security.md#limits)).
 
 The server is authoritative: the client sends intentions (`action`), the server applies them with the game engine and sends the new state to everyone. Each player gets their own view of the state (`engine.stateForPlayer`).
 
