@@ -25,6 +25,8 @@ const AFK_KI_LEVEL = { ranked: 'schwer', normal: 'mittel' };
 /* Nation draft (F34): a pick has the turn time – without a turn timer this much – and then
    a random nation is picked for the player. */
 const CIVDRAFT_PICK_MS = 120000;
+// Placing the start tiles without a turn timer: 3 minutes, then the KI places (R-24)
+const PLACEMENT_MS = 3 * 60 * 1000;
 
 /**
  * Register a socket event handler that cannot take the process down: the payload is
@@ -937,13 +939,14 @@ function launch(io, session, { freeCivs, isPlaettchen, isMarathon }) {
             });
 
             session.status = 'placement';
-            // with a turn timer, placing has that much time too (placementTimeout)
-            const ms = turnTimeMs(session);
+            // placing has the turn time, without a turn timer PLACEMENT_MS – one player must not
+            // hold up everyone (R-24); then the KI places what is missing (placementTimeout)
+            const ms = turnTimeMs(session) || PLACEMENT_MS * config.TURN_TIMER_SCALE;
             session.placementState = {
                 plan, seed, rnd,
                 humanSeats,
                 placedCount: 0,
-                deadline: ms ? Date.now() + ms : null,
+                deadline: Date.now() + ms,
             };
 
             const { setup: _setup, ...publicCfg } = session.gameConfig;
@@ -1272,8 +1275,8 @@ function finishPlacement(io, session) {
 }
 
 /**
- * The time for placing start tiles is up (games with a turn timer, e.g. ranked matchmaking on
- * the tile map): the KI places the tiles still missing – as for its own seats – and the game
+ * The time for placing start tiles is up (the turn time, or PLACEMENT_MS without a turn timer):
+ * the KI places the tiles still missing – as for its own seats – and the game
  * begins. Without it one player who doesn't place would hold up everyone.
  */
 function placementTimeout(io, session) {
