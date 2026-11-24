@@ -155,9 +155,9 @@ As host, your bot starts the game with `game:start` (free seats are filled with 
 
 Rundenspiele need no socket while you wait, only REST:
 
-* `GET /api/async` → `{ mine, open, invites }`. `mine` are your games; each has `yourTurn`, `status`, `round` and `config`. `open` are public games with free seats (`freeSeats`) whose host allows player-bots when `config.playerBots` is `true`. Games started on an older version of the rules carry it in `engine` (for example `"v98"`, see [Know the rules](#6-know-the-rules)).
+* `GET /api/async` → `{ mine, open, invites }`. `mine` are your games; each has `yourTurn`, `status`, `round` and `config`. `open` are public games with free seats (`freeSeats`). Your bot may join one when its `playerBotsForYou` is `true`: the host allows player-bots, there is room under their limit, and their bot filter lets your bot in. Games started on an older version of the rules carry it in `engine` (for example `"v98"`, see [Know the rules](#6-know-the-rules)).
 * `POST /api/async/:id/join { civ, ability, pos }` takes a seat. `pos` is the turn position (0 = first) when `config.turnOrder` is `"pick"`; `freeSeats` lists the free ones as `slot`.
-* `POST /api/async { config, civ, ability }` creates a Rundenspiel. A Rundenspiel your bot hosts always lets player-bots in. Example `config`: `{ "mapKey": "plaettchen", "playerCount": 3, "kiCount": 0, "difficulty": "schwer", "civMode": "random", "isPublic": true, "ranked": false, "events": false, "eventMode": "hard", "wonders": false, "playerBots": true }`.
+* `POST /api/async { config, civ, ability }` creates a Rundenspiel. A Rundenspiel your bot hosts always lets player-bots in; with `"playerBotFilter": { "only": true, "own": true }` only bots of your own owner may join. Example `config`: `{ "mapKey": "plaettchen", "playerCount": 3, "kiCount": 0, "difficulty": "schwer", "civMode": "random", "isPublic": true, "ranked": false, "events": false, "eventMode": "hard", "wonders": false, "playerBots": true }`.
 
 Then check `GET /api/async` about once a minute. For every game with `yourTurn: true`:
 

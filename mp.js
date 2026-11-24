@@ -1603,40 +1603,56 @@ const MP = {
                 <select id="mp-set-botlimit" onchange="MP.updateLobbyConfig()">${opts}</select>
               </label>` : ''}
               ${on ? `<p class="hint" style="margin:4px 0 8px">${TX('Spieler-Bots sind Bot-Konten: Programme, die wie Spieler spielen. Sie nehmen freie Plätze für Menschen – wer zuerst kommt –, nie die Plätze der KI.')}</p>` : ''}
-              ${on && !hostIsBot ? this.botFilterRows() : ''}`;
+              ${on && !hostIsBot ? this.botFilterRows(this.lobbyBotFilterUi()) : ''}`;
     },
 
     /**
-     * The host's bot filter (utils/botfilter.js, gameConfig.playerBotFilter): every bot except the
-     * excluded ones, or only chosen ones – the host's own bots, bot friends, bots from the list.
-     * The list (GET /api/playerbots) is loaded when the host opens it.
+     * The host's bot filter (utils/botfilter.js): every bot except the excluded ones, or only
+     * chosen ones – the host's own bots, bot friends, bots from the list. The same controls for the
+     * live lobby (gameConfig.playerBotFilter, sent at once) and the Rundenspiel form
+     * (ASYNC.form.playerBotFilter, sent with "Erstellen"): `ui` = { id: the element prefix,
+     * get(): the filter, set(f) }. The list (GET /api/playerbots) is loaded when it is opened.
      */
-    botFilterOf: function () {
-        const f = this.gameConfig.playerBotFilter;
+    lobbyBotFilterUi: function () {
+        return {
+            id: 'mp',
+            get: () => this.gameConfig.playerBotFilter,
+            set: f => {
+                if (this.lobbyIndex !== this.hostIndex) return;
+                this.socket.emit('lobby:config', { playerBotFilter: f }, res => { if (res && res.error) toast(TXS(res.error)); });
+            },
+        };
+    },
+
+    botFilterOf: function (ui) {
+        const f = (ui || this._botFilterUi || this.lobbyBotFilterUi()).get();
         return { only: !!(f && f.only), own: !!(f && f.own), friends: !!(f && f.friends), allow: (f && f.allow) || [], block: (f && f.block) || [] };
     },
 
-    botFilterRows: function () {
-        const f = this.botFilterOf();
+    botFilterRows: function (ui) {
+        ui = this._botFilterUi = ui || this.lobbyBotFilterUi();
+        const id = ui.id, f = this.botFilterOf(ui);
         const summary = [f.only ? TX('%s zugelassen', f.allow.length) : null, f.block.length ? TX('%s ausgeschlossen', f.block.length) : null].filter(Boolean).join(' · ');
-        return `
+        // stopPropagation: the Rundenspiel form re-reads itself on every change (ASYNC.readForm)
+        return `<div id="${id}-botfilter-wrap">
               <label class="row"><span>${TX('Welche Spieler-Bots')}</span>
-                <select id="mp-set-botwho" onchange="MP.setBotFilter({ only: this.value === 'only' })">
+                <select id="${id}-set-botwho" onchange="event.stopPropagation(); MP.setBotFilter({ only: this.value === 'only' })">
                   <option value="all" ${f.only ? '' : 'selected'}>${TX('Alle außer ausgeschlossenen')}</option>
                   <option value="only" ${f.only ? 'selected' : ''}>${TX('Nur ausgewählte')}</option>
                 </select>
               </label>
               ${f.only && this.user ? `
               <label class="row"><span>${TX('Meine eigenen Bots')}</span>
-                <input type="checkbox" id="mp-set-botown" onchange="MP.setBotFilter({ own: this.checked })" ${f.own ? 'checked' : ''}>
+                <input type="checkbox" id="${id}-set-botown" onchange="event.stopPropagation(); MP.setBotFilter({ own: this.checked })" ${f.own ? 'checked' : ''}>
               </label>
               <label class="row"><span>${TX('Bots, mit denen ich befreundet bin')}</span>
-                <input type="checkbox" id="mp-set-botfriends" onchange="MP.setBotFilter({ friends: this.checked })" ${f.friends ? 'checked' : ''}>
+                <input type="checkbox" id="${id}-set-botfriends" onchange="event.stopPropagation(); MP.setBotFilter({ friends: this.checked })" ${f.friends ? 'checked' : ''}>
               </label>` : ''}
-              <details class="mp-botfilter" id="mp-botfilter" ${this._botFilterOpen ? 'open' : ''} ontoggle="MP.botFilterToggle(this.open)">
+              <details class="mp-botfilter" id="${id}-botfilter" ${this._botFilterOpen ? 'open' : ''} ontoggle="MP.botFilterToggle(this.open)">
                 <summary>${f.only ? TX('Bots zulassen oder ausschließen') : TX('Bots ausschließen')}${summary ? ` <small>(${summary})</small>` : ''}</summary>
-                <div id="mp-botfilter-list">${this.botFilterList()}</div>
-              </details>`;
+                <div id="${id}-botfilter-list">${this.botFilterList()}</div>
+              </details>
+            </div>`;
     },
 
     botFilterList: function () {
@@ -1650,12 +1666,12 @@ const MP = {
             const tags = [b.own ? TX('eigener') : null, b.friend ? TX('Freund') : null].filter(Boolean).map(t => `<span class="mp-botfilter-tag">${t}</span>`).join(' ');
             return `<label class="row mp-botfilter-row" data-name="${escHtml(b.username.toLowerCase())}" ${needle && !b.username.toLowerCase().includes(needle) ? 'hidden' : ''}>
                 <span>🤖 <b>${escHtml(b.username)}</b> ${tags}${b.owner ? ` <small>${TX('von %s', escHtml(b.owner))}</small>` : ''}</span>
-                <select data-id="${escHtml(b.id)}" onchange="MP.setBotFilterEntry(this.dataset.id, this.value)">
+                <select data-id="${escHtml(b.id)}" onchange="event.stopPropagation(); MP.setBotFilterEntry(this.dataset.id, this.value)">
                   ${opts.map(([k, n]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${n}</option>`).join('')}
                 </select>
               </label>`;
         }).join('');
-        const search = this.botDirectory.length > 8 ? `<input type="search" class="mp-botfilter-search" placeholder="${escHtml(TX('Bot suchen'))}" oninput="MP.botFilterSearch(this.value)" value="${escHtml(this._botFilterQuery || '')}">` : '';
+        const search = this.botDirectory.length > 8 ? `<input type="search" class="mp-botfilter-search" placeholder="${escHtml(TX('Bot suchen'))}" oninput="MP.botFilterSearch(this.value)" onchange="event.stopPropagation()" value="${escHtml(this._botFilterQuery || '')}">` : '';
         return `${search}<div class="mp-botfilter-rows">${rows}</div>`;
     },
 
@@ -1669,7 +1685,7 @@ const MP = {
                 .then(d => {
                     this.botDirectory = d.bots || [];
                     this._botDirLoading = false;
-                    const el = $('mp-botfilter-list');
+                    const el = this._botFilterUi && $(this._botFilterUi.id + '-botfilter-list');
                     if (el) el.innerHTML = this.botFilterList();
                 });
         }
@@ -1678,13 +1694,12 @@ const MP = {
     botFilterSearch: function (q) {
         this._botFilterQuery = q;
         const needle = String(q || '').trim().toLowerCase();
-        document.querySelectorAll('#mp-botfilter .mp-botfilter-row').forEach(r => { r.hidden = !!needle && !r.dataset.name.includes(needle); });
+        document.querySelectorAll('.mp-botfilter .mp-botfilter-row').forEach(r => { r.hidden = !!needle && !r.dataset.name.includes(needle); });
     },
 
     setBotFilter: function (patch) {
-        if (this.lobbyIndex !== this.hostIndex) return;
-        const f = Object.assign(this.botFilterOf(), patch);
-        this.socket.emit('lobby:config', { playerBotFilter: f }, res => { if (res && res.error) toast(TXS(res.error)); });
+        const ui = this._botFilterUi || this.lobbyBotFilterUi();
+        ui.set(Object.assign(this.botFilterOf(ui), patch));
     },
 
     /** One bot of the list: '' (the mode decides), 'allow' or 'block'. */
@@ -2972,7 +2987,8 @@ const ASYNC = {
               <label class="row"><span>🤖 ${TX('Spieler-Bots erlauben')}</span><input type="checkbox" id="mpa-bots" ${f.playerBots ? 'checked' : ''}></label>
               ${f.playerBots ? `<label class="row"><span>${TX('Höchstens so viele Spieler-Bots')}</span><select id="mpa-botlimit">
                 ${opt('', f.playerBotLimit, TX('Unbegrenzt'))}${Array.from({ length: Math.max(1, humans - 1) }, (_, i) => i + 1).map(n => opt(n, f.playerBotLimit, n)).join('')}</select></label>
-              ${note(TX('Spieler-Bots sind Bot-Konten: Programme, die wie Spieler spielen. Sie nehmen freie Plätze für Menschen – wer zuerst kommt –, nie die Plätze der KI.'))}` : ''}
+              ${note(TX('Spieler-Bots sind Bot-Konten: Programme, die wie Spieler spielen. Sie nehmen freie Plätze für Menschen – wer zuerst kommt –, nie die Plätze der KI.'))}
+              ${MP.botFilterRows(this.botFilterUi())}` : ''}
               <label class="row"><span>${TX('Öffentlich')} <small style="font-size:10px;color:#777">(${TX('in der Liste offener Spiele')})</small></span><input type="checkbox" id="mpa-public" ${f.isPublic ? 'checked' : ''}></label>
               <label class="row" style="margin-top:10px; border-top:1px solid #ddd; padding-top:10px;">
                 <span><b>🔥 ${TX('Gewertetes Spiel')}</b> <br><small style="font-size:10px;color:#777">(${TX('Plättchenkarte, 2–3 Reiche, KI auf schwerster Stufe')})</small></span>
@@ -2982,6 +2998,19 @@ const ASYNC = {
           </div>
           <button class="btn wide primary" onclick="ASYNC.create()">${TX('Erstellen')}</button>
           <button class="btn wide ghost" onclick="ASYNC.showList()">${TX('Zurück')}</button>`);
+    },
+
+    /** The bot filter of the form (MP.botFilterRows): kept in the form, sent with "Erstellen". */
+    botFilterUi: function () {
+        return {
+            id: 'mpa',
+            get: () => this.form.playerBotFilter,
+            set: f => {
+                this.form.playerBotFilter = f;
+                const el = $('mpa-botfilter-wrap');
+                if (el) el.outerHTML = MP.botFilterRows(this.botFilterUi());
+            },
+        };
     },
 
     readForm: function (rerender) {
@@ -3060,6 +3089,7 @@ const ASYNC = {
                     mapKey: f.mapKey, civMode: f.civMode, turnOrder: f.turnOrder, playerCount: f.playerCount, kiCount: f.kiCount, events: f.events, eventMode: f.eventMode,
                     wonders: f.wonders, expCivs: !!f.expCivs, hexTiles: f.mapKey === 'plaettchen' && f.hexTiles, difficulty: f.difficulty, ranked: f.ranked && MP.rankedOk(f.mapKey, f.playerCount), isPublic: f.isPublic, turnDays: f.turnDays || 7,
                     playerBots: f.playerBots, playerBotLimit: f.playerBots && f.playerBotLimit ? +f.playerBotLimit : null,
+                    playerBotFilter: f.playerBots ? f.playerBotFilter || null : null,
                     customMap,
                 },
                 civ: f.civ, ability: f.ability, pos: f.pos,

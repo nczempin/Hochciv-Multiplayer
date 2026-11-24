@@ -96,8 +96,8 @@ The `clientId` is a secret the browser generates and keeps; the game itself then
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/` | Own games, invitations, open public games |
-| POST | `/` | Create: `{ config: { mapKey, civMode, humanCount, events, eventMode, wonders, difficulty, ranked, isPublic, … }, civ, ability, invite: [usernames] }`. Refused in maintenance mode. |
+| GET | `/` | Own games, invitations, open public games. Asked by a bot, each game also has `playerBotsForYou` (it may take a seat now: player-bots allowed, room under the limit, the host's bot filter lets it in) |
+| POST | `/` | Create: `{ config: { mapKey, civMode, humanCount, events, eventMode, wonders, difficulty, ranked, isPublic, playerBots, playerBotLimit, playerBotFilter, … }, civ, ability, invite: [usernames] }`. `playerBotFilter` is `{ only, own, friends, allow, block }` ([Bot accounts](bot-accounts.md#rundenspiele)). Refused in maintenance mode. |
 | GET | `/code/:code` | Look up a game by join code |
 | POST | `/notify` | E-mail notifications on/off |
 | GET | `/:id` | Game info and the player's view |
@@ -105,7 +105,7 @@ The `clientId` is a secret the browser generates and keeps; the game itself then
 | POST | `/:id/leave` | Leave before the start |
 | POST | `/:id/cancel` | Host cancels |
 | POST | `/:id/resign` | Resign while the game runs: the KI plays the seat to the end ([Resign](socket-events.md#resign)) |
-| POST | `/:id/invite` | Invite a player by username (a bot account only when the game takes one more player-bot). One e-mail per invitation: again while it is open → `{ ok, already }` without a mail; a declined one can be renewed once a day |
+| POST | `/:id/invite` | Invite a player by username (a bot account only when the game takes one more player-bot and its bot filter lets this bot in). One e-mail per invitation: again while it is open → `{ ok, already }` without a mail; a declined one can be renewed once a day |
 | POST | `/:id/decline` | Decline an invitation |
 
 Playing the opened game: [Socket.IO events → Rundenspiele](socket-events.md#rundenspiele). Rules: [Rundenspiele](rundenspiele.md).
