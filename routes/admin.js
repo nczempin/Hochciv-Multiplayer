@@ -19,6 +19,7 @@ const CivNames = require('../utils/civnames');
 const Facts = require('../utils/facts');
 const { query: statsQuery } = require('./stats');
 const Bots = require('../utils/bots');
+const Settings = require('../utils/settings');
 
 /** Banned, deleted or no longer allowed to run bots: their bots leave games and connections too. */
 async function detachBotsOf(io, ownerId) {
@@ -107,6 +108,32 @@ router.post('/config', (req, res) => {
     if (maintenanceMode !== undefined) serverState.state.maintenanceMode = maintenanceMode === true;
     if (registrationEnabled !== undefined) serverState.state.registrationEnabled = registrationEnabled === true;
     res.json({ ok: true });
+});
+
+// --- Stored settings (utils/settings.js): the Discord invite link ---
+router.get('/settings', async (req, res) => {
+    try {
+        res.json(await Settings.publicSettings());
+    } catch (err) {
+        console.error('[Settings]', err);
+        res.status(500).json({ error: 'Serverfehler' });
+    }
+});
+
+router.post('/settings', async (req, res) => {
+    const b = req.body || {};
+    const key = Settings.KEYS.find(k => k in b);
+    if (!key) return res.status(400).json({ error: 'Unbekannte Einstellung.' });
+    if (b[key] != null && typeof b[key] !== 'string') return res.status(400).json({ error: 'Ungültiger Wert.' });
+    try {
+        const r = await Settings.set(key, b[key], req.user.username);
+        if (r.error) return res.status(400).json({ error: r.error });
+        console.log(`[Settings] ${req.user.username}: ${key} = ${r.value || '(leer)'}`);
+        res.json({ ok: true, [key]: r.value });
+    } catch (err) {
+        console.error('[Settings]', err);
+        res.status(500).json({ error: 'Serverfehler' });
+    }
 });
 
 // --- User Management ---
