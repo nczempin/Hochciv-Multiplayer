@@ -111,13 +111,14 @@ Every event you send gets an answer through the acknowledgement callback (`sio.c
    ```json
    [{ "id": "…", "joinCode": "K7Q2", "password": "…", "status": "lobby", "hostName": "Anna",
       "playersCount": 1, "maxPlayers": 3, "mapKey": "random", "round": null, "spectators": 0,
-      "playerBots": true, "playerBotsFree": null, "customMapName": null, "empires": 4, "kiCount": 1,
+      "playerBots": true, "playerBotsFree": null, "playerBotFilter": false, "playerBotsForYou": true,
+      "customMapName": null, "empires": 4, "kiCount": 1,
       "difficulty": "mittel", "randomCivs": false, "civMode": "fixed", "turnOrder": "classic",
       "events": false, "eventMode": "hard", "wonders": false, "expCivs": false,
       "ranked": false, "turnTime": 0 }]
    ```
 
-   Your bot may join when `status` is `"lobby"`, `playerBots` is `true`, `playerBotsFree` isn't `0` (`null` means no limit), and `playersCount < maxPlayers`.
+   Your bot may join when `status` is `"lobby"`, `playerBotsForYou` is `true`, `playerBotsFree` isn't `0` (`null` means no limit), and `playersCount < maxPlayers`. `playerBotsForYou` is only there when your bot asks (logged in). It is `playerBots` plus the host's bot filter: a host may exclude bots or let in only chosen ones (their own, their bot friends, picked ones).
 
 2. Make up a `clientId`, a random secret (for example 32 hex characters), and keep it. It is the key to your seat for the rest of the game.
 
@@ -307,7 +308,7 @@ name = r.json()["username"]
 
 # 2. a public lobby that takes player-bots and has room for one
 lobbies = http.get(URL + "/api/public-sessions", timeout=20).json()
-lobby = next((s for s in lobbies if s["status"] == "lobby" and s["playerBots"]
+lobby = next((s for s in lobbies if s["status"] == "lobby" and s.get("playerBotsForYou", s["playerBots"])
               and s["playerBotsFree"] != 0 and s["playersCount"] < s["maxPlayers"]
               and str(s["mapKey"]) in FIXED_MAPS), None)
 if not lobby:

@@ -1563,7 +1563,7 @@ const MP = {
         const running = l.status && l.status !== 'lobby';
         const info = running
             ? (l.round ? TX('Läuft · Runde %s', escHtml(l.round)) : TX('Läuft')) + (l.spectators ? ` · 👁 ${escHtml(l.spectators)}` : '')
-            : TX('%s/%s Spieler', escHtml(l.playersCount), escHtml(l.maxPlayers)) + (l.playerBots ? ` · 🤖 ${TX('Spieler-Bots erlaubt')}` : '');
+            : TX('%s/%s Spieler', escHtml(l.playersCount), escHtml(l.maxPlayers)) + (l.playerBots ? ` · 🤖 ${TX('Spieler-Bots erlaubt')}${l.playerBotFilter ? ` (${TX('mit Bot-Filter')})` : ''}` : '');
         const btn = running
             ? `<button class="btn small" data-code="${escHtml(l.joinCode)}" data-pw="${escHtml(l.password)}" onclick="MP.watch(this.dataset.code, this.dataset.pw, ($('mp-n') || {}).value)">${TX('Zuschauen')}</button>`
             : `<button class="btn small primary" data-code="${escHtml(l.joinCode)}" data-pw="${escHtml(l.password)}" onclick="MP.joinPublic(this.dataset.code, this.dataset.pw)">${TX('Beitreten')}</button>`;
@@ -1602,7 +1602,98 @@ const MP = {
               ${on ? `<label class="row"><span>${TX('Höchstens so viele Spieler-Bots')}</span>
                 <select id="mp-set-botlimit" onchange="MP.updateLobbyConfig()">${opts}</select>
               </label>` : ''}
-              ${on ? `<p class="hint" style="margin:4px 0 8px">${TX('Spieler-Bots sind Bot-Konten: Programme, die wie Spieler spielen. Sie nehmen freie Plätze für Menschen – wer zuerst kommt –, nie die Plätze der KI.')}</p>` : ''}`;
+              ${on ? `<p class="hint" style="margin:4px 0 8px">${TX('Spieler-Bots sind Bot-Konten: Programme, die wie Spieler spielen. Sie nehmen freie Plätze für Menschen – wer zuerst kommt –, nie die Plätze der KI.')}</p>` : ''}
+              ${on && !hostIsBot ? this.botFilterRows() : ''}`;
+    },
+
+    /**
+     * The host's bot filter (utils/botfilter.js, gameConfig.playerBotFilter): every bot except the
+     * excluded ones, or only chosen ones – the host's own bots, bot friends, bots from the list.
+     * The list (GET /api/playerbots) is loaded when the host opens it.
+     */
+    botFilterOf: function () {
+        const f = this.gameConfig.playerBotFilter;
+        return { only: !!(f && f.only), own: !!(f && f.own), friends: !!(f && f.friends), allow: (f && f.allow) || [], block: (f && f.block) || [] };
+    },
+
+    botFilterRows: function () {
+        const f = this.botFilterOf();
+        const summary = [f.only ? TX('%s zugelassen', f.allow.length) : null, f.block.length ? TX('%s ausgeschlossen', f.block.length) : null].filter(Boolean).join(' · ');
+        return `
+              <label class="row"><span>${TX('Welche Spieler-Bots')}</span>
+                <select id="mp-set-botwho" onchange="MP.setBotFilter({ only: this.value === 'only' })">
+                  <option value="all" ${f.only ? '' : 'selected'}>${TX('Alle außer ausgeschlossenen')}</option>
+                  <option value="only" ${f.only ? 'selected' : ''}>${TX('Nur ausgewählte')}</option>
+                </select>
+              </label>
+              ${f.only && this.user ? `
+              <label class="row"><span>${TX('Meine eigenen Bots')}</span>
+                <input type="checkbox" id="mp-set-botown" onchange="MP.setBotFilter({ own: this.checked })" ${f.own ? 'checked' : ''}>
+              </label>
+              <label class="row"><span>${TX('Bots, mit denen ich befreundet bin')}</span>
+                <input type="checkbox" id="mp-set-botfriends" onchange="MP.setBotFilter({ friends: this.checked })" ${f.friends ? 'checked' : ''}>
+              </label>` : ''}
+              <details class="mp-botfilter" id="mp-botfilter" ${this._botFilterOpen ? 'open' : ''} ontoggle="MP.botFilterToggle(this.open)">
+                <summary>${f.only ? TX('Bots zulassen oder ausschließen') : TX('Bots ausschließen')}${summary ? ` <small>(${summary})</small>` : ''}</summary>
+                <div id="mp-botfilter-list">${this.botFilterList()}</div>
+              </details>`;
+    },
+
+    botFilterList: function () {
+        if (!this.botDirectory) return `<p class="hint">${TX('Lädt …')}</p>`;
+        if (!this.botDirectory.length) return `<p class="hint">${TX('Es gibt noch keine Bot-Konten.')}</p>`;
+        const f = this.botFilterOf();
+        const opts = f.only ? [['', '–'], ['allow', TX('Zulassen')], ['block', TX('Ausschließen')]] : [['', TX('Darf mitspielen')], ['block', TX('Ausschließen')]];
+        const needle = String(this._botFilterQuery || '').trim().toLowerCase();
+        const rows = this.botDirectory.map(b => {
+            const v = f.block.includes(b.id) ? 'block' : f.only && f.allow.includes(b.id) ? 'allow' : '';
+            const tags = [b.own ? TX('eigener') : null, b.friend ? TX('Freund') : null].filter(Boolean).map(t => `<span class="mp-botfilter-tag">${t}</span>`).join(' ');
+            return `<label class="row mp-botfilter-row" data-name="${escHtml(b.username.toLowerCase())}" ${needle && !b.username.toLowerCase().includes(needle) ? 'hidden' : ''}>
+                <span>🤖 <b>${escHtml(b.username)}</b> ${tags}${b.owner ? ` <small>${TX('von %s', escHtml(b.owner))}</small>` : ''}</span>
+                <select data-id="${escHtml(b.id)}" onchange="MP.setBotFilterEntry(this.dataset.id, this.value)">
+                  ${opts.map(([k, n]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${n}</option>`).join('')}
+                </select>
+              </label>`;
+        }).join('');
+        const search = this.botDirectory.length > 8 ? `<input type="search" class="mp-botfilter-search" placeholder="${escHtml(TX('Bot suchen'))}" oninput="MP.botFilterSearch(this.value)" value="${escHtml(this._botFilterQuery || '')}">` : '';
+        return `${search}<div class="mp-botfilter-rows">${rows}</div>`;
+    },
+
+    botFilterToggle: function (open) {
+        this._botFilterOpen = open;
+        if (open && !this.botDirectory && !this._botDirLoading) {
+            this._botDirLoading = true;
+            fetch('/api/playerbots', { credentials: 'same-origin' })
+                .then(r => (r.ok ? r.json() : { bots: [] }))
+                .catch(() => ({ bots: [] }))
+                .then(d => {
+                    this.botDirectory = d.bots || [];
+                    this._botDirLoading = false;
+                    const el = $('mp-botfilter-list');
+                    if (el) el.innerHTML = this.botFilterList();
+                });
+        }
+    },
+
+    botFilterSearch: function (q) {
+        this._botFilterQuery = q;
+        const needle = String(q || '').trim().toLowerCase();
+        document.querySelectorAll('#mp-botfilter .mp-botfilter-row').forEach(r => { r.hidden = !!needle && !r.dataset.name.includes(needle); });
+    },
+
+    setBotFilter: function (patch) {
+        if (this.lobbyIndex !== this.hostIndex) return;
+        const f = Object.assign(this.botFilterOf(), patch);
+        this.socket.emit('lobby:config', { playerBotFilter: f }, res => { if (res && res.error) toast(TXS(res.error)); });
+    },
+
+    /** One bot of the list: '' (the mode decides), 'allow' or 'block'. */
+    setBotFilterEntry: function (id, v) {
+        const f = this.botFilterOf();
+        const allow = f.allow.filter(x => x !== id), block = f.block.filter(x => x !== id);
+        if (v === 'allow') allow.push(id);
+        if (v === 'block') block.push(id);
+        this.setBotFilter({ allow, block });
     },
 
     updateLobbyConfig: function () {
@@ -3628,6 +3719,13 @@ window.addEventListener('DOMContentLoaded', () => {
         .mpa-seats { display:flex; flex-wrap:wrap; gap:4px 10px; font-size:12px; margin:4px 0; }
         .mpa-seat.me { font-weight:bold; }
         .mp-bot-badge { display:inline-block; font-size:11px; padding:1px 5px; border-radius:4px; background:#3b5f7d; color:#fff; vertical-align:1px; }
+        .mp-botfilter { margin:2px 0 8px; }
+        .mp-botfilter > summary { cursor:pointer; padding:4px 0; }
+        .mp-botfilter-rows { max-height:220px; overflow-y:auto; }
+        .mp-botfilter-row[hidden] { display:none; }
+        .mp-botfilter-row small { opacity:0.7; }
+        .mp-botfilter-search { width:100%; box-sizing:border-box; margin:4px 0; }
+        .mp-botfilter-tag { display:inline-block; font-size:10px; padding:0 4px; border-radius:3px; background:#e4ecd8; color:#3c5a1e; }
         .mpa-foot { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; font-size:12px; }
         .mpa-foot .btn { width:auto; margin:0; }
         .mpa-notify { margin-top:14px; border-top:1px solid rgba(0,0,0,.1); padding-top:10px; }
