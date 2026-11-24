@@ -281,6 +281,7 @@ app.use('/api/mfa', mfaRoutes);
 app.use('/api/profile', require('./routes/profile'));
 // Finished matches with their statistics and replays (routes/games.js); old replays are deleted
 app.use('/api/games', require('./routes/games'));
+if (process.env.ARENA_PREVIEW === 'on') app.use('/api/arena-preview', require('./routes/arena-preview'));
 // Overall statistics over all matches (F13)
 app.use('/api/stats', require('./routes/stats'));
 require('./utils/replay').startCleanup();

@@ -143,6 +143,10 @@
         // Bot Arena prototype (client/arena-preview.js)
         'Bot-Arena (Vorschau)': 'Bot Arena (preview)',
         'Beispieldaten': 'Example data',
+        'Turnierergebnisse': 'Tournament results',
+        'Fehler beim Laden der Turnierergebnisse.': 'Could not load tournament results.',
+        'Ohne Weltwunder': 'Wonders off',
+        'Ohne experimentelle Zivilisationen': 'Experimental civilizations off',
         'Turnier': 'Tournament',
         'Turnieransicht': 'Tournament view',
         'Turnierstand': 'Standings',

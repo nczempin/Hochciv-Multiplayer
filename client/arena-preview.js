@@ -2,10 +2,8 @@
 (function () {
     'use strict';
 
-    const { events, bots, roundRobin } = window.HC_ARENA_PREVIEW_DATA;
+    const { events: examples, bots, roundRobin } = window.HC_ARENA_PREVIEW_DATA;
     const recentLimit = 5;
-    const recent = events.slice(0, recentLimit);
-    const older = events.slice(recentLimit);
     const T = (de, ...args) => HC_I18N.t(de, ...args);
     const fmtDate = date => new Date(date).toLocaleDateString(HC_I18N.locale(), { dateStyle: 'medium', timeZone: 'UTC' });
     const tabs = [['standings', 'Turnierstand'], ['fixtures', 'Begegnungen'], ['cross-table', 'Kreuztabelle']];
@@ -50,7 +48,8 @@
     function fixturesHtml(event) {
         return table([T('Begegnungen'), T('Runde'), T('Ergebnis')], event.fixtures.map(f => {
             const result = f.score === null ? T(states[f.state]) : `${formatPoints(f.score)}–${formatPoints(1 - f.score)}`;
-            return `<tr><td>${esc(f.a)} – ${esc(f.b)}</td><td>${f.round}</td><td>${esc(result)}</td></tr>`;
+            const replay = f.replay ? ` <a href="?replay=${encodeURIComponent(f.replay)}">${esc(T('Wiederholung'))}</a>` : '';
+            return `<tr><td>${esc(f.a)} – ${esc(f.b)}</td><td>${f.round}</td><td>${esc(result)}${replay}</td></tr>`;
         }).join(''));
     }
 
@@ -75,7 +74,7 @@
         return `<p class="sub">${esc(legend)}</p>${grid}`;
     }
 
-    function archiveHtml() {
+    function archiveHtml(older) {
         return `<button class="ba-link" type="button" data-ba-action="recent">← ${esc(T('Letzte Turniere'))}</button>
             <h3>${esc(T('Ältere Ergebnisse'))}</h3>
             <ul class="ba-archive">${older.map(event => `<li>
@@ -83,10 +82,11 @@
                 <span class="sub">${esc(fmtDate(event.date))} · ${esc(event.version)}</span></li>`).join('')}</ul>`;
     }
 
-    function pickerHtml(event) {
+    function pickerHtml(event, recent, older) {
         if (older.includes(event)) {
             return `<button class="ba-link" type="button" data-ba-action="archive">← ${esc(T('Ältere Ergebnisse'))}</button>`;
         }
+        if (recent.length === 1 && !older.length) return '';
         return `<select id="ba-picker" aria-label="${esc(T('Turnier'))}">
             ${recent.map(item => `<option value="${esc(item.id)}"${item === event ? ' selected' : ''}>
                 ${esc(item.name)} · ${esc(item.playing ? T('Läuft') : fmtDate(item.date))}</option>`).join('')}
@@ -94,31 +94,51 @@
             </select>`;
     }
 
-    function tournamentHtml(event, tab) {
+    function tournamentHtml(event, tab, recent, older) {
         const ranks = eventResults(event);
         const finished = event.fixtures.filter(f => f.state === 'finished').length;
         const content = tab === 'cross-table' ? crossTableHtml(ranks) : tab === 'fixtures' ? fixturesHtml(event) : standingsHtml(ranks);
-        return `<div class="ba-head">${pickerHtml(event)}
+        const onlyEvent = recent.length === 1 && !older.length;
+        const conditions = [event.wonders === false && T('Ohne Weltwunder'),
+            event.expCivs === false && T('Ohne experimentelle Zivilisationen'),
+            event.ranked === false && T('Ungewertet')].filter(Boolean);
+        return `${onlyEvent || older.includes(event) ? `<h3>${esc(event.name)} · ${esc(fmtDate(event.date))}</h3>` : ''}
+            <div class="ba-head">${pickerHtml(event, recent, older)}
                 <nav aria-label="${esc(T('Turnieransicht'))}">${tabs.map(([key, label]) => `
                     <button type="button" class="mph-tab ${key === tab ? 'on' : ''}" data-ba-action="tab" data-tab="${key}"
                         aria-pressed="${key === tab}" aria-controls="ba-results">${esc(T(label))}</button>`).join('')}</nav></div>
-            ${older.includes(event) ? `<h3>${esc(event.name)} · ${esc(fmtDate(event.date))}</h3>` : ''}
-            <p class="sub ba-meta"><span>${esc(event.version)} · ${esc(T('Plättchenkarte'))} · 1v1 · ${esc(T('%s s pro Zug', event.turnSeconds))} · ${esc(T('Jeder gegen jeden'))}</span>
+            <p class="sub ba-meta"><span>${esc(event.version)} · ${esc(T('Plättchenkarte'))} · 1v1 · ${esc(T('%s s pro Zug', event.turnSeconds))} · ${esc(T('Jeder gegen jeden'))}${conditions.length ? ' · ' + esc(conditions.join(' · ')) : ''}</span>
                 <span>${esc(T('%s von %s Begegnungen entschieden', finished, event.fixtures.length))}</span></p>
             <div id="ba-results">${content}</div>`;
     }
 
-    function open() {
+    async function open() {
         modal(T('Bot-Arena (Vorschau)'), `<div id="ba-box">
-            <div class="ba-head ba-meta"><span class="sub">${esc(T('Beispieldaten'))}</span>
-                <button class="ba-link" type="button" data-ba-organizer>${esc(T('Veranstalteransicht'))}</button></div>
-            <div id="ba-event"></div></div>`);
+            <div class="ba-head ba-meta"><span class="sub" id="ba-source"></span>
+                <button class="ba-link" type="button" data-ba-organizer disabled>${esc(T('Veranstalteransicht'))}</button></div>
+            <div id="ba-event"><p class="sub">${esc(T('Lade...'))}</p></div></div>`);
         document.getElementById('overlay')?.classList.add('wide');
-        document.querySelector('[data-ba-organizer]').addEventListener('click', openOrganizer);
         const box = document.getElementById('ba-event');
+        let records;
+        try {
+            const response = await fetch('/api/arena-preview/tournaments', { cache: 'no-store' });
+            if (!response.ok) throw new Error('Tournament request failed');
+            records = await response.json();
+        } catch {
+            box.textContent = T('Fehler beim Laden der Turnierergebnisse.');
+            return;
+        }
+        if (!box.isConnected) return;
+        const events = records.length ? records : examples;
+        const recent = events.slice(0, recentLimit);
+        const older = events.slice(recentLimit);
+        document.getElementById('ba-source').textContent = T(records.length ? 'Turnierergebnisse' : 'Beispieldaten');
+        const organizer = document.querySelector('[data-ba-organizer]');
+        organizer.disabled = false;
+        organizer.addEventListener('click', () => openOrganizer(records[0]?.entrants || bots));
         let recentEvent = recent[0], event = recentEvent, tab = 'standings';
         const draw = focus => {
-            box.innerHTML = event ? tournamentHtml(event, tab) : archiveHtml();
+            box.innerHTML = event ? tournamentHtml(event, tab, recent, older) : archiveHtml(older);
             if (focus) box.querySelector(focus)?.focus();
         };
         box.addEventListener('change', e => {
@@ -159,7 +179,7 @@
         draw();
     }
 
-    function openOrganizer() {
+    function openOrganizer(entrants) {
         const draftKey = 'hochciv.arenaPreviewDraft';
         const kinds = [['scheduled', 'Fester Termin'], ['after', 'Nach Ende des vorigen Turniers']];
         const maps = [['tiled', 'Plättchenkarte'], ['original', 'Originalkarte']];
@@ -194,7 +214,7 @@
         const start = form.elements.start;
         const interval = form.elements.interval;
         const ranked = form.elements.ranked;
-        const fixtures = roundRobin(bots);
+        const fixtures = roundRobin(entrants);
         const rounds = new Set(fixtures.map(fixture => fixture.round)).size;
 
         function updatePlan() {
@@ -204,7 +224,7 @@
             document.getElementById('ba-ranked-note').hidden = !ranked.disabled;
             if (ranked.disabled) ranked.checked = false;
             document.getElementById('ba-plan').textContent = interval.validity.valid
-                ? T('%s Bots · %s Runden · %s Begegnungen · %s Min. geplant', bots.length, rounds, fixtures.length, rounds * interval.valueAsNumber)
+                ? T('%s Bots · %s Runden · %s Begegnungen · %s Min. geplant', entrants.length, rounds, fixtures.length, rounds * interval.valueAsNumber)
                 : '';
         }
 
