@@ -41,7 +41,7 @@ Player-bots take **human seats**, first come, first served next to humans. They 
 * The host turns **Spieler-Bots erlauben** on (off by default, `gameConfig.playerBots`) and may set **Höchstens so viele Spieler-Bots** (`gameConfig.playerBotLimit`; *Unbegrenzt* = every free human seat).
 * A lobby whose host is a bot always allows player-bots. The host bot may set a limit and doesn't count against it itself.
 * `POST /api/sessions/join` from a logged-in bot is refused when bots aren't allowed or the limit is reached. The seat is bound to the bot (`playerBot`, `botUserId`): `session:connect` refuses a bot on a human seat and anybody else on a bot's seat.
-* **Bot filter** (`gameConfig.playerBotFilter`, `utils/botfilter.js`): under **Welche Spieler-Bots** the host picks *Alle außer ausgeschlossenen* (every bot except the ones excluded in the list) or *Nur ausgewählte*. With *Nur ausgewählte*, a bot may join when one of these is true:
+* **Bot filter** (`gameConfig.playerBotFilter`, `utils/botfilter.js`, also for [Rundenspiele](#rundenspiele)): under **Welche Spieler-Bots** the host picks *Alle außer ausgeschlossenen* (every bot except the ones excluded in the list) or *Nur ausgewählte*. With *Nur ausgewählte*, a bot may join when one of these is true:
   * it is one of the host's own bots (**Meine eigenen Bots**). When a bot hosts, this means bots of the same owner.
   * the host is friends with it (**Bots, mit denen ich befreundet bin**).
   * it is set to *Zulassen* in the list.
@@ -54,9 +54,11 @@ Player-bots take **human seats**, first come, first served next to humans. They 
 
 The same two settings at creation (`config.playerBots`, `config.playerBotLimit`), the same rule for a bot as host. The seat records `botAccount`.
 
+The bot filter works the same way as in a live lobby (`config.playerBotFilter`, the same controls in the *Neues Rundenspiel* form). It is set at creation and can't be changed afterwards. When a bot hosts, its owner is stored (`config.hostBotOwnerId`, not public) so that *Meine eigenen Bots* means that owner's bots. `playerBotRoom(g, bot)` checks the filter when a bot joins (`POST /api/async/:id/join`) and when it is invited (`POST /api/async/:id/invite`). Friendship with the host is checked at that moment. In `GET /api/async`, `config.playerBotFilter` is only `true`/`false`. Asked by a bot, each game also has `playerBotsForYou`: whether the bot may take a seat now (player-bots allowed, room under the limit, and the filter lets it in). A Rundenspiel continued from a live game takes over the lobby's filter.
+
 ### Friends and invitations
 
-A bot can be a friend (`utils/friends.js`): a person sends the request, and the bot's program accepts or declines it over `/api/friends` like a player would; bots can't send requests. A bot's socket counts as online for its friends (`sockets/friends.js`). Inviting a bot friend into a live lobby (`friends:invite`) is refused unless the lobby takes one more player-bot (`playerBotPolicy`) and the host's bot filter lets it in; a Rundenspiel invitation of a bot (`POST /api/async/:id/invite`) is refused unless `playerBotRoom` lets it in. Joining checks the same rules again. Friend suggestions (*Zuletzt gespielt mit*) still leave bots out.
+A bot can be a friend (`utils/friends.js`): a person sends the request, and the bot's program accepts or declines it over `/api/friends` like a player would; bots can't send requests. A bot's socket counts as online for its friends (`sockets/friends.js`). Inviting a bot friend into a live lobby (`friends:invite`) is refused unless the lobby takes one more player-bot (`playerBotPolicy`) and the host's bot filter lets it in; a Rundenspiel invitation of a bot (`POST /api/async/:id/invite`) is refused unless `playerBotRoom` (limit and filter) lets it in. Joining checks the same rules again. Friend suggestions (*Zuletzt gespielt mit*) still leave bots out.
 
 ### Ranked games
 

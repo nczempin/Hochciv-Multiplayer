@@ -1,6 +1,7 @@
 /**
- * Which player-bots (bot accounts, utils/bots.js) may join a live lobby – the host's bot filter,
- * on top of "Spieler-Bots erlauben" and the limit (sessions.js playerBotPolicy):
+ * Which player-bots (bot accounts, utils/bots.js) may join a live lobby or a Rundenspiel – the
+ * host's bot filter, on top of "Spieler-Bots erlauben" and the limit (sessions.js playerBotPolicy,
+ * async/logic.js playerBotRoom):
  *
  *   gameConfig.playerBotFilter = {
  *     only:    false → every bot except the excluded ones; true → only the ones let in below
@@ -15,7 +16,9 @@
  * (botFriend, set at the join and again before the start – refreshSeats – as the host may have
  * changed). Checked when a bot joins (sessions.joinSession), when it is invited (utils/friends.js)
  * and at the start (sockets/game.js beginGame: a bot that joined before the filter was set has to
- * be kicked first, like with the limit).
+ * be kicked first, like with the limit). A Rundenspiel keeps its filter from the creation
+ * (config.playerBotFilter) and checks it when a bot joins or is invited (async/logic.js
+ * playerBotRoom).
  */
 const MAX_IDS = 100;
 const ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -42,13 +45,19 @@ function hostOwnerId(session) {
  * `bot` = { id, ownerId, friend } – friend: the host's friend.
  */
 function reason(session, bot) {
-    const f = session.gameConfig && session.gameConfig.playerBotFilter;
+    return check(session.gameConfig && session.gameConfig.playerBotFilter, hostOwnerId(session), bot);
+}
+
+/**
+ * The rule itself: `f` a cleaned filter (or null), `owner` the account whose bots are the host's
+ * own (hostOwnerId), `bot` as for reason(). null = may join, else why not.
+ */
+function check(f, owner, bot) {
     if (!f) return null;
     const id = String(bot.id || '').toLowerCase();
     if (f.block.includes(id)) return 'Dieser Bot ist in dieser Lobby ausgeschlossen.';
     if (!f.only) return null;
     if (f.allow.includes(id)) return null;
-    const owner = hostOwnerId(session);
     if (f.own && owner && bot.ownerId === owner) return null;
     if (f.friends && bot.friend) return null;
     return 'Dieser Bot ist in dieser Lobby nicht zugelassen.';
@@ -73,6 +82,18 @@ async function friendsAmong(userId, ids) {
     return new Set(rows.map(r => (r.userId === userId ? r.friendId : r.userId)));
 }
 
+/** Every accepted friend of `userId` (for a bot: the hosts whose filter "friends" lets it in). */
+async function friendIdsOf(userId) {
+    if (!userId) return new Set();
+    const { Op } = require('sequelize');
+    const { Friendship } = require('../models');
+    const rows = await Friendship.findAll({
+        where: { status: 'accepted', [Op.or]: [{ userId }, { friendId: userId }] },
+        attributes: ['userId', 'friendId'],
+    });
+    return new Set(rows.map(r => (r.userId === userId ? r.friendId : r.userId)));
+}
+
 /** Is the bot `botId` a friend of the session's host? (a bot host has no friends) */
 async function isHostFriend(session, botId) {
     const host = session.players[session.hostIndex];
@@ -89,4 +110,4 @@ async function refreshSeats(session) {
     seats.forEach(p => { p.botFriend = friends.has(p.botUserId); });
 }
 
-module.exports = { clean, reason, refusedSeats, hostOwnerId, friendsAmong, isHostFriend, refreshSeats, MAX_IDS };
+module.exports = { clean, reason, check, refusedSeats, hostOwnerId, friendsAmong, friendIdsOf, isHostFriend, refreshSeats, MAX_IDS };

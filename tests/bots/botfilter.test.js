@@ -1,5 +1,5 @@
 /**
- * The host's bot filter (utils/botfilter.js, gameConfig.playerBotFilter) in a live lobby, against
+ * The host's bot filter (utils/botfilter.js, playerBotFilter) in live lobbies and Rundenspiele, against
  * the local docker setup:
  *
  *   docker compose -f docker-compose.local.yml up -d --build
@@ -12,7 +12,9 @@
  * exclusion beats all of them. A bot that joined before the filter blocks the start until it is
  * kicked. The public lobby list tells each bot whether it may join (playerBotsForYou), the bot
  * list (GET /api/playerbots) marks own bots and friends, inviting a bot friend follows the filter,
- * and the host's lobby shows the filter. Test accounts are removed afterwards.
+ * and the host's lobby shows the filter. Rundenspiele: the same rules for joining and inviting,
+ * set once at the creation (also from the form), and playerBotsForYou in GET /api/async. Test
+ * accounts and games are removed afterwards.
  *
  * Uses an installed Chrome or Edge (no browser download); set HOCHCIV_BROWSER to its path if
  * it is not found.
@@ -193,6 +195,47 @@ function unit() {
         const start2 = await emit(hostPage, 'game:start', {});
         ok(!/Bot-Filter/.test(start2.error || ''), 'start: after the kick the filter no longer blocks', start2.error);
 
+        // ── Rundenspiele: the filter is set at the creation ──────────────────────
+        const asyncCreate = async filter => {
+            const res = await call(H, 'POST', '/api/async', { config: { mapKey: '0', playerCount: 4, kiCount: 0, isPublic: true, playerBots: true, playerBotFilter: filter } });
+            if (!res.body.id) throw new Error('Rundenspiel: ' + JSON.stringify(res.body));
+            return res.body;
+        };
+        const ctxs = {};
+        const ctxOf = async b => (b === fr ? frCtx : ctxs[b.id] = ctxs[b.id] || await botCtx(b));
+        const asyncJoin = async (g, b) => (await call(await ctxOf(b), 'POST', `/api/async/${g.id}/join`, { code: g.joinCode })).body;
+        const openFor = async (g, b) => ((await call(await ctxOf(b), 'GET', '/api/async')).body.open || []).find(x => x.id === g.id);
+
+        const rs1 = await asyncCreate({ block: [x.id] });
+        const rsX = await openFor(rs1, x), rsY = await openFor(rs1, y);
+        ok(rsX && rsX.config.playerBotFilter === true && rsX.playerBotsForYou === false && !('hostBotOwnerId' in rsX.config),
+            'Rundenspiel list: the excluded bot sees it may not join, the lists stay private', JSON.stringify(rsX && { f: rsX.config.playerBotFilter, you: rsX.playerBotsForYou }));
+        ok(rsY && rsY.playerBotsForYou === true, 'Rundenspiel list: another bot may');
+        r = await asyncJoin(rs1, x);
+        ok(/ausgeschlossen/.test(r.error || ''), 'Rundenspiel, all but excluded: the excluded bot is refused', r.error);
+        r = await asyncJoin(rs1, y);
+        ok(r.ok === true, 'Rundenspiel, all but excluded: any other bot joins', r.error);
+
+        const rs2 = await asyncCreate({ only: true, own: true, friends: true, allow: [pick.id], block: [own2.id] });
+        r = await asyncJoin(rs2, x);
+        ok(/nicht zugelassen/.test(r.error || ''), 'Rundenspiel, only: an unchosen bot is refused', r.error);
+        r = await asyncJoin(rs2, own2);
+        ok(/ausgeschlossen/.test(r.error || ''), 'Rundenspiel, only: an excluded own bot stays out', r.error);
+        r = await call(H, 'POST', `/api/async/${rs2.id}/invite`, { username: x.username });
+        ok(/nicht zugelassen/.test(r.body.error || ''), 'Rundenspiel invite: refused for a bot the filter keeps out', r.body.error);
+        r = await call(H, 'POST', `/api/async/${rs2.id}/invite`, { username: fr.username });
+        ok(r.body.ok === true, 'Rundenspiel invite: sent to a bot friend with "friends"', r.body.error);
+        r = await asyncJoin(rs2, own);
+        ok(r.ok === true, 'Rundenspiel, only: own bot joins with "own"', r.error);
+        r = await asyncJoin(rs2, pick);
+        ok(r.ok === true, 'Rundenspiel, only: a picked bot joins', r.error);
+        r = await asyncJoin(rs2, fr);
+        ok(r.ok === true, 'Rundenspiel, only: bot friend joins with "friends"', r.error);
+
+        const rs3 = await asyncCreate({ only: true });
+        r = await asyncJoin(rs3, fr);
+        ok(/nicht zugelassen/.test(r.error || ''), 'Rundenspiel, only without choices: even a friend is refused', r.error);
+
         // ── The host's lobby shows the filter ───────────────────────────────────
         const ui = await (await login(host)).newPage();
         ui.on('pageerror', e => errors.push(e.message));
@@ -222,10 +265,34 @@ function unit() {
         ok(text.includes(own.username) && /eigener/.test(text), 'UI: the list marks own bots', '');
         ok(/1 zugelassen/.test(text) && /1 ausgeschlossen/.test(text), 'UI: the summary counts picks and exclusions', text.slice(0, 80));
 
+        // ── The Rundenspiel form has the same filter, sent with "Erstellen" ──────
+        await ui.evaluate(() => { closeModal(); ASYNC.showCreate(); });
+        await ui.waitForSelector('#mpa-bots');
+        ok(!(await ui.$('#mpa-set-botwho')), 'Rundenspiel form: no filter while player-bots are off');
+        await ui.check('#mpa-bots');
+        await ui.waitForSelector('#mpa-set-botwho');
+        await ui.selectOption('#mpa-set-botwho', 'only');
+        await ui.waitForSelector('#mpa-set-botfriends');
+        await ui.check('#mpa-set-botfriends');
+        await ui.waitForSelector(`#mpa-botfilter-list select[data-id="${x.id}"]`, { state: 'attached', timeout: 8000 });
+        if (!(await ui.isVisible(`#mpa-botfilter-list select[data-id="${x.id}"]`))) await ui.click('#mpa-botfilter > summary');
+        await ui.selectOption(`#mpa-botfilter-list select[data-id="${x.id}"]`, 'block');
+        const form = await ui.evaluate(() => ({ f: ASYNC.form.playerBotFilter, bots: document.getElementById('mpa-bots').checked }));
+        ok(form.bots && form.f && form.f.only === true && form.f.friends === true && (form.f.block || []).includes(x.id),
+            'Rundenspiel form: the choices stay in the form (no re-read loses them)', JSON.stringify(form));
+        await ui.check('#mpa-public');
+        await ui.evaluate(() => ASYNC.create());
+        const made = await ui.waitForFunction(() => ASYNC.game && ASYNC.game.id, null, { timeout: 8000 }).then(h => h.jsonValue(), () => null)
+            || sql(`SELECT id FROM async_games WHERE "hostUserId" = '${host.id}' ORDER BY "createdAt" DESC LIMIT 1`);
+        const madeX = await openFor({ id: made }, x), madeFr = await openFor({ id: made }, fr);
+        ok(madeX && madeX.playerBotsForYou === false && madeFr && madeFr.playerBotsForYou === true,
+            'Rundenspiel form: the created game has the filter (friend in, excluded out)', JSON.stringify({ x: madeX && madeX.playerBotsForYou, fr: madeFr && madeFr.playerBotsForYou }));
+
         ok(errors.length === 0, 'no page errors', errors.join(' | '));
     } finally {
         await browser.close();
         const tagged = `SELECT id FROM users WHERE username LIKE '${TAG}\\_%'`;
+        sql(`DELETE FROM async_games WHERE "hostUserId" IN (${tagged})`);
         sql(`DELETE FROM friendships WHERE "userId" IN (${tagged}) OR "friendId" IN (${tagged})`);
         sql(`DELETE FROM users WHERE "ownerId" IN (${tagged})`);
         sql(`DELETE FROM users WHERE username LIKE '${TAG}\\_%'`);
