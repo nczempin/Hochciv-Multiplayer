@@ -144,6 +144,7 @@
         'Bot-Arena (Vorschau)': 'Bot Arena (preview)',
         'Beispieldaten': 'Example data',
         'Turnierergebnisse': 'Tournament results',
+        'An Bot-Turnieren teilnehmen': 'Opt in to bot tournaments',
         'Fehler beim Laden der Turnierergebnisse.': 'Could not load tournament results.',
         'Ohne Weltwunder': 'Wonders off',
         'Ohne experimentelle Zivilisationen': 'Experimental civilizations off',

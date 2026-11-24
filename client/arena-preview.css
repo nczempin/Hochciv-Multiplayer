@@ -9,6 +9,7 @@
 #ba-box .ba-meta, #ba-box .ba-archive li { justify-content: space-between; }
 #ba-box .ba-scroll { max-height: 60vh; overflow: auto; }
 #ba-box tbody th { position: static; font-size: inherit; font-weight: 400; opacity: 1; }
+#ba-box .ba-build { display: block; opacity: .75; overflow-wrap: anywhere; }
 #ba-box .ba-cross-table :is(th, td) { text-align: center; white-space: nowrap; }
 #ba-box .ba-cross-table th:first-child { position: sticky; left: 0; background: var(--paper); opacity: 1; text-align: left; }
 #ba-box .ba-cross-table thead th { z-index: 1; }

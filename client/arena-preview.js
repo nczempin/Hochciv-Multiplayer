@@ -12,7 +12,9 @@
     const esc = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
     function eventResults(event) {
-        const bots = new Map(event.entrants.map(name => [name, { name, points: 0, record: [0, 0, 0], opponents: new Map() }]));
+        const bots = new Map(event.entrants.map(name => [name, {
+            name, build: event.builds?.[name], points: 0, record: [0, 0, 0], opponents: new Map(),
+        }]));
         for (const { a, b, score, state } of event.fixtures) {
             const first = bots.get(a), second = bots.get(b);
             first.opponents.set(b, { score, state });
@@ -40,7 +42,8 @@
             if (bot.points !== previous) rank = i + 1;
             previous = bot.points;
             const played = bot.record.reduce((a, b) => a + b, 0);
-            return `<tr><td>${rank}</td><th scope="row">${esc(bot.name)}</th><td>${played}</td>
+            const build = bot.build ? `<small class="ba-build">${esc(bot.build)}</small>` : '';
+            return `<tr><td>${rank}</td><th scope="row">${esc(bot.name)}${build}</th><td>${played}</td>
                 <td>${bot.record.join('–')}</td><td><b>${esc(formatPoints(bot.points))}</b></td></tr>`;
         }).join(''));
     }
@@ -101,7 +104,7 @@
         const onlyEvent = recent.length === 1 && !older.length;
         const conditions = [event.wonders === false && T('Ohne Weltwunder'),
             event.expCivs === false && T('Ohne experimentelle Zivilisationen'),
-            event.ranked === false && T('Ungewertet')].filter(Boolean);
+            typeof event.ranked === 'boolean' && T(event.ranked ? 'Gewertet' : 'Ungewertet')].filter(Boolean);
         return `${onlyEvent || older.includes(event) ? `<h3>${esc(event.name)} · ${esc(fmtDate(event.date))}</h3>` : ''}
             <div class="ba-head">${pickerHtml(event, recent, older)}
                 <nav aria-label="${esc(T('Turnieransicht'))}">${tabs.map(([key, label]) => `

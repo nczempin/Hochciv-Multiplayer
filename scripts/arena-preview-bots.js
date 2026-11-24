@@ -1,8 +1,9 @@
 // Run inside the isolated preview server. Pipe its output directly to the round-robin driver.
 const { User, sequelize } = require('../models');
 const { newToken } = require('../utils/bots');
+const { readFileSync } = require('node:fs');
 
-const entrants = [
+const exampleEntrants = [
     ['LabRushAhead', ['rush-ahead']],
     ['LabRushSafe', ['rush-safe']],
     ['LabArmySafe', ['sealgo-army-safe']],
@@ -10,12 +11,18 @@ const entrants = [
     ['LabSmallCities', ['probe-small-cities']],
     ['LabEconomy', ['parity', 'economy']],
 ];
+const optIn = process.argv.includes('--opt-in');
+const entrants = optIn ? JSON.parse(readFileSync(0, 'utf8')).map(name => [name, []]) : exampleEntrants;
 
 async function provision() {
     if (process.env.ARENA_PREVIEW !== 'on') throw new Error('This command requires the Arena preview server');
     const results = await sequelize.transaction(async transaction => {
+        if (entrants.length !== 6 || new Set(entrants.map(([name]) => name)).size !== 6 ||
+            entrants.some(([name]) => typeof name !== 'string' || !/^[a-zA-Z0-9_-]{3,30}$/.test(name))) {
+            throw new Error('Supply six distinct bot account names');
+        }
         const [owner] = await User.findOrCreate({
-            where: { username: 'LabTournamentOwner' },
+            where: { username: optIn ? 'LabFamilyOwner' : 'LabTournamentOwner' },
             defaults: { role: 'botcreator', botLimit: entrants.length, isActive: true },
             transaction,
         });
@@ -29,7 +36,7 @@ async function provision() {
                 transaction,
             });
             if (bot.accountType !== 'bot' || bot.ownerId !== owner.id) throw new Error('Unexpected account: ' + name);
-            await bot.update({ botTokenHash: hash }, { transaction });
+            await bot.update({ botTokenHash: hash, ...(optIn ? { arenaOptIn: true } : {}) }, { transaction });
             bots.push({ name, args, token });
         }
         return bots;

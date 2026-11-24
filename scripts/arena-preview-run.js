@@ -1,5 +1,5 @@
 // One real, unranked round robin on a private Arena preview server.
-// Usage: node scripts/arena-preview-run.js URL HANS_BINARY JOURNAL.json < bot accounts JSON
+// Usage: node scripts/arena-preview-run.js URL HANS_BINARY_OR_ROSTER.json JOURNAL.json < bot accounts JSON
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
@@ -16,7 +16,7 @@ const config = {
     turnTime: 60, wonders: false, expCivs: false, events: false, ranked: false,
     playerBots: true, isPublic: false,
 };
-const [base, binary, journal] = process.argv.slice(2);
+const [base, source, journal] = process.argv.slice(2);
 const version = engine.version();
 
 async function request(path, cookie, body) {
@@ -81,15 +81,20 @@ async function openSocket(cookie, session, identity) {
 }
 
 function startPolicy(bot) {
-    const process = spawn(binary, bot.args, { stdio: ['pipe', 'pipe', 'inherit'], windowsHide: true });
-    const lines = createInterface({ input: process.stdout })[Symbol.asyncIterator]();
-    const send = message => process.stdin.write(JSON.stringify(message) + '\n');
-    const read = async () => {
-        const line = await within(lines.next(), 25000, bot.name + ' policy response');
+    const [binary, ...args] = bot.command;
+    const child = spawn(binary, args, {
+        cwd: bot.cwd, env: { ...process.env, ...bot.env }, stdio: ['pipe', 'pipe', 'inherit'], windowsHide: true,
+    });
+    const closed = once(child, 'exit').then(([code]) => { throw new Error(bot.name + ' policy exited ' + code); });
+    closed.catch(() => {});
+    const lines = createInterface({ input: child.stdout })[Symbol.asyncIterator]();
+    const send = message => child.stdin.write(JSON.stringify(message) + '\n');
+    const read = async (ms = 25000) => {
+        const line = await within(Promise.race([lines.next(), closed]), ms, bot.name + ' policy response');
         if (line.done) throw new Error(bot.name + ' policy stopped');
         return JSON.parse(line.value);
     };
-    return { send, read, close: () => process.kill() };
+    return { send, read, close: () => child.kill() };
 }
 
 async function play(fixture, accounts) {
@@ -99,6 +104,12 @@ async function play(fixture, accounts) {
     const sockets = [], policies = [];
     let flag = false, refusals = 0;
     try {
+        for (const bot of bots) policies.push(startPolicy(bot));
+        await Promise.all(policies.map(async (worker, index) => {
+            worker.send({ type: 'hello', protocol: 1, engine: { version } });
+            const answer = await worker.read();
+            if (answer.type !== 'hello') throw new Error(bots[index].name + ': ' + answer.message);
+        }));
         await request('/api/sessions/join', bots[1].cookie, {
             joinCode: lobby.joinCode, password: lobby.password, player: identities[1],
         });
@@ -118,7 +129,7 @@ async function play(fixture, accounts) {
         assert.equal(cfg.mapKey, 'random');
         assert.equal(cfg.wonders, false);
         assert.equal(Boolean(cfg.expCivs), false);
-        assert.equal(cfg.ranked, false);
+        assert.equal(cfg.ranked, config.ranked);
         assert.equal(queue.length, 2);
         assert.equal(lobbyPlayers.length, 2);
         assert(lobbyPlayers.every(player => player.botAccount), 'both seats are player-bot accounts');
@@ -133,22 +144,25 @@ async function play(fixture, accounts) {
         }
         const starts = await within(Promise.all(started), 12000, 'game start');
         assert.notEqual(starts[0].yourIndex, starts[1].yourIndex);
-        for (const [index, bot] of bots.entries()) {
-            const worker = startPolicy(bot);
-            policies.push(worker);
-            worker.send({ type: 'hello', protocol: 1, engine: { version } });
-            assert.equal((await worker.read()).type, 'hello');
-            worker.send({ type: 'start', game: lobby.sessionId, players: 2, seat: starts[index].yourIndex });
-        }
+        assert.equal(starts[0].turn.total, 60000);
+        policies.forEach((worker, index) => worker.send({
+            type: 'start', game: lobby.sessionId, players: 2, seat: starts[index].yourIndex,
+            settings: { turnTime: config.turnTime, turnCapMs: starts[0].turn.total },
+        }));
         let state = starts[0].state, moves = 0;
+        let turnDeadline = Date.now() + starts[0].turn.left;
         while (!state.over) {
             assert(!flag, 'a player reached the server turn clock');
             assert(moves < 3000, 'fixture exceeded the maximum driver action count');
             const index = starts.findIndex(start => start.yourIndex === state.cur);
             assert(index >= 0, 'only the two bot accounts take turns');
             const worker = policies[index];
-            worker.send({ type: 'act', game: lobby.sessionId, state });
-            const response = await worker.read();
+            const leftMs = Math.max(1, turnDeadline - Date.now());
+            worker.send({
+                type: 'act', game: lobby.sessionId, state, clock: { leftMs, overheadMs: 350 },
+                timeout_ms: Math.max(1, leftMs - 350),
+            });
+            const response = await worker.read(leftMs);
             if (response.type !== 'action') throw new Error(bots[index].name + ': ' + response.message);
             const { action } = response;
             const prior = JSON.stringify(state);
@@ -157,11 +171,13 @@ async function play(fixture, accounts) {
                 await emit(sockets[index], 'action', action);
             } catch (err) {
                 if (++refusals > 12 || !err.message.startsWith('action:')) throw err;
-                worker.send({ type: 'refused', game: lobby.sessionId, action, message: err.message });
+                worker.send({ type: 'refused', game: lobby.sessionId, action, error: err.message, tries_left: 4 });
                 console.warn(bots[index].name + ' rejected ' + action.type + ': ' + err.message);
                 continue;
             }
-            state = (await within(next, 10000, 'authoritative state update')).state;
+            const updated = await within(next, 10000, 'authoritative state update');
+            state = updated.state;
+            if (updated.turn?.left != null) turnDeadline = Date.now() + updated.turn.left;
             moves++;
             await delay(40);
         }
@@ -171,7 +187,7 @@ async function play(fixture, accounts) {
         const { body: game } = await request('/api/games/' + record.id);
         assert.equal(game.version, version);
         assert.deepEqual(game.players.map(p => p.name).sort(), bots.map(b => b.name).sort());
-        assert(game.players.every(p => p.mmrShift === null));
+        assert(game.players.every(p => config.ranked ? typeof p.mmrShift === 'number' : p.mmrShift === null));
         const won = name => Boolean(game.players.find(p => p.name === name)?.isWinner);
         const score = won(fixture.a) === won(fixture.b) ? 0.5 : Number(won(fixture.a));
         return { gameId: record.id, rounds: game.rounds, score, refusals };
@@ -182,26 +198,36 @@ async function play(fixture, accounts) {
 }
 
 async function main() {
-    if (!base || !binary || !journal) throw new Error('Expected URL, Hans executable and journal path');
+    if (!base || !source || !journal) throw new Error('Expected URL, bot roster or Hans executable, and journal path');
     assert(new URL(base).port === '8183' || new URL(base).hostname === 'localhost', 'use the private Arena preview');
     const homepage = await fetch(base + '/').then(response => response.text());
     assert(homepage.includes('/client/arena-preview.js'), 'server has the Arena preview enabled');
     const accounts = new Map(JSON.parse(fs.readFileSync(0, 'utf8').trim()).map(bot => [bot.name, bot]));
     assert.equal(accounts.size, 6);
+    const roster = source.endsWith('.json') ? JSON.parse(fs.readFileSync(source, 'utf8')) : null;
+    if (roster) assert.deepEqual([...accounts.keys()], roster.bots.map(bot => bot.name));
+    config.ranked = roster?.ranked === true;
     for (const bot of accounts.values()) {
+        Object.assign(bot, roster?.bots.find(spec => spec.name === bot.name) || { command: [source, ...bot.args] });
         const login = await request('/api/auth/bot', null, { token: bot.token });
         assert.equal(login.body.username, bot.name);
         assert(login.cookie, 'server set a bot session cookie');
         bot.cookie = login.cookie;
+        if (roster) {
+            const entry = await request('/api/arena-preview/opt-in', bot.cookie);
+            assert.equal(entry.body.optedIn, true, bot.name + ' must opt in before kickoff');
+        }
     }
     const entrants = [...accounts.keys()];
     const event = fs.existsSync(journal) ? JSON.parse(fs.readFileSync(journal, 'utf8')) : {
-        id: 'lab-round-robin-1', name: 'Lab Round Robin 1', version,
+        id: roster?.id || 'lab-round-robin-1', name: roster?.name || 'Lab Round Robin 1', version,
         date: new Date().toISOString().slice(0, 10), turnSeconds: config.turnTime,
         mapKey: config.mapKey, wonders: config.wonders, expCivs: config.expCivs, ranked: config.ranked,
-        entrants, fixtures: roundRobin(entrants),
+        entrants, builds: Object.fromEntries(roster?.bots.map(bot => [bot.name, bot.build]) || []),
+        fixtures: roundRobin(entrants),
     };
     assert.equal(event.version, version);
+    assert.equal(event.ranked, config.ranked);
     assert.deepEqual(event.entrants, entrants);
     const save = () => {
         fs.writeFileSync(journal + '.new', JSON.stringify(event, null, 2) + '\n');
