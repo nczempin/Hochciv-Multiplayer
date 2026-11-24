@@ -17,6 +17,16 @@ node smoke.js       # the real UI in jsdom: setup, turns, tutorial, first game, 
 
 ## Server tests
 
+### Bot Arena preview
+
+```bash
+ARENA_PREVIEW=on docker compose -f docker-compose.local.yml up -d --build
+```
+
+Open **Bot Arena (preview)** from the current game's main menu. The tournament picker, archive, standings, fixtures, and cross-table use example results. **Organizer view** calculates a round-robin schedule size and saves the draft in the current browser. Match creation, account opt-in, and MMR changes are outside this preview.
+
+### Running individual tests
+
 Each test is a plain Node script in `tests/<area>/` that talks to a running server, by default `http://localhost:3000` (pass another URL as the first argument). Its header lists exactly how to start the server for it. Common requirements:
 
 * the local Docker setup running: `docker compose -f docker-compose.local.yml up -d --build`
