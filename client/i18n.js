@@ -639,6 +639,8 @@
 
         // ── Spectator mode ───────────────────────────────────────────────────────────────
         'Zuschauen': 'Watch',
+        'Das Spiel ist schon zu Ende.': 'This game has already ended.',
+        'Das Spiel ist schon zu Ende – die Wiederholung wird geöffnet.': 'This game has already ended – opening the replay.',
         'Zuschauer': 'Spectator',
         'Du schaust zu': 'You are watching',
         'Du schaust nur zu.': 'You are only watching.',

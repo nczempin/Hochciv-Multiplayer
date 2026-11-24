@@ -15,6 +15,7 @@ const { detachUser, disconnectSessions } = require('../utils/detachUser');
 const engine = require('../engine-adapter');
 const { engineVersionOf } = require('../async/logic');
 const GameStats = require('../utils/gamestats');
+const CivNames = require('../utils/civnames');
 const Facts = require('../utils/facts');
 const { query: statsQuery } = require('./stats');
 const Bots = require('../utils/bots');
@@ -380,7 +381,7 @@ router.get('/games', async (req, res) => {
             where, order: [['matchDate', 'DESC']], offset, limit: GAMES_PAGE,
             attributes: { include: [[sequelize.literal('EXISTS (SELECT 1 FROM replays r WHERE r."gameId" = "Game"."id")'), 'hasReplay']] },     // the dialog links the replay
         });
-        res.json({ total: count, offset, pageSize: GAMES_PAGE, finished: rows });
+        res.json({ total: count, offset, pageSize: GAMES_PAGE, finished: rows.map(CivNames.withNames) });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Serverfehler' });
