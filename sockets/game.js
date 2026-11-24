@@ -18,7 +18,7 @@ const CivDraft = require('../utils/civdraft');
    the turn ends as the player left it (player feedback: the KI must not change what they did in
    time); a player who isn't connected has the KI play the turn. After AFK_AFTER such turns in a
    row the KI keeps the seat until the player hands it back ('turn:reclaim'). */
-const TURN_TIMES = [0, 60, 120, 180, 300, 600];
+const TURN_TIMES = config.LIVE_TURN_TIMES;
 const AFK_AFTER = config.TURN_TIMER_AFK_AFTER;        // 3 (tests may shorten it)
 const AFK_KI_LEVEL = { ranked: 'schwer', normal: 'mittel' };
 /* Nation draft (F34): a pick has the turn time – without a turn timer this much – and then
@@ -158,6 +158,7 @@ module.exports = function registerHandlers(io) {
 
             if (s.status === 'finished' && s.stats) socket.emit('game:stats', { stats: Stats.publicStats(s.stats) });
             if (s.status === 'finished' && s.gameRecord) socket.emit('game:record', s.gameRecord);
+            if (s.status === 'placement' && s.arenaPreview) socket.emit('placement:start', placementPayload(s));
 
             // If game is already playing, send current state to the reconnecting player right away
             if (s.status === 'playing' && s.state) {
@@ -448,6 +449,7 @@ module.exports = function registerHandlers(io) {
 
         // ── Rematch (host only): the finished game goes back to its lobby ─────
         on(socket, 'session:rematch', (_data, ack) => {
+            if (session?.arenaPreview) return ack({ error: 'Die Arena plant ihre Spiele automatisch.' });
             if (!bound()) return ack({ error: 'Nicht verbunden.' });
             if (!isHost()) return ack({ error: 'Nur der Host kann eine Revanche starten.' });
             const r = sessions.resetForRematch(sessionId);
@@ -887,7 +889,8 @@ function launch(io, session, { freeCivs, isPlaettchen, isMarathon }) {
     const engineApi = engine.getEngine();
     const CIVS = engine.civsFor(session.gameConfig);       // with the experimental ones, if switched on
     const allCivs = CIVS.map(c => c.k).filter(k => k !== 'random' && k !== 'zufall');
-    const pick = list => list[Math.floor(Math.random() * list.length)];
+    const rndCivs = session.arenaPreview ? engineApi.mapRng(session.gameConfig.seed) : Math.random;
+    const pick = list => list[Math.floor(rndCivs() * list.length)];
     // Random nations: fixed maps take one nobody has; free maps the least used ones, so
     // with more than four empires every nation comes once before any comes twice
     session.players.forEach((p, i) => {
@@ -949,17 +952,7 @@ function launch(io, session, { freeCivs, isPlaettchen, isMarathon }) {
                 deadline: Date.now() + ms,
             };
 
-            const { setup: _setup, ...publicCfg } = session.gameConfig;
-            io.to(session.id).emit('placement:start', {
-                // the game rebuilds the plan from cfg: v107+ reads tileShape (14 triangles), older games hexTiles
-                cfg: { ...publicCfg, tileShape: session.gameConfig.hexTiles ? 'tri14' : null,
-                    // turn positions (F34): the placement's world view shows the turn order by seat
-                    seatOrder: CivDraft.modesOf(session.gameConfig).turnOrder !== 'classic' },
-                seed,
-                queue: humanSeats,
-                at: 0,
-                plan
-            });
+            io.to(session.id).emit('placement:start', placementPayload(session));
             return null;
         }
 
@@ -981,6 +974,15 @@ function launch(io, session, { freeCivs, isPlaettchen, isMarathon }) {
 
     emitGameStart(io, session);
     return null;
+}
+
+function placementPayload(session) {
+    const { setup: _setup, ...cfg } = session.gameConfig;
+    const { seed, humanSeats, plan } = session.placementState;
+    return {
+        cfg: { ...cfg, tileShape: cfg.hexTiles ? 'tri14' : null, seatOrder: CivDraft.modesOf(cfg).turnOrder !== 'classic' },
+        seed, queue: humanSeats, at: 0, plan,
+    };
 }
 
 
@@ -1431,6 +1433,7 @@ async function processGameOverMmr(session, io, sessionId, isRanked = false) {
             ranked: isRanked,
             penalty: { userIds: resigned.map(p => p.replacedUserId), mmr: Resign.MMR_PENALTY },
             record: players => ({
+                ...(session.arenaPreview && { id: session.arenaPreview.gameId }),
                 version,
                 durationRounds: session.state.round,
                 winnerUsername: players.find(p => p.isWinner)?.dbUsername || null,

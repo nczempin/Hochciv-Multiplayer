@@ -1,5 +1,5 @@
-// One real, unranked round robin on a private Arena preview server.
-// Usage: node scripts/arena-preview-run.js URL HANS_BINARY_OR_ROSTER.json JOURNAL.json < bot accounts JSON
+// Run a local rehearsal or serve the private Arena's repeating schedule.
+// Usage: node scripts/arena-preview-run.js URL ROSTER.json JOURNAL.json|--repeat < bot accounts JSON
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
@@ -19,8 +19,8 @@ const config = {
 const [base, source, journal] = process.argv.slice(2);
 const version = engine.version();
 
-async function request(path, cookie, body) {
-    const headers = { Cookie: cookie || '' };
+async function request(path, cookie, body, extraHeaders) {
+    const headers = { Cookie: cookie || '', ...extraHeaders };
     if (body) headers['Content-Type'] = 'application/json';
     for (;;) {
         const response = await fetch(base + path, {
@@ -65,12 +65,13 @@ async function within(promise, ms, description) {
     }
 }
 
-async function openSocket(cookie, session, identity) {
+async function openSocket(cookie, session, identity, listen) {
     const socket = io(base, {
         forceNew: true, reconnection: false, transports: ['websocket'],
         extraHeaders: { Cookie: cookie, Origin: base },
     });
     try {
+        listen(socket);
         await within(once(socket, 'connect'), 12000, 'socket connect');
         const bound = await emit(socket, 'session:connect', { sessionId: session.sessionId, password: session.password, clientId: identity.clientId });
         return { socket, bound };
@@ -97,10 +98,12 @@ function startPolicy(bot) {
     return { send, read, close: () => child.kill() };
 }
 
-async function play(fixture, accounts, save) {
+async function play(fixture, accounts, save, rules = config) {
     const bots = [accounts.get(fixture.a), accounts.get(fixture.b)];
-    const identities = bots.map(bot => ({ name: bot.name, clientId: randomUUID(), civ: 'random', ability: 'random' }));
-    const { body: lobby } = await request('/api/sessions', bots[0].cookie, { config, host: identities[0] });
+    const identities = fixture.identities || bots.map(bot => ({
+        name: bot.name, clientId: randomUUID(), civ: 'random', ability: 'random',
+    }));
+    const lobby = fixture.lobby || (await request('/api/sessions', bots[0].cookie, { config, host: identities[0] })).body;
     const sockets = [], policies = [];
     let flag = false, refusals = 0;
     try {
@@ -110,48 +113,63 @@ async function play(fixture, accounts, save) {
             const answer = await worker.read();
             if (answer.type !== 'hello') throw new Error(bots[index].name + ': ' + answer.message);
         }));
-        await request('/api/sessions/join', bots[1].cookie, {
+        if (!fixture.lobby) await request('/api/sessions/join', bots[1].cookie, {
             joinCode: lobby.joinCode, password: lobby.password, player: identities[1],
         });
+        const started = [];
+        let placed, recorded, lobbyPlayers, hostIndex;
         for (let i = 0; i < bots.length; i++) {
-            const { socket } = await openSocket(bots[i].cookie, lobby, identities[i]);
+            const { socket, bound } = await openSocket(bots[i].cookie, lobby, identities[i], socket => {
+                socket.on('turn:timeout', () => { flag = true; });
+                started.push(received(socket, 'game:start'));
+                if (i === 0) {
+                    placed = received(socket, 'placement:start');
+                    recorded = received(socket, 'game:record');
+                    socket.on('lobby:player:updated', players => { lobbyPlayers = players; });
+                }
+            });
             sockets.push(socket);
-            socket.on('turn:timeout', () => { flag = true; });
+            hostIndex = bound.hostIndex;
+            lobbyPlayers ||= bound.players;
         }
-        const placed = received(sockets[0], 'placement:start');
-        const started = sockets.map(socket => received(socket, 'game:start'));
-        const recorded = received(sockets[0], 'game:record');
-        let lobbyPlayers;
-        sockets[0].on('lobby:player:updated', players => { lobbyPlayers = players; });
-        // Open spectating only after the two intended accounts have taken their seats.
-        await emit(sockets[0], 'lobby:config', { isPublic: true });
-        await emit(sockets[0], 'game:start', {});
-        fixture.sessionId = lobby.sessionId;
-        save();
-        const { plan, queue, cfg } = await within(placed, 10000, 'tile placement');
-        assert.equal(cfg.turnTime, 60);
-        assert.equal(cfg.mapKey, 'random');
-        assert.equal(cfg.wonders, false);
-        assert.equal(Boolean(cfg.expCivs), false);
-        assert.equal(cfg.ranked, config.ranked);
-        assert.equal(queue.length, 2);
-        assert.equal(lobbyPlayers.length, 2);
-        assert(lobbyPlayers.every(player => player.botAccount), 'both seats are player-bot accounts');
-        const E = engine.getEngine();
-        const setup = engine.rollSetup({ players: lobbyPlayers, gameConfig: cfg }, cfg.seed);
-        for (const [index, bot] of bots.entries()) {
-            const player = lobbyPlayers.find(p => p.name === bot.name);
-            const seat = plan.seats.find(s => s.idx === player.index);
-            const error = E.kiPlaceSeat(plan, seat, player, setup);
-            if (error) throw new Error('Tile placement for ' + bot.name + ': ' + error);
-            await emit(sockets[index], 'placement:action', { o: seat.o, cell: seat.cell });
+        if (!lobby.status || lobby.status === 'lobby') {
+            // Open spectating only after the two intended accounts have taken their seats.
+            await emit(sockets[hostIndex], 'lobby:config', { isPublic: true });
+            await emit(sockets[hostIndex], 'game:start', {});
+            if (save) {
+                fixture.sessionId = lobby.sessionId;
+                save();
+            }
+        }
+        if (lobby.status !== 'playing') {
+            const { plan, queue, cfg } = await within(placed, 10000, 'tile placement');
+            assert.equal(cfg.turnTime, rules.turnSeconds ?? rules.turnTime);
+            assert.equal(cfg.mapKey, 'random');
+            assert.equal(cfg.wonders, false);
+            assert.equal(Boolean(cfg.expCivs), false);
+            assert.equal(cfg.ranked, rules.ranked);
+            assert.equal(queue.length, 2);
+            assert.equal(lobbyPlayers.length, 2);
+            assert(lobbyPlayers.every(player => player.botAccount), 'both seats are player-bot accounts');
+            if (fixture.lobby) assert.equal(cfg.seed, fixture.seed);
+            const E = engine.getEngine();
+            const setup = engine.rollSetup({ players: lobbyPlayers, gameConfig: cfg }, cfg.seed);
+            for (const [index, bot] of bots.entries()) {
+                const player = lobbyPlayers.find(p => p.name === bot.name);
+                const seat = plan.seats.find(s => s.idx === player.index);
+                if (seat.cell != null) continue;
+                const error = E.kiPlaceSeat(plan, seat, player, setup);
+                if (error) throw new Error('Tile placement for ' + bot.name + ': ' + error);
+                await emit(sockets[index], 'placement:action', { o: seat.o, cell: seat.cell });
+            }
         }
         const starts = await within(Promise.all(started), 12000, 'game start');
         assert.notEqual(starts[0].yourIndex, starts[1].yourIndex);
-        assert.equal(starts[0].turn.total, 60000);
+        assert.equal(starts[0].turn.total, (rules.turnSeconds ?? rules.turnTime) * 1000);
+        if (fixture.lobby) assert.equal(starts[0].state.players[starts[0].yourIndex].slot, 0);
         policies.forEach((worker, index) => worker.send({
             type: 'start', game: lobby.sessionId, players: 2, seat: starts[index].yourIndex,
-            settings: { turnTime: config.turnTime, turnCapMs: starts[0].turn.total },
+            settings: { turnTime: rules.turnSeconds ?? rules.turnTime, turnCapMs: starts[0].turn.total },
         }));
         let state = starts[0].state, moves = 0;
         let turnDeadline = Date.now() + starts[0].turn.left;
@@ -191,13 +209,52 @@ async function play(fixture, accounts, save) {
         const { body: game } = await request('/api/games/' + record.id);
         assert.equal(game.version, version);
         assert.deepEqual(game.players.map(p => p.name).sort(), bots.map(b => b.name).sort());
-        assert(game.players.every(p => config.ranked ? typeof p.mmrShift === 'number' : p.mmrShift === null));
+        assert(game.players.every(p => rules.ranked ? typeof p.mmrShift === 'number' : p.mmrShift === null));
+        if (fixture.lobby) assert.equal(record.id, fixture.gameId);
         const won = name => Boolean(game.players.find(p => p.name === name)?.isWinner);
         const score = won(fixture.a) === won(fixture.b) ? 0.5 : Number(won(fixture.a));
         return { gameId: record.id, rounds: game.rounds, score, refusals };
     } finally {
         for (const policy of policies) policy.close();
         for (const socket of sockets) socket.disconnect();
+    }
+}
+
+async function login(bot) {
+    const session = await request('/api/auth/bot', null, { token: bot.token });
+    assert.equal(session.body.username, bot.name);
+    assert(session.cookie, 'server set a bot session cookie');
+    bot.cookie = session.cookie;
+    bot.loginTime = Date.now();
+}
+
+async function repeat(accounts) {
+    const key = process.env.ARENA_PREVIEW_WORKER_KEY;
+    if (!key) throw new Error('ARENA_PREVIEW_WORKER_KEY is required');
+    const bots = [...accounts.values()].map(({ name, build }) => ({ name, build }));
+    console.log('Arena worker available for ' + bots.map(bot => bot.name).join(', '));
+    for (;;) {
+        try {
+            const { body: wave } = await request('/api/arena-preview/worker/next', null, { bots },
+                { Authorization: 'Bearer ' + key });
+            if (wave.fixtures.length) {
+                assert.equal(wave.version, version, 'the worker engine must match the tournament');
+                const playing = [...new Set(wave.fixtures.flatMap(f => [f.a, f.b]))];
+                await Promise.all(playing.map(async name => {
+                    const bot = accounts.get(name);
+                    if (!bot.loginTime || Date.now() - bot.loginTime > 3600000) await login(bot);
+                }));
+                const results = await Promise.allSettled(wave.fixtures.map(async fixture => {
+                    const outcome = await play(fixture, accounts, null, wave);
+                    console.log(JSON.stringify({ round: fixture.round, leg: fixture.leg, a: fixture.a, b: fixture.b, ...outcome }));
+                }));
+                for (const result of results) if (result.status === 'rejected') console.error(result.reason.message);
+                if (results.every(result => result.status === 'fulfilled')) continue;
+            }
+        } catch (err) {
+            console.error('[Arena worker]', err.message);
+        }
+        await delay(5000);
     }
 }
 
@@ -213,10 +270,13 @@ async function main() {
     config.ranked = roster?.ranked === true;
     for (const bot of accounts.values()) {
         Object.assign(bot, roster?.bots.find(spec => spec.name === bot.name) || { command: [source, ...bot.args] });
-        const login = await request('/api/auth/bot', null, { token: bot.token });
-        assert.equal(login.body.username, bot.name);
-        assert(login.cookie, 'server set a bot session cookie');
-        bot.cookie = login.cookie;
+    }
+    if (journal === '--repeat') {
+        assert(roster, 'repeat mode requires a named roster');
+        return repeat(accounts);
+    }
+    for (const bot of accounts.values()) {
+        await login(bot);
         if (roster) {
             const entry = await request('/api/arena-preview/opt-in', bot.cookie);
             assert.equal(entry.body.optedIn, true, bot.name + ' must opt in before kickoff');

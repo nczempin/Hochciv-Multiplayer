@@ -1,8 +1,8 @@
-/* Bot Arena mockup. Rendering reads the example tournament records from arena-preview-data.js. */
+/* Bot Arena results and live fixtures, with sample data for an empty preview. */
 (function () {
     'use strict';
 
-    const { events: examples, bots, roundRobin } = window.HC_ARENA_PREVIEW_DATA;
+    const { events: examples } = window.HC_ARENA_PREVIEW_DATA;
     const recentLimit = 5;
     const T = (de, ...args) => HC_I18N.t(de, ...args);
     const fmtDate = date => new Date(date).toLocaleDateString(HC_I18N.locale(), { dateStyle: 'medium', timeZone: 'UTC' });
@@ -15,18 +15,27 @@
         const bots = new Map(event.entrants.map(name => [name, {
             name, build: event.builds?.[name], points: 0, sonnebornBerger: 0, record: [0, 0, 0], opponents: new Map(),
         }]));
+        const decided = event.fixtures.filter(f => f.score !== null);
+        const completedPairs = new Map();
+        if (event.doubleHeader) {
+            for (const { pair } of decided) completedPairs.set(pair, (completedPairs.get(pair) || 0) + 1);
+        }
+        const scoring = event.doubleHeader ? decided.filter(f => completedPairs.get(f.pair) === 2) : decided;
         for (const { a, b, score, state } of event.fixtures) {
             const first = bots.get(a), second = bots.get(b);
-            first.opponents.set(b, { score, state });
-            second.opponents.set(a, { score: score === null ? null : 1 - score, state });
-            if (score === null) continue;
+            if (!first.opponents.has(b)) first.opponents.set(b, []);
+            if (!second.opponents.has(a)) second.opponents.set(a, []);
+            first.opponents.get(b).push({ score, state });
+            second.opponents.get(a).push({ score: score === null ? null : 1 - score, state });
+        }
+        for (const { a, b, score } of scoring) {
+            const first = bots.get(a), second = bots.get(b);
             first.points += score;
             second.points += 1 - score;
             first.record[2 - 2 * score]++;
             second.record[2 * score]++;
         }
-        for (const { a, b, score } of event.fixtures) {
-            if (score === null) continue;
+        for (const { a, b, score } of scoring) {
             const first = bots.get(a), second = bots.get(b);
             first.sonnebornBerger += score * second.points;
             second.sonnebornBerger += (1 - score) * first.points;
@@ -57,11 +66,12 @@
     }
 
     function fixturesHtml(event) {
-        return table([T('Begegnungen'), T('Runde'), T('Ergebnis')], event.fixtures.map(f => {
+        return table([T('Begegnungen'), T('Runde'), ...(event.doubleHeader ? [T('Partie')] : []), T('Ergebnis')], event.fixtures.map(f => {
             const result = f.score === null ? T(states[f.state]) : `${formatPoints(f.score)}–${formatPoints(1 - f.score)}`;
             const action = f.watch ? ` <a href="${esc(MP.inviteUrl(f.watch.code, f.watch.password))}">${esc(T('Zuschauen'))}</a>`
                 : f.replay ? ` <a href="?replay=${encodeURIComponent(f.replay)}">${esc(T('Wiederholung'))}</a>` : '';
-            return `<tr><td>${esc(f.a)} – ${esc(f.b)}</td><td>${f.round}</td><td>${esc(result)}${action}</td></tr>`;
+            return `<tr><td>${esc(f.a)} – ${esc(f.b)}</td><td>${f.round}</td>
+                ${event.doubleHeader ? `<td>${f.leg}/2</td>` : ''}<td>${esc(result)}${action}</td></tr>`;
         }).join(''));
     }
 
@@ -71,11 +81,11 @@
 
     function crossCell(bot, opponent) {
         if (bot.name === opponent.name) return `<td class="ba-self" aria-label="${esc(T('Gleicher Bot'))}">—</td>`;
-        const fixture = bot.opponents.get(opponent.name);
-        if (!fixture || fixture.state === 'scheduled') return `<td class="ba-pending" aria-label="${esc(T('Geplant'))}">…</td>`;
-        if (fixture.state === 'live') return `<td class="ba-live" aria-label="${esc(T('Läuft'))}">Live</td>`;
-        const [mark, label] = outcomes[fixture.score];
-        return `<td aria-label="${esc(T(label))}">${mark}</td>`;
+        const fixtures = bot.opponents.get(opponent.name) || [{ state: 'scheduled' }];
+        const marks = fixtures.map(fixture => fixture.state === 'scheduled' ? ['…', 'Geplant']
+            : fixture.state === 'live' ? ['Live', 'Läuft'] : outcomes[fixture.score]);
+        return `<td aria-label="${esc(marks.map(([, label]) => T(label)).join(' / '))}">
+            ${marks.map(([mark]) => mark).join(' · ')}</td>`;
     }
 
     function crossTableHtml(bots) {
@@ -111,7 +121,7 @@
         const finished = event.fixtures.filter(f => f.state === 'finished').length;
         const content = tab === 'cross-table' ? crossTableHtml(ranks) : tab === 'fixtures' ? fixturesHtml(event) : standingsHtml(ranks);
         const onlyEvent = recent.length === 1 && !older.length;
-        const conditions = [event.wonders === false && T('Ohne Weltwunder'),
+        const conditions = [event.doubleHeader && T('Gespiegelte Doppelpaarungen'), event.wonders === false && T('Ohne Weltwunder'),
             event.expCivs === false && T('Ohne experimentelle Zivilisationen'),
             typeof event.ranked === 'boolean' && T(event.ranked ? 'Gewertet' : 'Ungewertet')].filter(Boolean);
         return `${onlyEvent || older.includes(event) ? `<h3>${esc(event.name)} · ${esc(fmtDate(event.date))}</h3>` : ''}
@@ -127,27 +137,27 @@
     async function open() {
         modal(T('Bot-Arena (Vorschau)'), `<div id="ba-box">
             <div class="ba-head ba-meta"><span class="sub" id="ba-source"></span>
-                <button class="ba-link" type="button" data-ba-organizer disabled>${esc(T('Veranstalteransicht'))}</button></div>
+                ${['admin', 'superadmin', 'tournamentdirector'].includes(MP.user?.role) ? `<a class="ba-link" href="/client/admin.html#arena">${esc(T('Veranstalteransicht'))}</a>` : ''}</div>
             <div id="ba-event"><p class="sub">${esc(T('Lade...'))}</p></div></div>`);
         document.getElementById('overlay')?.classList.add('wide');
         const box = document.getElementById('ba-event');
-        let records;
-        try {
+        async function read() {
             const response = await fetch('/api/arena-preview/tournaments', { cache: 'no-store' });
             if (!response.ok) throw new Error('Tournament request failed');
-            records = await response.json();
+            return response.json();
+        }
+        let records;
+        try {
+            records = await read();
         } catch {
             box.textContent = T('Fehler beim Laden der Turnierergebnisse.');
             return;
         }
         if (!box.isConnected) return;
-        const events = records.length ? records : examples;
-        const recent = events.slice(0, recentLimit);
-        const older = events.slice(recentLimit);
+        let events = records.length ? records : examples;
+        let recent = events.slice(0, recentLimit);
+        let older = events.slice(recentLimit);
         document.getElementById('ba-source').textContent = T(records.length ? 'Turnierergebnisse' : 'Beispieldaten');
-        const organizer = document.querySelector('[data-ba-organizer]');
-        organizer.disabled = false;
-        organizer.addEventListener('click', () => openOrganizer(records[0]?.entrants || bots));
         let recentEvent = recent[0], event = recentEvent, tab = 'standings';
         const draw = focus => {
             box.innerHTML = event ? tournamentHtml(event, tab, recent, older) : archiveHtml(older);
@@ -189,80 +199,28 @@
             }
         });
         draw();
-    }
-
-    function openOrganizer(entrants) {
-        const draftKey = 'hochciv.arenaPreviewDraft';
-        const kinds = [['scheduled', 'Fester Termin'], ['after', 'Nach Ende des vorigen Turniers']];
-        const maps = [['tiled', 'Plättchenkarte'], ['original', 'Originalkarte']];
-        const options = values => values.map(([key, label]) => `<option value="${key}">${esc(T(label))}</option>`).join('');
-        modal(T('Turnier planen'), `<div id="ba-box">
-            <div class="ba-meta"><button class="ba-link" type="button" id="ba-organizer-back">← ${esc(T('Bot-Arena (Vorschau)'))}</button>
-                <span class="sub">${esc(T('Beispieldaten'))}</span></div>
-            <p class="sub">${esc(T('Jeder gegen jeden'))} · 1v1 Live · ${esc(T('Eine Partie pro Paarung'))}</p>
-            <form id="ba-organizer-form">
-                <div class="ba-fields">
-                    <label>${esc(T('Turniername'))}<input name="name" value="November Cup" required maxlength="80"></label>
-                    <label>${esc(T('Karte'))}<select name="map">${options(maps)}</select></label>
-                    <label>${esc(T('Sekunden pro Zug'))}<input name="clock" type="number" value="60" min="1" required></label>
-                    <label>${esc(T('Turnierstart'))}<select name="startPolicy">${options(kinds)}</select></label>
-                    <label id="ba-start-row">${esc(T('Startzeit (Berlin)'))}<input name="start" type="datetime-local" required value="2026-11-28T18:00"></label>
-                    <label>${esc(T('Minuten zwischen Rundenstarts'))}<input name="interval" type="number" value="20" min="1" required></label>
-                    <label>${esc(T('Karenz für nicht erschienene Bots (Min.)'))}<input name="grace" type="number" value="2" min="0" required></label>
-                </div>
-                <label class="ba-check"><input name="ranked" type="checkbox" checked> ${esc(T('Gespielte Partien für Bot-MMR werten'))}</label>
-                <p class="sub" id="ba-ranked-note" hidden>${esc(T('Gewertete Spiele werden auf der Plättchenkarte gespielt.'))}</p>
-                <p id="ba-plan" aria-live="polite"></p>
-                <p class="sub">${esc(T('Die Spielversion wird beim Start festgelegt.'))}
-                    ${esc(T('Kampflose Siege zählen für den Turnierstand. Der Bot kann in späteren Runden wieder antreten.'))}</p>
-                <button type="submit" class="btn primary">${esc(T('Entwurf speichern'))}</button>
-                <output aria-live="polite"></output>
-            </form></div>`);
-        document.getElementById('overlay')?.classList.add('wide');
-        document.getElementById('ba-organizer-back').addEventListener('click', open);
-        const form = document.getElementById('ba-organizer-form');
-        const fields = [...form.elements].filter(field => field.name);
-        const output = form.querySelector('output');
-        const start = form.elements.start;
-        const interval = form.elements.interval;
-        const ranked = form.elements.ranked;
-        const fixtures = roundRobin(entrants);
-        const rounds = new Set(fixtures.map(fixture => fixture.round)).size;
-
-        function updatePlan() {
-            start.disabled = form.elements.startPolicy.value === 'after';
-            document.getElementById('ba-start-row').hidden = start.disabled;
-            ranked.disabled = form.elements.map.value === 'original';
-            document.getElementById('ba-ranked-note').hidden = !ranked.disabled;
-            if (ranked.disabled) ranked.checked = false;
-            document.getElementById('ba-plan').textContent = interval.validity.valid
-                ? T('%s Bots · %s Runden · %s Begegnungen · %s Min. geplant', entrants.length, rounds, fixtures.length, rounds * interval.valueAsNumber)
-                : '';
-        }
-
-        try {
-            const draft = JSON.parse(localStorage.getItem(draftKey)) || {};
-            for (const field of fields) {
-                if (!(field.name in draft)) continue;
-                if (field.type === 'checkbox') field.checked = draft[field.name];
-                else field.value = draft[field.name];
-            }
-        } catch { /* A missing or inaccessible local draft leaves the form at its defaults. */ }
-        form.addEventListener('input', () => {
-            output.textContent = '';
-            updatePlan();
-        });
-        form.addEventListener('submit', e => {
-            e.preventDefault();
-            const draft = Object.fromEntries(fields.map(field => [field.name, field.type === 'checkbox' ? field.checked : field.value]));
+        if (!records.length) return;
+        let refreshing = false;
+        let prior = JSON.stringify(records);
+        const timer = setInterval(async () => {
+            if (!box.isConnected) { clearInterval(timer); return; }
+            if (refreshing || document.hidden || document.activeElement?.id === 'ba-picker') return;
+            refreshing = true;
             try {
-                localStorage.setItem(draftKey, JSON.stringify(draft));
-                output.textContent = T('Entwurf in diesem Browser gespeichert.');
-            } catch {
-                output.textContent = T('Der Entwurf konnte nicht gespeichert werden.');
-            }
-        });
-        updatePlan();
+                const latest = await read();
+                const current = JSON.stringify(latest);
+                if (!box.isConnected || !latest.length || current === prior) return;
+                const latestEvent = event && event === events[0];
+                events = latest;
+                recent = events.slice(0, recentLimit);
+                older = events.slice(recentLimit);
+                if (event) event = latestEvent ? events[0] : events.find(item => item.id === event.id) || events[0];
+                recentEvent = event || recent[0];
+                prior = current;
+                draw(document.activeElement?.dataset.tab ? `[data-tab="${tab}"]` : undefined);
+            } catch { /* Keep the last loaded results until the server is reachable again. */ }
+            finally { refreshing = false; }
+        }, 5000);
     }
 
     window.HC_ARENA_PREVIEW = { open };

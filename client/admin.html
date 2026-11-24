@@ -23,6 +23,7 @@
             <p class="acc-nav-h">Admin</p>
             <button class="nav-tab admin-tab" data-target="tab-admin-dashboard" hidden>Übersicht</button>
             <button class="nav-tab admin-tab" data-target="tab-admin-running" hidden>Laufende Spiele</button>
+            <button class="nav-tab" id="admin-arena-tab" data-target="tab-admin-arena" hidden>Bot-Arena</button>
             <button class="nav-tab admin-tab" data-target="tab-admin-games" hidden>Beendete Spiele</button>
             <button class="nav-tab admin-tab" data-target="tab-admin-stats" hidden>Statistiken</button>
             <button class="nav-tab admin-tab" data-target="tab-admin-perf" hidden>Leistung</button>
@@ -36,6 +37,29 @@
         <main class="acc-main">
             <!-- review admin (routes/admin.js readOnly): sees everything, changes nothing -->
             <p id="admin-readonly-note" class="acc-readonly-note" hidden>Review-Admin: Du siehst alles, kannst aber nichts ändern.</p>
+            <section id="tab-admin-arena" class="tab-content">
+                <h1 class="acc-h">Bot-Arena</h1>
+                <div class="acc-card">
+                    <p id="admin-arena-state" aria-live="polite">Lade...</p>
+                    <p id="admin-arena-progress"></p>
+                    <form id="admin-arena-form" hidden>
+                        <label class="acc-check">
+                            Sekunden pro Zug
+                            <select name="turnSeconds" aria-label="Sekunden pro Zug">
+                                <option value="60">60</option><option value="120">120</option>
+                                <option value="180">180</option><option value="300">300</option><option value="600">600</option>
+                            </select>
+                        </label>
+                        <label class="acc-check"><input type="checkbox" name="ranked">Gespielte Partien für Bot-MMR werten</label>
+                        <label class="acc-check"><input type="checkbox" name="doubleHeader">Gespiegelte Doppelpaarungen</label>
+                        <p class="acc-lede">Änderungen gelten ab dem nächsten Turnier.</p>
+                        <button type="submit" class="btn small" value="save">Speichern</button>
+                        <button type="submit" class="btn small primary" value="start">Turnierserie starten</button>
+                        <button type="submit" class="btn small" value="drain">Nach diesem Turnier stoppen</button>
+                        <output id="admin-arena-message" aria-live="polite"></output>
+                    </form>
+                </div>
+            </section>
             <!-- Overview: server status, global switches, open lobbies -->
             <section id="tab-admin-dashboard" class="tab-content">
                 <h1 class="acc-h">Übersicht</h1>

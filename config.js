@@ -44,6 +44,7 @@ module.exports = {
     // drop, phone in the background – R-12); then the seat is freed, a host's lobby handed over
     LOBBY_GRACE_MS: Number(process.env.LOBBY_GRACE_MS) > 0 ? Number(process.env.LOBBY_GRACE_MS) : 45 * 1000,
     // Turn timer of live games: the host's seconds are multiplied by this (tests: e.g. 0.05)
+    LIVE_TURN_TIMES: [0, 60, 120, 180, 300, 600],
     TURN_TIMER_SCALE: Number(process.env.TURN_TIMER_SCALE) > 0 ? Number(process.env.TURN_TIMER_SCALE) : 1,
     // … and after this many timed-out turns in a row the KI keeps the seat (tests: 2 – shorter games)
     TURN_TIMER_AFK_AFTER: Number(process.env.TURN_TIMER_AFK_AFTER) >= 1 ? Number(process.env.TURN_TIMER_AFK_AFTER) : 3,
