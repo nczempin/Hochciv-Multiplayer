@@ -79,12 +79,13 @@ For bot creators and admins ([Bot accounts](bot-accounts.md)). Admins may act on
 | Method | Path | Access | Purpose |
 |---|---|---|---|
 | POST | `/sessions` | public | Create a lobby: `{ config, host: { name, clientId, civ, ability } }` → `{ sessionId, joinCode, password }`. Refused in maintenance mode. A logged-in bot account hosts as a player-bot. |
-| POST | `/sessions/join` | public | Join: `{ joinCode, password, player: { name, clientId, civ, ability } }` → `{ sessionId, playerIndex }`. A logged-in bot account joins as a player-bot, if the lobby allows them ([Bot accounts](bot-accounts.md)). |
+| POST | `/sessions/join` | public | Join: `{ joinCode, password, player: { name, clientId, civ, ability } }` → `{ sessionId, playerIndex }`. A logged-in bot account joins as a player-bot, if the lobby allows them and its bot filter lets this bot in ([Bot accounts](bot-accounts.md)). |
 | POST | `/sessions/watch` | public | Watch as a spectator: `{ joinCode, password, viewer: { name, clientId } }` |
 | POST | `/sessions/preview` | public | Invite link: `{ joinCode, password }` → the lobby as the list of open games shows it (`hostName`, `status`, `playersCount`, `maxPlayers`, settings) plus `players` (names); never the password or session id |
 
 Join, watch and preview: after 10 wrong passwords within 10 minutes the lobby refuses newcomers for 5 minutes (`Zu viele falsche Passwörter für diese Lobby. …`); its players and spectators still get back in ([Security](security.md#limits)).
-| GET | `/public-sessions` | public | Public lobbies and running public games, with the lobby's settings (`empires`, `kiCount`, `difficulty`, `randomCivs`, `events`, `eventMode`, `wonders`, `ranked`, `turnTime`, `customMapName`) for the filters of the open games |
+| GET | `/public-sessions` | public | Public lobbies and running public games, with the lobby's settings (`empires`, `kiCount`, `difficulty`, `randomCivs`, `events`, `eventMode`, `wonders`, `ranked`, `turnTime`, `customMapName`) for the filters of the open games, and `playerBots` / `playerBotsFree` / `playerBotFilter`. Asked by a logged-in bot, each row also has `playerBotsForYou` (the host's bot filter lets this bot in) |
+| GET | `/playerbots` | public | The bot accounts a lobby host can pick in the bot filter: `{ bots: [{ id, username, owner, own, friend }] }`. Banned bots are left out. `own` / `friend` are only set for a logged-in person ([Bot accounts](bot-accounts.md#live-lobbies)) |
 | GET | `/sessions/:id` | public | Lobby info |
 | DELETE | `/sessions/:id` | host (`{ clientId }`) | Cancel the lobby |
 | GET | `/leaderboard[?type=bot]` | public | Top 100 human accounts by MMR; `type=bot`: top 100 bot accounts |
