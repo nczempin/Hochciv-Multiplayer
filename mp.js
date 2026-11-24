@@ -1812,6 +1812,18 @@ const MP = {
             });
             const data = await res.json();
             if (!res.ok) return toast(data.error ? TXS(data.error) : TX('Fehler beim Beitritt.'));
+            // over already (#208) – fast bot games end before anyone clicks: the replay instead
+            if (data.ended) {
+                if (data.gameId && data.replay) {
+                    toast(TX('Das Spiel ist schon zu Ende – die Wiederholung wird geöffnet.'));
+                    if (typeof REPLAY !== 'undefined') REPLAY.open(data.gameId);
+                    else location.href = '/?replay=' + encodeURIComponent(data.gameId);
+                } else {
+                    toast(TX('Das Spiel ist schon zu Ende.'));
+                    if ($('mph-tabs')) this.hubLoad();               // the stale list: drop the game
+                }
+                return;
+            }
             this.sessionId = data.sessionId;
             this.joinCode = joinCode.toUpperCase();
             this.password = password;
