@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('node:fs/promises');
 const { Game, Replay } = require('../models');
+const sessions = require('../sessions');
 
 const router = express.Router();
 
@@ -19,7 +20,10 @@ router.get('/tournaments', async (_req, res) => {
     }
     try {
         const events = Array.isArray(journalContents) ? journalContents : [journalContents];
-        res.json(await Promise.all(events.map(tournament)));
+        const live = new Map(sessions.getPublicSessions()
+            .filter(game => game.status === 'playing' || game.status === 'placement')
+            .map(game => [game.id, game]));
+        res.json(await Promise.all(events.map(event => tournament(event, live))));
     } catch (err) {
         console.error('[Arena Preview] Cannot resolve tournament matches:', err);
         res.status(500).json({ error: 'Serverfehler' });
@@ -32,7 +36,7 @@ router.get('/opt-in', (req, res) => {
     res.json({ optedIn: req.user.arenaOptIn });
 });
 
-async function tournament(event) {
+async function tournament(event, live) {
     const ids = event.fixtures.map(f => f.gameId).filter(Boolean);
     const [games, replays] = await Promise.all([
         Game.findAll({ where: { id: ids }, attributes: ['id', 'version', 'participants'] }),
@@ -40,8 +44,12 @@ async function tournament(event) {
     ]);
     const history = new Map(games.map(game => [game.id, game]));
     const replayIds = new Set(replays.map(replay => replay.gameId));
-    const fixtures = event.fixtures.map(({ a, b, round, gameId }) => {
-        if (!gameId) return { a, b, round, state: 'scheduled', score: null };
+    const fixtures = event.fixtures.map(({ a, b, round, gameId, sessionId }) => {
+        if (!gameId) {
+            const match = live.get(sessionId);
+            const watch = match && { code: match.joinCode, password: match.password };
+            return { a, b, round, state: watch ? 'live' : 'scheduled', score: null, watch };
+        }
         const game = history.get(gameId);
         const pa = game?.participants.find(player => player.name === a);
         const pb = game?.participants.find(player => player.name === b);

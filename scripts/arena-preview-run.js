@@ -97,7 +97,7 @@ function startPolicy(bot) {
     return { send, read, close: () => child.kill() };
 }
 
-async function play(fixture, accounts) {
+async function play(fixture, accounts, save) {
     const bots = [accounts.get(fixture.a), accounts.get(fixture.b)];
     const identities = bots.map(bot => ({ name: bot.name, clientId: randomUUID(), civ: 'random', ability: 'random' }));
     const { body: lobby } = await request('/api/sessions', bots[0].cookie, { config, host: identities[0] });
@@ -123,7 +123,11 @@ async function play(fixture, accounts) {
         const recorded = received(sockets[0], 'game:record');
         let lobbyPlayers;
         sockets[0].on('lobby:player:updated', players => { lobbyPlayers = players; });
+        // Open spectating only after the two intended accounts have taken their seats.
+        await emit(sockets[0], 'lobby:config', { isPublic: true });
         await emit(sockets[0], 'game:start', {});
+        fixture.sessionId = lobby.sessionId;
+        save();
         const { plan, queue, cfg } = await within(placed, 10000, 'tile placement');
         assert.equal(cfg.turnTime, 60);
         assert.equal(cfg.mapKey, 'random');
@@ -237,7 +241,7 @@ async function main() {
     const rounds = Map.groupBy(event.fixtures.filter(fixture => !fixture.gameId), fixture => fixture.round);
     for (const [round, fixtures] of rounds) {
         const outcomes = await Promise.allSettled(fixtures.map(async fixture => {
-            const outcome = await play(fixture, accounts);
+            const outcome = await play(fixture, accounts, save);
             Object.assign(fixture, outcome);
             save();
             console.log(JSON.stringify({ round, a: fixture.a, b: fixture.b, ...outcome }));

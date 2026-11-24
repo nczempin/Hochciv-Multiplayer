@@ -51,8 +51,9 @@
     function fixturesHtml(event) {
         return table([T('Begegnungen'), T('Runde'), T('Ergebnis')], event.fixtures.map(f => {
             const result = f.score === null ? T(states[f.state]) : `${formatPoints(f.score)}–${formatPoints(1 - f.score)}`;
-            const replay = f.replay ? ` <a href="?replay=${encodeURIComponent(f.replay)}">${esc(T('Wiederholung'))}</a>` : '';
-            return `<tr><td>${esc(f.a)} – ${esc(f.b)}</td><td>${f.round}</td><td>${esc(result)}${replay}</td></tr>`;
+            const action = f.watch ? ` <a href="${esc(MP.inviteUrl(f.watch.code, f.watch.password))}">${esc(T('Zuschauen'))}</a>`
+                : f.replay ? ` <a href="?replay=${encodeURIComponent(f.replay)}">${esc(T('Wiederholung'))}</a>` : '';
+            return `<tr><td>${esc(f.a)} – ${esc(f.b)}</td><td>${f.round}</td><td>${esc(result)}${action}</td></tr>`;
         }).join(''));
     }
 
