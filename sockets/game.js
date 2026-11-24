@@ -814,12 +814,13 @@ function beginGame(io, session) {
     if (gc.ranked && session.players.filter(p => p.kind === 'human').length < 2)
         return 'Gewertete Spiele brauchen mindestens 2 Spieler.';
     // … and they are rated between different people: no guest seats (a second tab of the host
-    // would just resign), no account twice and no bot against its owner
+    // would just resign) and no account twice; a bot account is a player of its own, also against
+    // its owner
     if (gc.ranked) {
         const seats = session.players.filter(p => p.kind === 'human');
         if (seats.some(p => !p.dbUserId)) return 'Gewertete Spiele gibt es nur mit angemeldeten Spielern.';
-        const persons = seats.map(p => p.dbOwnerId || p.dbUserId);
-        if (new Set(persons).size !== persons.length) return 'In gewerteten Spielen spielt niemand gegen sich selbst oder den eigenen Bot.';
+        const accounts = seats.map(p => p.dbUserId);
+        if (new Set(accounts).size !== accounts.length) return 'In gewerteten Spielen spielt niemand gegen sich selbst.';
     }
     gc.playerCount = total;
     gc.duel = total === 2;
@@ -1413,8 +1414,8 @@ async function processGameOverMmr(session, io, sessionId, isRanked = false) {
         }
 
         // One account on several seats would rate itself against itself – no MMR then; a bot
-        // account counts as its owner (as in startGame)
-        const userIds = session.players.filter(lp => !lp.resigned && lp.dbUserId).map(lp => lp.dbOwnerId || lp.dbUserId);
+        // account rates as a player of its own, also against its owner (as in startGame)
+        const userIds = session.players.filter(lp => !lp.resigned && lp.dbUserId).map(lp => lp.dbUserId);
         if (isRanked && new Set(userIds).size !== userIds.length) {
             console.warn(`[Stats] Game ${sessionId}: one account held several seats – not rated.`);
             isRanked = false;

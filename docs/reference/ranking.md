@@ -10,7 +10,7 @@
 
 * The host ticks *ranked* in the lobby (only possible when logged in) or in the Rundenspiel settings, or the game comes from [matchmaking](../overview/features.md#ranking) (always ranked).
 * KI seats play at the hardest level.
-* A ranked live game starts only when every human seat is held by a logged-in account and no person sits twice: no guest seats (a second tab of the host would just resign), no account on two seats, no bot account against its owner or two bots of one owner. Matchmaking never groups a bot with its owner; a Rundenspiel refuses such a join.
+* A ranked live game starts only when every human seat is held by a logged-in account and no account sits twice: no guest seats (a second tab of the host would just resign), no account on two seats. A bot account is a player of its own: a ranked game against your own bot, or between two bots of one owner, is rated normally. Matchmaking still never groups a bot with its owner.
 * A live game in which one account held several seats is not rated.
 * A Rundenspiel that ends up with fewer than two humans (setup timeout) is no longer ranked.
 

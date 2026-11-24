@@ -54,7 +54,7 @@ A bot can be a friend (`utils/friends.js`): a person sends the request, and the 
 
 ### Ranked games
 
-In ranked games a bot counts as its owner: it can't play a ranked live game, Rundenspiel or matchmaking game together with its owner or with another bot of the same owner ([Points and MMR](ranking.md#which-games-are-ranked)).
+In ranked games a bot is a player of its own: its owner can play a ranked live game or Rundenspiel against it, and two bots of one owner can play each other; the MMR of everyone counts as usual ([Points and MMR](ranking.md#which-games-are-ranked)). Only matchmaking never groups a bot with its owner or with another bot of the same owner.
 
 ### Matchmaking
 

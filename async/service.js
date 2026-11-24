@@ -487,24 +487,9 @@ async function info(user, id, code) {
     return L.summary(e.g, user.id);
 }
 
-/**
- * Ranked games are only rated between different people: a bot account counts as its owner. True if
- * `user` (or its owner, or one of its bots) already holds a seat of `g`.
- */
-async function samePersonSeated(g, user) {
-    const ids = g.seats.map(s => s.userId).filter(Boolean);
-    if (!ids.length) return false;
-    const rows = await User.findAll({ where: { id: ids }, attributes: ['id', 'ownerId'] });
-    const persons = new Set(rows.map(r => r.ownerId || r.id));
-    return persons.has(user.ownerId || user.id);
-}
-
 function join(user, id, body) {
     return withGame(id, async g => {
         if (!canSee(g, user.id, body && body.code)) return { error: 'Kein Zugriff auf dieses Spiel.' };
-        if (g.config.ranked && await samePersonSeated(g, user)) {
-            return { error: 'In gewerteten Spielen spielt niemand gegen den eigenen Bot.' };
-        }
         const err = L.join(g, userOf(user), body || {});
         return err ? { error: err } : { ok: true };
     });

@@ -51,7 +51,7 @@ CORS follows the same rule (`server.js`): only these origins get `Access-Control
 * Action parameters are plain values (`engine-adapter.js` `checkParams`): coordinates and ids (`r`, `c`, `cityId`, `armyId`, `target`) must be integers, coordinates on the map; tech/wonder keys are short identifiers; counts small positive integers. The engine compares positions with `===`, so a string coordinate would slip past its occupied-tile and stacking rules. The start-tile placement (`o`, `cell`) is checked the same way.
 * Once a live game has started, a seat stays bound to the account that held it at the start: a reconnect with the seat's `clientId` from another account is refused, so a result (MMR) can't be booked to another account. Before the start, the seat takes over the login of whoever connects with it.
 * Lobbies need code **and** 6-digit password.
-* Ranked games are rated between different logged-in people only: no guest seats, no account twice, no bot with its owner ([Points and MMR](ranking.md#which-games-are-ranked)).
+* Ranked games are rated between different logged-in people only: no guest seats, no account twice. A bot plays rated against its owner too – a deliberate choice: an owner could farm MMR with a weak bot of their own ([Points and MMR](ranking.md#which-games-are-ranked)).
 * Custom maps are checked with `checkCustomMap` and only a clean copy is stored.
 * Public endpoints (profiles, matches, replays) only return public data: names, nations, points, MMR.
 
