@@ -13,7 +13,7 @@
 
     function eventResults(event) {
         const bots = new Map(event.entrants.map(name => [name, {
-            name, build: event.builds?.[name], points: 0, record: [0, 0, 0], opponents: new Map(),
+            name, build: event.builds?.[name], points: 0, sonnebornBerger: 0, record: [0, 0, 0], opponents: new Map(),
         }]));
         for (const { a, b, score, state } of event.fixtures) {
             const first = bots.get(a), second = bots.get(b);
@@ -25,7 +25,14 @@
             first.record[2 - 2 * score]++;
             second.record[2 * score]++;
         }
-        return [...bots.values()].sort((a, b) => b.points - a.points || a.name.localeCompare(b.name));
+        for (const { a, b, score } of event.fixtures) {
+            if (score === null) continue;
+            const first = bots.get(a), second = bots.get(b);
+            first.sonnebornBerger += score * second.points;
+            second.sonnebornBerger += (1 - score) * first.points;
+        }
+        return [...bots.values()].sort((a, b) =>
+            b.points - a.points || b.sonnebornBerger - a.sonnebornBerger || a.name.localeCompare(b.name));
     }
 
     function table(headers, rows, className = '') {
@@ -38,13 +45,14 @@
     function standingsHtml(bots) {
         let rank = 0;
         let previous = null;
-        return table(['#', T('Name'), T('Spiele'), T('S–U–N'), T('Punkte')], bots.map((bot, i) => {
-            if (bot.points !== previous) rank = i + 1;
-            previous = bot.points;
+        return table(['#', T('Name'), T('Spiele'), T('S–U–N'), T('Punkte'), 'Sonneborn–Berger'], bots.map((bot, i) => {
+            if (bot.points !== previous?.points || bot.sonnebornBerger !== previous?.sonnebornBerger) rank = i + 1;
+            previous = bot;
             const played = bot.record.reduce((a, b) => a + b, 0);
             const build = bot.build ? `<small class="ba-build">${esc(bot.build)}</small>` : '';
             return `<tr><td>${rank}</td><th scope="row">${esc(bot.name)}${build}</th><td>${played}</td>
-                <td>${bot.record.join('–')}</td><td><b>${esc(formatPoints(bot.points))}</b></td></tr>`;
+                <td>${bot.record.join('–')}</td><td><b>${esc(formatPoints(bot.points))}</b></td>
+                <td>${esc(formatPoints(bot.sonnebornBerger))}</td></tr>`;
         }).join(''));
     }
 
