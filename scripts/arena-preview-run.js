@@ -99,7 +99,8 @@ function startPolicy(bot) {
 }
 
 async function play(fixture, accounts, save, rules = config) {
-    const bots = [accounts.get(fixture.a), accounts.get(fixture.b)];
+    const bots = [fixture.a, fixture.b].filter(name => name !== fixture.ki).map(name => accounts.get(name));
+    const ranked = fixture.ranked ?? rules.ranked;
     const identities = fixture.identities || bots.map(bot => ({
         name: bot.name, clientId: randomUUID(), civ: 'random', ability: 'random',
     }));
@@ -117,7 +118,7 @@ async function play(fixture, accounts, save, rules = config) {
             joinCode: lobby.joinCode, password: lobby.password, player: identities[1],
         });
         const started = [];
-        let placed, recorded, lobbyPlayers, hostIndex;
+        let placed, recorded, lobbyPlayers, hostIndex, latest;
         for (let i = 0; i < bots.length; i++) {
             const { socket, bound } = await openSocket(bots[i].cookie, lobby, identities[i], socket => {
                 socket.on('turn:timeout', () => { flag = true; });
@@ -126,6 +127,7 @@ async function play(fixture, accounts, save, rules = config) {
                     placed = received(socket, 'placement:start');
                     recorded = received(socket, 'game:record');
                     socket.on('lobby:player:updated', players => { lobbyPlayers = players; });
+                    socket.on('state:update', message => { latest = message; });
                 }
             });
             sockets.push(socket);
@@ -147,10 +149,10 @@ async function play(fixture, accounts, save, rules = config) {
             assert.equal(cfg.mapKey, 'random');
             assert.equal(cfg.wonders, false);
             assert.equal(Boolean(cfg.expCivs), false);
-            assert.equal(cfg.ranked, rules.ranked);
-            assert.equal(queue.length, 2);
+            assert.equal(cfg.ranked, ranked);
+            assert.equal(queue.length, bots.length);
             assert.equal(lobbyPlayers.length, 2);
-            assert(lobbyPlayers.every(player => player.botAccount), 'both seats are player-bot accounts');
+            assert.equal(lobbyPlayers.filter(player => player.botAccount).length, bots.length);
             if (fixture.lobby) assert.equal(cfg.seed, fixture.seed);
             const E = engine.getEngine();
             const setup = engine.rollSetup({ players: lobbyPlayers, gameConfig: cfg }, cfg.seed);
@@ -164,9 +166,9 @@ async function play(fixture, accounts, save, rules = config) {
             }
         }
         const starts = await within(Promise.all(started), 12000, 'game start');
-        assert.notEqual(starts[0].yourIndex, starts[1].yourIndex);
+        if (starts.length === 2) assert.notEqual(starts[0].yourIndex, starts[1].yourIndex);
         assert.equal(starts[0].turn.total, (rules.turnSeconds ?? rules.turnTime) * 1000);
-        if (fixture.lobby) assert.equal(starts[0].state.players[starts[0].yourIndex].slot, 0);
+        if (fixture.lobby) assert.equal(starts[0].state.players[starts[0].yourIndex].slot, bots[0].name === fixture.a ? 0 : 1);
         policies.forEach((worker, index) => worker.send({
             type: 'start', game: lobby.sessionId, players: 2, seat: starts[index].yourIndex,
             settings: { turnTime: rules.turnSeconds ?? rules.turnTime, turnCapMs: starts[0].turn.total },
@@ -177,7 +179,15 @@ async function play(fixture, accounts, save, rules = config) {
             assert(!flag, 'a player reached the server turn clock');
             assert(moves < 3000, 'fixture exceeded the maximum driver action count');
             const index = starts.findIndex(start => start.yourIndex === state.cur);
-            assert(index >= 0, 'only the two bot accounts take turns');
+            if (index < 0) {
+                assert(fixture.ki && state.players[state.cur].kind === 'ki');
+                const prior = JSON.stringify(state);
+                const updated = latest && JSON.stringify(latest.state) !== prior ? latest
+                    : await within(received(sockets[0], 'state:update', msg => JSON.stringify(msg.state) !== prior), 30000, 'KI move');
+                state = updated.state;
+                if (updated.turn?.left != null) turnDeadline = Date.now() + updated.turn.left;
+                continue;
+            }
             const worker = policies[index];
             const leftMs = Math.max(1, turnDeadline - Date.now());
             worker.send({
@@ -208,8 +218,8 @@ async function play(fixture, accounts, save, rules = config) {
         assert(record.replay, 'server saved its normal replay');
         const { body: game } = await request('/api/games/' + record.id);
         assert.equal(game.version, version);
-        assert.deepEqual(game.players.map(p => p.name).sort(), bots.map(b => b.name).sort());
-        assert(game.players.every(p => rules.ranked ? typeof p.mmrShift === 'number' : p.mmrShift === null));
+        assert.deepEqual(game.players.map(p => p.name).sort(), [fixture.a, fixture.b].sort());
+        assert(game.players.every(p => ranked && p.name !== fixture.ki ? typeof p.mmrShift === 'number' : p.mmrShift === null));
         if (fixture.lobby) assert.equal(record.id, fixture.gameId);
         const won = name => Boolean(game.players.find(p => p.name === name)?.isWinner);
         const score = won(fixture.a) === won(fixture.b) ? 0.5 : Number(won(fixture.a));
@@ -228,10 +238,78 @@ async function login(bot) {
     bot.loginTime = Date.now();
 }
 
+function ensureLogin(bot) {
+    if (bot.loginTime && Date.now() - bot.loginTime < 3600000) return;
+    bot.loginPending ||= login(bot).finally(() => { bot.loginPending = null; });
+    return bot.loginPending;
+}
+
+async function playCorrespondence(bot, game) {
+    const socket = io(base, {
+        forceNew: true, reconnection: false, transports: ['websocket'],
+        extraHeaders: { Cookie: bot.cookie, Origin: base },
+    });
+    let worker;
+    try {
+        await within(once(socket, 'connect'), 12000, 'correspondence socket connect');
+        let view = (await emit(socket, 'async:open', { id: game.id })).view;
+        if (view.status === 'placement' && !view.placement.placed) {
+            const { plan, players, setup } = view.placement;
+            const seat = plan.seats.find(seat => seat.idx === view.mySlot);
+            const error = engine.getEngine().kiPlaceSeat(plan, seat, players[view.mySlot], setup);
+            if (error) throw new Error(error);
+            await emit(socket, 'async:place', { id: game.id, o: seat.o, cell: seat.cell });
+            return;
+        }
+        if (view.status !== 'playing' || !view.yourTurn) return;
+        worker = startPolicy(bot);
+        worker.send({ type: 'hello', protocol: 1, engine: { version: view.engine } });
+        assert.equal((await worker.read()).type, 'hello');
+        const softMs = Math.max(1, Math.min(600000, game.deadline - Date.now()));
+        const stop = Date.now() + softMs;
+        worker.send({ type: 'start', game: game.id, seat: view.myIndex, players: 2,
+            settings: { turnTime: softMs / 1000, turnCapMs: softMs } });
+        while (view.status === 'playing' && view.yourTurn) {
+            const leftMs = Math.max(1, stop - Date.now());
+            worker.send({ type: 'act', game: game.id, state: view.state,
+                clock: { leftMs, overheadMs: 350 }, timeout_ms: Math.max(1, leftMs - 350) });
+            const { type, action, message } = await worker.read(Math.max(30000, leftMs));
+            if (type !== 'action') throw new Error(message);
+            const next = received(socket, 'async:update', next => next.id === game.id);
+            await emit(socket, 'async:action', { ...action, id: game.id });
+            view = await within(next, 15000, 'correspondence update');
+        }
+    } finally {
+        worker?.close();
+        socket.disconnect();
+    }
+}
+
+async function serveCorrespondence(bot) {
+    for (;;) {
+        try {
+            await ensureLogin(bot);
+            const { body } = await request('/api/async', bot.cookie);
+            for (const game of body.mine) {
+                if (game.config.arenaLadder && game.yourTurn && game.engine === version) {
+                    await playCorrespondence(bot, game);
+                    console.log(`[Ladder] ${bot.name} played ${game.id} round ${game.round}`);
+                }
+            }
+        } catch (error) {
+            console.error(`[Ladder] ${bot.name}: ${error.message}`);
+        }
+        await delay(15000);
+    }
+}
+
 async function repeat(accounts) {
     const key = process.env.ARENA_PREVIEW_WORKER_KEY;
     if (!key) throw new Error('ARENA_PREVIEW_WORKER_KEY is required');
     const bots = [...accounts.values()].map(({ name, build }) => ({ name, build }));
+    for (const bot of accounts.values()) {
+        if (!bot.externalCorrespondence) void serveCorrespondence(bot);
+    }
     console.log('Arena worker available for ' + bots.map(bot => bot.name).join(', '));
     for (;;) {
         try {
@@ -239,11 +317,8 @@ async function repeat(accounts) {
                 { Authorization: 'Bearer ' + key });
             if (wave.fixtures.length) {
                 assert.equal(wave.version, version, 'the worker engine must match the tournament');
-                const playing = [...new Set(wave.fixtures.flatMap(f => [f.a, f.b]))];
-                await Promise.all(playing.map(async name => {
-                    const bot = accounts.get(name);
-                    if (!bot.loginTime || Date.now() - bot.loginTime > 3600000) await login(bot);
-                }));
+                const playing = [...new Set(wave.fixtures.flatMap(f => f.identities.map(p => p.name)))];
+                await Promise.all(playing.map(name => ensureLogin(accounts.get(name))));
                 const results = await Promise.allSettled(wave.fixtures.map(async fixture => {
                     const outcome = await play(fixture, accounts, null, wave);
                     console.log(JSON.stringify({ round: fixture.round, leg: fixture.leg, a: fixture.a, b: fixture.b, ...outcome }));
@@ -264,7 +339,8 @@ async function main() {
     const homepage = await fetch(base + '/').then(response => response.text());
     assert(homepage.includes('/client/arena-preview.js'), 'server has the Arena preview enabled');
     const accounts = new Map(JSON.parse(fs.readFileSync(0, 'utf8').trim()).map(bot => [bot.name, bot]));
-    assert.equal(accounts.size, 6);
+    if (journal === '--repeat') assert(accounts.size >= 1, 'repeat mode requires an entrant');
+    else assert.equal(accounts.size, 6);
     const roster = source.endsWith('.json') ? JSON.parse(fs.readFileSync(source, 'utf8')) : null;
     if (roster) assert.deepEqual([...accounts.keys()], roster.bots.map(bot => bot.name));
     config.ranked = roster?.ranked === true;

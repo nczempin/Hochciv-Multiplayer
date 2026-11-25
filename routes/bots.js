@@ -40,7 +40,7 @@ function botJson(bot, owner) {
         id: bot.id,
         username: bot.username,
         description: bot.botDescription,
-        ...(process.env.ARENA_PREVIEW === 'on' ? { arenaOptIn: bot.arenaOptIn } : {}),
+        ...(process.env.ARENA_PREVIEW === 'on' ? { arenaOptIn: bot.arenaOptIn, arenaLadderOptIn: bot.arenaLadderOptIn } : {}),
         mmr: bot.mmr,
         gamesPlayed: bot.gamesPlayed,
         createdAt: bot.createdAt,
@@ -140,13 +140,14 @@ router.post('/:id/description', rateLimit, async (req, res) => {
 });
 
 if (process.env.ARENA_PREVIEW === 'on') {
-    router.post('/:id/arena-opt-in', rateLimit, async (req, res) => {
-        const arenaOptIn = req.body?.arenaOptIn;
-        if (typeof arenaOptIn !== 'boolean') return res.status(400).json({ error: 'Ungültige Aktion.' });
+    router.post(['/:id/arena-opt-in', '/:id/ladder-opt-in'], rateLimit, async (req, res) => {
+        const field = req.path.endsWith('/arena-opt-in') ? 'arenaOptIn' : 'arenaLadderOptIn';
+        const optedIn = req.body?.[field];
+        if (typeof optedIn !== 'boolean') return res.status(400).json({ error: 'Ungültige Aktion.' });
         try {
-            const [updated] = await User.update({ arenaOptIn }, { where: managedBotWhere(req) });
+            const [updated] = await User.update({ [field]: optedIn }, { where: managedBotWhere(req) });
             if (!updated) return res.status(404).json({ error: 'Bot nicht gefunden.' });
-            res.json({ arenaOptIn });
+            res.json({ [field]: optedIn });
         } catch (err) {
             console.error('[Bots] Arena opt-in', err);
             res.status(500).json({ error: 'Serverfehler' });

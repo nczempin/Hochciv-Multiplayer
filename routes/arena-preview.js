@@ -4,6 +4,7 @@ const { timingSafeEqual } = require('node:crypto');
 const { Game, Replay } = require('../models');
 const sessions = require('../sessions');
 const arena = require('../utils/arena-preview');
+const ladder = require('../async/ladder');
 const { USERNAME_RE } = require('../utils/auth');
 const { LIVE_TURN_TIMES } = require('../config');
 
@@ -47,13 +48,24 @@ function requireDirector(req, res, next) {
 }
 
 router.get('/schedule', requireDirector, async (_req, res) => res.json(await arena.status()));
-router.post('/schedule', requireDirector, async (req, res) => {
-    const { action, turnSeconds, ranked, doubleHeader } = req.body || {};
-    if (action !== 'drain' && (!['start', 'save'].includes(action) || !LIVE_TURN_TIMES.includes(turnSeconds) ||
-        !turnSeconds || typeof ranked !== 'boolean' || typeof doubleHeader !== 'boolean')) {
+router.get('/ladder', async (req, res) => res.json(await ladder.report(req.query.version)));
+router.get('/ladder/settings', requireDirector, async (_req, res) => res.json(await ladder.settings()));
+router.post('/ladder/settings', requireDirector, async (req, res) => {
+    const { enabled, turnDays, avoidRematches, sameOwnerRanked } = req.body || {};
+    if (![1, 3, 7].includes(turnDays) || [enabled, avoidRematches, sameOwnerRanked].some(v => typeof v !== 'boolean')) {
         return res.status(400).json({ error: 'Ungültige Aktion.' });
     }
-    await arena.configure(action, { turnSeconds, ranked, doubleHeader });
+    res.json(await ladder.configure({ enabled, turnDays, avoidRematches, sameOwnerRanked }));
+});
+router.post('/schedule', requireDirector, async (req, res) => {
+    const { action, turnSeconds, ranked, doubleHeader, ki = {} } = req.body || {};
+    if (action !== 'drain' && (!['start', 'save'].includes(action) || !LIVE_TURN_TIMES.includes(turnSeconds) ||
+        !turnSeconds || typeof ranked !== 'boolean' || typeof doubleHeader !== 'boolean' ||
+        !ki || typeof ki !== 'object' || Array.isArray(ki) || Object.entries(ki).some(([level, entry]) =>
+            !Object.hasOwn(arena.kiLevels, level) || typeof entry?.enabled !== 'boolean' || typeof entry.ranked !== 'boolean'))) {
+        return res.status(400).json({ error: 'Ungültige Aktion.' });
+    }
+    await arena.configure(action, { turnSeconds, ranked, doubleHeader, ki });
     res.json(await arena.status());
 });
 
@@ -82,8 +94,8 @@ async function tournament(event, live) {
     ]);
     const history = new Map(games.map(game => [game.id, game]));
     const replayIds = new Set(replays.map(replay => replay.gameId));
-    const fixtures = event.fixtures.map(({ a, b, round, pair, leg, gameId, sessionId }) => {
-        const fixture = { a, b, round, pair, leg };
+    const fixtures = event.fixtures.map(({ a, b, round, pair, leg, gameId, sessionId, ranked }) => {
+        const fixture = { a, b, round, pair, leg, ranked: ranked ?? event.ranked };
         const game = history.get(gameId);
         if (!gameId || (event.managed && !game)) {
             const match = live.get(sessionId);
@@ -92,7 +104,8 @@ async function tournament(event, live) {
         }
         const pa = game?.participants.find(player => player.name === a);
         const pb = game?.participants.find(player => player.name === b);
-        if (game?.version !== event.version || game.participants.length !== 2 || !pa?.botAccount || !pb?.botAccount) {
+        const properSeat = (seat, name) => event.ki?.[name] ? seat?.isBot && !seat.botAccount : seat?.botAccount;
+        if (game?.version !== event.version || game.participants.length !== 2 || !properSeat(pa, a) || !properSeat(pb, b)) {
             throw new Error('Stored game does not match the fixture: ' + gameId);
         }
         const score = pa.isWinner === pb.isWinner ? 0.5 : Number(pa.isWinner);

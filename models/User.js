@@ -104,6 +104,11 @@ module.exports = (sequelize) => {
             defaultValue: false,
             allowNull: false,
         },
+        arenaLadderOptIn: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+        },
         // SHA-256 of the bot's token; the token itself is shown once when created or renewed
         botTokenHash: {
             type: DataTypes.STRING,

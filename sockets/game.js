@@ -813,7 +813,8 @@ function beginGame(io, session) {
         return `Gewertete Spiele haben höchstens ${config.MAX_RANKED_EMPIRES} Reiche.`;
     // a KI seat counts as 1000 MMR: alone against the KI, MMR could be farmed (Rundenspiele check
     // the same in async/logic.js; matchmaking only starts with two)
-    if (gc.ranked && session.players.filter(p => p.kind === 'human').length < 2)
+    const arenaKi = session.arenaPreview?.ki;
+    if (gc.ranked && !arenaKi && session.players.filter(p => p.kind === 'human').length < 2)
         return 'Gewertete Spiele brauchen mindestens 2 Spieler.';
     // … and they are rated between different people: no guest seats (a second tab of the host
     // would just resign) and no account twice; a bot account is a player of its own, also against
@@ -862,7 +863,7 @@ function beginGame(io, session) {
             index: session.players.length,
             kind: 'ki',
             kiLevel: engine.kiLevelFor(session.gameConfig.difficulty),
-            name: `KI ${session.players.length}`,
+            name: arenaKi?.name || `KI ${session.players.length}`,
             civ: 'random',
             ability: 'random',
             connected: false
@@ -1137,6 +1138,13 @@ function emitGameStart(io, session) {
         io.to(w.socketId).emit('game:start', { state: engine.stateForPlayer(session.state, -1), yourIndex: -1, turn: turnInfo(session), paused: session.paused || null });
     }
     session.startSnapshot = null;           // the game runs: no way back to the lobby (R-09)
+    if (session.arenaPreview?.ki && engine.isAutoPlayer(session.state.players[session.state.cur])) {
+        engine.attachScenes(session.state, session);
+        engine.runBots(session.state, () => {
+            broadcastState(io, session);
+            checkGameOver(io, session);
+        });
+    }
 }
 
 /** Marathon: all abilities are drafted – start the real game with them. */

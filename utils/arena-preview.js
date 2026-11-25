@@ -9,6 +9,7 @@ const serverState = require('./serverState');
 
 const scheduleKey = 'arena-preview-schedule';
 const eventPrefix = 'arena-preview-event-';
+const kiLevels = { leicht: 'KI Leicht', mittel: 'KI Mittel', schwer: 'KI Schwer' };
 const defaults = {
     enabled: false, active: null, sequence: 1,
     options: { turnSeconds: 60, ranked: true, doubleHeader: false },
@@ -71,12 +72,16 @@ async function optedIn(workerBots, transaction) {
 
 function makeEvent(sequence, options, bots) {
     const id = 'lab-family-round-robin-' + sequence;
-    const entrants = bots.map(bot => bot.name);
+    const ki = Object.fromEntries(Object.entries(kiLevels).filter(([level]) => options.ki?.[level]?.enabled)
+        .map(([level, name]) => [name, { level, name, ranked: options.ki[level].ranked }]));
+    const entrants = [...bots.map(bot => bot.name), ...Object.keys(ki)];
     const fixtures = roundRobin(entrants).flatMap(({ a, b, round }, index) => {
+        if (ki[a] && ki[b]) return [];
         const pair = index + 1;
         const seed = randomInt(2 ** 31);
+        const ranked = (ki[a] || ki[b])?.ranked ?? options.ranked;
         const first = randomInt(2) ? { a, b } : { a: b, b: a };
-        const leg = (seats, number) => ({ ...seats, round, pair, leg: number, seed, gameId: randomUUID() });
+        const leg = (seats, number) => ({ ...seats, round, pair, leg: number, seed, ranked, gameId: randomUUID() });
         return options.doubleHeader
             ? [leg(first, 1), leg({ a: first.b, b: first.a }, 2)]
             : [leg(first, 1)];
@@ -84,7 +89,7 @@ function makeEvent(sequence, options, bots) {
     const startedAt = new Date().toISOString();
     return {
         id, name: 'Family Round Robin ' + sequence, version: engine.version(),
-        date: startedAt.slice(0, 10), startedAt, ...options, managed: true,
+        date: startedAt.slice(0, 10), startedAt, ...options, managed: true, ki,
         mapKey: 'random', wonders: false, expCivs: false, entrants,
         builds: Object.fromEntries(bots.map(bot => [bot.name, bot.build])),
         userIds: Object.fromEntries(bots.map(bot => [bot.name, bot.userId])),
@@ -93,31 +98,34 @@ function makeEvent(sequence, options, bots) {
 }
 
 function lobbyFor(event, fixture) {
+    const names = [fixture.a, fixture.b];
+    const computer = names.map(name => event.ki?.[name]).find(Boolean);
     let session = sessions.getSession(fixture.sessionId);
     if (!session) {
-        const players = [fixture.a, fixture.b].map(name => ({
-            name, clientId: randomUUID(), civ: 'random', ability: 'random', botUserId: event.userIds[name],
-        }));
+        const players = names.flatMap((name, pos) => event.userIds[name] ? [{
+            name, pos, clientId: randomUUID(), civ: 'random', ability: 'random', botUserId: event.userIds[name],
+        }] : []);
         const created = sessions.createSession({
-            mapKey: event.mapKey, playerCount: 2, kiCount: 0, civMode: 'random', turnOrder: 'pick',
+            mapKey: event.mapKey, playerCount: 2, kiCount: computer ? 1 : 0, civMode: 'random', turnOrder: 'pick',
             turnTime: event.turnSeconds, wonders: event.wonders, expCivs: event.expCivs, events: false,
-            ranked: event.ranked, playerBots: true, isPublic: false, seed: fixture.seed,
+            ranked: fixture.ranked ?? event.ranked, playerBots: true, isPublic: false, seed: fixture.seed,
+            ...(computer && { difficulty: computer.level }),
         }, players[0]);
         if (typeof created === 'string') throw new Error(created);
-        const joined = sessions.joinSession(created.joinCode, created.password, players[1], { trusted: true });
+        const joined = players[1] && sessions.joinSession(created.joinCode, created.password, players[1], { trusted: true });
         if (typeof joined === 'string') {
             sessions.removeSession(created.sessionId);
             throw new Error(joined);
         }
         fixture.sessionId = created.sessionId;
         session = sessions.getSession(fixture.sessionId);
-        session.players.forEach((player, index) => { player.pos = index; });
-        session.arenaPreview = { gameId: fixture.gameId };
+        session.players.forEach((player, index) => { player.pos = players[index].pos; });
+        session.arenaPreview = { gameId: fixture.gameId, ki: computer || null };
     }
     return {
-        ...fixture,
+        ...fixture, ki: computer?.name, ranked: fixture.ranked ?? event.ranked,
         lobby: { sessionId: session.id, password: session.password, status: session.status },
-        identities: [fixture.a, fixture.b].map(name => {
+        identities: names.filter(name => event.userIds[name]).map(name => {
             const player = session.players.find(p => p.name === name);
             return { name, clientId: player.clientId };
         }),
@@ -145,7 +153,8 @@ async function next(workerBots) {
         }
         if (!event && schedule.enabled) {
             const bots = await optedIn(workerBots, transaction);
-            if (bots.length < 2) {
+            const hasKi = Object.values(schedule.options.ki || {}).some(ki => ki.enabled);
+            if (bots.length < (hasKi ? 1 : 2)) {
                 schedule.waiting = 'bots';
                 return { fixtures: [] };
             }
@@ -165,4 +174,4 @@ async function next(workerBots) {
     });
 }
 
-module.exports = { configure, status, events, next };
+module.exports = { configure, status, events, next, kiLevels };

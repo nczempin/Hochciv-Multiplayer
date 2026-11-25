@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const LOAD = {
         'tab-admin-dashboard': () => loadDashboard(),
         'tab-admin-running': () => loadAdminRunning(),
-        'tab-admin-arena': () => loadArenaSchedule(true),
+        'tab-admin-arena': () => { loadArenaSchedule(true); loadLadderSettings(); },
         'tab-admin-games': () => loadAdminGames(false),
         'tab-admin-stats': () => GAMESTATS.render(document.getElementById('admin-stats-body'), { admin: true }),
         'tab-admin-users': () => loadUsers(),
@@ -97,6 +97,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         alert(tx('Fehler: %s', err.error ? txs(err.error) : tx('Unbekannt')));
     };
 
+    const kiLevels = ['leicht', 'mittel', 'schwer'];
     function renderArenaSchedule(data, fillForm) {
         const form = document.getElementById('admin-arena-form');
         const { active, enabled, options, waiting } = data;
@@ -111,6 +112,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             form.elements.turnSeconds.value = options.turnSeconds;
             form.elements.ranked.checked = options.ranked;
             form.elements.doubleHeader.checked = options.doubleHeader;
+            for (const level of kiLevels) {
+                form.elements['ki-' + level].checked = !!options.ki?.[level]?.enabled;
+                form.elements['ranked-' + level].checked = !!options.ki?.[level]?.ranked;
+            }
         }
         form.hidden = false;
     }
@@ -134,6 +139,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const payload = {
             action, turnSeconds: Number(form.elements.turnSeconds.value),
             ranked: form.elements.ranked.checked, doubleHeader: form.elements.doubleHeader.checked,
+            ki: Object.fromEntries(kiLevels.map(level => [level, {
+                enabled: form.elements['ki-' + level].checked, ranked: form.elements['ranked-' + level].checked,
+            }])),
         };
         const output = document.getElementById('admin-arena-message');
         try {
@@ -144,6 +152,34 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch {
             output.textContent = tx('Netzwerkfehler.');
         }
+    });
+
+    const ladderForm = document.getElementById('admin-ladder-form');
+    async function loadLadderSettings() {
+        try {
+            const res = await fetch('/api/arena-preview/ladder/settings', { cache: 'no-store' });
+            if (!res.ok) return;
+            const { enabled, turnDays, avoidRematches, sameOwnerRanked } = await res.json();
+            ladderForm.elements.enabled.checked = enabled;
+            ladderForm.elements.turnDays.value = turnDays;
+            ladderForm.elements.avoidRematches.checked = avoidRematches;
+            ladderForm.elements.sameOwnerRanked.checked = sameOwnerRanked;
+            ladderForm.hidden = false;
+        } catch { ladderForm.querySelector('output').textContent = tx('Netzwerkfehler.'); }
+    }
+
+    ladderForm.addEventListener('submit', async event => {
+        event.preventDefault();
+        const { enabled, turnDays, avoidRematches, sameOwnerRanked } = ladderForm.elements;
+        const output = ladderForm.querySelector('output');
+        try {
+            const res = await post('/api/arena-preview/ladder/settings', {
+                enabled: enabled.checked, turnDays: Number(turnDays.value),
+                avoidRematches: avoidRematches.checked, sameOwnerRanked: sameOwnerRanked.checked,
+            });
+            if (!res.ok) return fail(res);
+            output.textContent = tx('Gespeichert');
+        } catch { output.textContent = tx('Netzwerkfehler.'); }
     });
 
     // --- Overview: metrics, global switches, lobbies ---

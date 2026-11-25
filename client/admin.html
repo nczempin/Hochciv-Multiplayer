@@ -52,11 +52,35 @@
                         </label>
                         <label class="acc-check"><input type="checkbox" name="ranked">Gespielte Partien für Bot-MMR werten</label>
                         <label class="acc-check"><input type="checkbox" name="doubleHeader">Gespiegelte Doppelpaarungen</label>
+                        <fieldset>
+                            <legend>KI-Gegner</legend>
+                            <div><label><input type="checkbox" name="ki-leicht"> KI Leicht</label>
+                                <label><input type="checkbox" name="ranked-leicht"> Für Bot-MMR werten</label></div>
+                            <div><label><input type="checkbox" name="ki-mittel"> KI Mittel</label>
+                                <label><input type="checkbox" name="ranked-mittel"> Für Bot-MMR werten</label></div>
+                            <div><label><input type="checkbox" name="ki-schwer"> KI Schwer</label>
+                                <label><input type="checkbox" name="ranked-schwer"> Für Bot-MMR werten</label></div>
+                        </fieldset>
                         <p class="acc-lede">Änderungen gelten ab dem nächsten Turnier.</p>
                         <button type="submit" class="btn small" value="save">Speichern</button>
                         <button type="submit" class="btn small primary" value="start">Turnierserie starten</button>
                         <button type="submit" class="btn small" value="drain">Nach diesem Turnier stoppen</button>
                         <output id="admin-arena-message" aria-live="polite"></output>
+                    </form>
+                </div>
+                <div class="acc-card">
+                    <h2>Rundenspiel-Liga</h2>
+                    <form id="admin-ladder-form" hidden>
+                        <label class="acc-check"><input name="enabled" type="checkbox">Automatische Paarungen zulassen</label>
+                        <label class="acc-check">Tage pro Zug
+                            <select name="turnDays" aria-label="Tage pro Zug">
+                                <option value="1">1</option><option value="3">3</option><option value="7">7</option>
+                            </select>
+                        </label>
+                        <label class="acc-check"><input name="avoidRematches" type="checkbox">Direkte Wiederholung vermeiden</label>
+                        <label class="acc-check"><input name="sameOwnerRanked" type="checkbox">Partien desselben Besitzers werten</label>
+                        <button class="btn small" type="submit">Speichern</button>
+                        <output aria-live="polite"></output>
                     </form>
                 </div>
             </section>

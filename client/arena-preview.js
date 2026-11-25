@@ -70,7 +70,8 @@
             const result = f.score === null ? T(states[f.state]) : `${formatPoints(f.score)}–${formatPoints(1 - f.score)}`;
             const action = f.watch ? ` <a href="${esc(MP.inviteUrl(f.watch.code, f.watch.password))}">${esc(T('Zuschauen'))}</a>`
                 : f.replay ? ` <a href="?replay=${encodeURIComponent(f.replay)}">${esc(T('Wiederholung'))}</a>` : '';
-            return `<tr><td>${esc(f.a)} – ${esc(f.b)}</td><td>${f.round}</td>
+            const rating = f.ranked !== event.ranked ? ` <small>${esc(T(f.ranked ? 'Gewertet' : 'Ungewertet'))}</small>` : '';
+            return `<tr><td>${esc(f.a)} – ${esc(f.b)}${rating}</td><td>${f.round}</td>
                 ${event.doubleHeader ? `<td>${f.leg}/2</td>` : ''}<td>${esc(result)}${action}</td></tr>`;
         }).join(''));
     }
@@ -137,9 +138,11 @@
     async function open() {
         modal(T('Bot-Arena (Vorschau)'), `<div id="ba-box">
             <div class="ba-head ba-meta"><span class="sub" id="ba-source"></span>
+                <button type="button" class="ba-link" id="ba-ladder-link">${esc(T('Rundenspiel-Liga'))}</button>
                 ${['admin', 'superadmin', 'tournamentdirector'].includes(MP.user?.role) ? `<a class="ba-link" href="/client/admin.html#arena">${esc(T('Veranstalteransicht'))}</a>` : ''}</div>
             <div id="ba-event"><p class="sub">${esc(T('Lade...'))}</p></div></div>`);
         document.getElementById('overlay')?.classList.add('wide');
+        document.getElementById('ba-ladder-link').addEventListener('click', () => openLadder());
         const box = document.getElementById('ba-event');
         async function read() {
             const response = await fetch('/api/arena-preview/tournaments', { cache: 'no-store' });
@@ -221,6 +224,39 @@
             } catch { /* Keep the last loaded results until the server is reachable again. */ }
             finally { refreshing = false; }
         }, 5000);
+    }
+
+    async function openLadder(version) {
+        modal(T('Rundenspiel-Liga'), `<div id="ba-box"><p class="sub">${esc(T('Lade...'))}</p></div>`);
+        document.getElementById('overlay')?.classList.add('wide');
+        const box = document.getElementById('ba-box');
+        try {
+            const res = await fetch('/api/arena-preview/ladder' + (version ? '?version=' + encodeURIComponent(version) : ''));
+            if (!res.ok) throw new Error('Ladder request failed');
+            const data = await res.json();
+            if (!box.isConnected) return;
+            const standings = data.standings.map((bot, i) => `<tr><td>${i + 1}</td><th scope="row">${esc(bot.name)}</th>
+                <td>${bot.games}</td><td>${bot.wins}–${bot.draws}–${bot.games - bot.wins - bot.draws}</td>
+                <td>${bot.score === null ? '—' : esc(bot.score.toLocaleString(HC_I18N.locale(), { style: 'percent' }))}</td></tr>`);
+            const games = data.games.map(game => {
+                const state = game.status === 'finished' ? game.winners.join(', ') : T(states[game.status === 'playing' ? 'live' : 'scheduled']);
+                const action = game.replay ? `<a href="?replay=${encodeURIComponent(game.replay)}">${esc(T('Wiederholung'))}</a>`
+                    : game.status === 'playing' ? `<a href="?async=${encodeURIComponent(game.id)}">${esc(T('Zuschauen'))}</a>` : '';
+                return `<tr><td>${esc(game.names.join(' – '))}</td><td>${game.leg}/2</td><td>${game.turnDays}</td>
+                    <td>${esc(T(game.ranked ? 'Gewertet' : 'Ungewertet'))}</td><td>${esc(state)} ${action}</td></tr>`;
+            });
+            box.innerHTML = `<div class="ba-head"><button type="button" class="ba-link" id="ba-back">← ${esc(T('Turniere'))}</button>
+                <select aria-label="${esc(T('Spielversion'))}">${data.editions.map(edition =>
+                    `<option${edition === data.version ? ' selected' : ''}>${esc(edition)}</option>`).join('')}</select></div>
+                ${standings.length ? table(['#', T('Name'), T('Spiele'), T('S–U–N'), T('Punktequote')], standings.join(''))
+                    : `<p class="sub">${esc(T('Für diese Version gibt es noch keine Ligaspiele.'))}</p>`}
+                ${games.length ? `<h3>${esc(T('Begegnungen'))}</h3>` +
+                    table([T('Name'), T('Partie'), T('Tage pro Zug'), T('Wertung'), T('Ergebnis')], games.join('')) : ''}`;
+            box.querySelector('#ba-back').addEventListener('click', open);
+            box.querySelector('select').addEventListener('change', event => openLadder(event.target.value));
+        } catch {
+            box.textContent = T('Fehler beim Laden der Turnierergebnisse.');
+        }
     }
 
     window.HC_ARENA_PREVIEW = { open };
