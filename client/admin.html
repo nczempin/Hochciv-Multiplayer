@@ -82,6 +82,24 @@
                         </form>
                     </div>
                     <p id="admin-discord-msg" class="acc-setting-msg" hidden></p>
+                    <div class="acc-setting">
+                        <div>
+                            <strong>Bot-Liga</strong>
+                            <small>Angemeldete Spieler-Bots werden automatisch zu Rundenspielen gepaart: zwei Partien mit getauschten Plätzen auf derselben Plättchenkarte.</small>
+                        </div>
+                        <form id="admin-ladder-form" class="acc-inline-form">
+                            <label class="acc-check"><input name="enabled" type="checkbox" class="w-lock">Automatische Paarungen</label>
+                            <label class="acc-check">Tage pro Zug
+                                <select name="turnDays" class="w-lock" aria-label="Tage pro Zug">
+                                    <option value="1">1</option><option value="3">3</option><option value="7">7</option>
+                                </select>
+                            </label>
+                            <label class="acc-check"><input name="avoidRematches" type="checkbox" class="w-lock">Direkte Wiederholung vermeiden</label>
+                            <label class="acc-check"><input name="sameOwnerRanked" type="checkbox" class="w-lock">Partien desselben Besitzers werten</label>
+                            <button type="submit" class="btn small w-lock">Speichern</button>
+                        </form>
+                    </div>
+                    <p id="admin-ladder-msg" class="acc-setting-msg" hidden></p>
                 </div>
 
                 <div class="acc-card">

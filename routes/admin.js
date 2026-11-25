@@ -20,6 +20,7 @@ const Facts = require('../utils/facts');
 const { query: statsQuery } = require('./stats');
 const Bots = require('../utils/bots');
 const Settings = require('../utils/settings');
+const Ladder = require('../async/ladder');
 
 /** Banned, deleted or no longer allowed to run bots: their bots leave games and connections too. */
 async function detachBotsOf(io, ownerId) {
@@ -108,6 +109,28 @@ router.post('/config', (req, res) => {
     if (maintenanceMode !== undefined) serverState.state.maintenanceMode = maintenanceMode === true;
     if (registrationEnabled !== undefined) serverState.state.registrationEnabled = registrationEnabled === true;
     res.json({ ok: true });
+});
+
+// --- The bot ladder of the Rundenspiele (async/ladder.js): on/off and its rules ---
+router.get('/ladder', async (req, res) => {
+    try {
+        res.json(await Ladder.settings());
+    } catch (err) {
+        console.error('[Ladder]', err);
+        res.status(500).json({ error: 'Serverfehler' });
+    }
+});
+
+router.post('/ladder', async (req, res) => {
+    try {
+        const r = await Ladder.configure(req.body, req.user.username);
+        if (r.error) return res.status(400).json({ error: r.error });
+        console.log(`[Ladder] ${req.user.username}: ${JSON.stringify(r)}`);
+        res.json(r);
+    } catch (err) {
+        console.error('[Ladder]', err);
+        res.status(500).json({ error: 'Serverfehler' });
+    }
 });
 
 // --- Stored settings (utils/settings.js): the Discord invite link ---

@@ -150,6 +150,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         msg.textContent = data.discordInvite ? tx('Gespeichert.') : tx('Entfernt – der Discord-Knopf ist ausgeblendet.');
     };
     loadSettings();
+
+    // The bot ladder of the Rundenspiele (async/ladder.js): loaded once, like the Discord link
+    const ladderForm = document.getElementById('admin-ladder-form');
+    async function loadLadder() {
+        try {
+            const st = await (await fetch('/api/admin/ladder', { cache: 'no-store' })).json();
+            ladderForm.elements.enabled.checked = !!st.enabled;
+            ladderForm.elements.turnDays.value = st.turnDays;
+            ladderForm.elements.avoidRematches.checked = !!st.avoidRematches;
+            ladderForm.elements.sameOwnerRanked.checked = !!st.sameOwnerRanked;
+        } catch (e) {
+            console.error(e);
+        }
+    }
+    ladderForm.addEventListener('submit', async ev => {
+        ev.preventDefault();
+        const f = ladderForm.elements, msg = document.getElementById('admin-ladder-msg');
+        const res = await post('/api/admin/ladder', {
+            enabled: f.enabled.checked, turnDays: Number(f.turnDays.value),
+            avoidRematches: f.avoidRematches.checked, sameOwnerRanked: f.sameOwnerRanked.checked,
+        });
+        const data = await res.json().catch(() => ({}));
+        msg.hidden = false;
+        msg.classList.toggle('error', !res.ok);
+        msg.textContent = res.ok ? tx('Gespeichert.') : txs(data.error || 'Fehler');
+    });
+    loadLadder();
     window.toggleMaintenance = async () => {
         await post('/api/admin/config', { maintenanceMode: !window._maintenanceMode });
         loadDashboard();

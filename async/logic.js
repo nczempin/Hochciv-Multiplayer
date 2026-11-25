@@ -212,6 +212,8 @@ function create(host, opts) {
     if (challenge) config.fixedDice = config.seed;
     // the weekly challenge keeps the classic rules; a draft never has the classic order
     if (challenge) Object.assign(config, { civMode: 'fixed', turnOrder: 'classic' });
+    // a fixture of the bot ladder (async/ladder.js): only the server sets it, never a request
+    if (opts && opts.arena === true) config.arena = true;
     Object.assign(config, CivDraft.modesOf(config));
     Object.assign(config, { playerCount: total, humanCount: total - ki, noKi: ki === 0 });
     // Player-bots (bot accounts, utils/bots.js) take human seats like players, never the KI's;
@@ -360,6 +362,7 @@ function join(g, user, opts) {
     if (g.seats.some(s => s.userId === user.id)) return 'Du bist schon in diesem Spiel.';
     if (!['setup', 'playing'].includes(g.status)) return 'Diesem Spiel kann man nicht mehr beitreten.';
     if (claimedCount(g) >= g.config.humanCount) return 'Das Spiel ist schon voll.';
+    if (g.config.arena && !user.isBot) return 'Die Bot-Liga ist nur für Spieler-Bots.';
     if (user.isBot) {
         const why = playerBotRoom(g);
         if (why) return why;
@@ -445,6 +448,7 @@ function leave(g, userId) {
     const seat = seatOf(g, userId);
     if (!seat) return 'Du bist nicht in diesem Spiel.';
     if (g.config.challenge) return 'Die Wochen-Challenge kann man nur aufgeben.';
+    if (g.config.arena) return 'Spiele der Bot-Liga kann man nur aufgeben.';
     if (userId === g.hostUserId) return 'Der Host kann das Spiel nur abbrechen, nicht verlassen.';
     const free = g.status === 'setup' || (g.status === 'playing' && !seat.started);
     if (!free) return 'Nach deinem ersten Zug kannst du das Spiel nicht mehr verlassen.';
@@ -468,6 +472,7 @@ function leave(g, userId) {
 function cancel(g, userId) {
     if (userId !== g.hostUserId) return 'Nur der Host kann das Spiel abbrechen.';
     if (g.config.challenge) return 'Die Wochen-Challenge kann man nur aufgeben.';
+    if (g.config.arena) return 'Spiele der Bot-Liga kann man nur aufgeben.';
     const others = g.seats.filter(s => s.userId && s.userId !== userId);
     const ok = g.status === 'setup' || (g.status === 'playing' && others.every(s => !s.started));
     if (!ok) return 'Das Spiel läuft schon – abbrechen geht nicht mehr.';
@@ -625,6 +630,48 @@ function finishPlacement(g) {
     startGame(g);
 }
 
+/**
+ * A fixture of the bot ladder (async/ladder.js): two games on the tile map between the same two
+ * bot accounts with the seats swapped. Both place their start tiles in the first game; the second
+ * waits ('arena-waiting') and takes over the finished map (finishArenaPairOpener).
+ */
+function createArenaPair(a, b, seed, { ranked = false, turnDays = 1 } = {}) {
+    if (!a.isBot || !b.isBot || a.id === b.id) return { error: 'Die Bot-Liga braucht zwei verschiedene Spieler-Bots.' };
+    const { g: first, error } = create(a, {
+        arena: true,
+        config: { mapKey: 'plaettchen', playerCount: 2, kiCount: 0, civMode: 'random',
+            turnOrder: 'random', ranked, isPublic: true, turnDays },
+    });
+    if (error) return { error };
+    first.config.seed = seed;
+    const joinError = join(first, b, {});
+    if (joinError) return { error: joinError };
+    if (first.status !== 'placement') return { error: 'Die Bot-Liga braucht eine Plättchenkarte.' };
+
+    const second = deepCopy(first);
+    second.status = 'arena-waiting';
+    second.hostUserId = b.id;
+    second.pre = null;
+    for (const [slot, seat] of second.seats.entries()) {
+        const { userId, name, joinedAt, botAccount } = first.seats[1 - slot];
+        Object.assign(seat, { userId, name, joinedAt, botAccount });
+    }
+    return { first, second };
+}
+
+/** The first game of a fixture has ended: start the second on the same map, or cancel it. */
+function finishArenaPairOpener(first, second) {
+    if (first.status !== 'finished' || !first.config.map || first.seats.some(s => s.replaced)
+        || second.seats.some(s => s.kind !== 'human' || !s.userId || s.replaced)) {
+        second.status = 'cancelled';
+        return;
+    }
+    second.config.map = deepCopy(first.config.map);
+    second.config.setup = deepCopy(first.config.setup);
+    // The adapter keeps setup rolls and draws a fresh private play seed for each game.
+    startGame(second);
+}
+
 /** A human picks a Marathon ability. */
 function draftPick(g, userId, id) {
     if (g.status !== 'draft') return 'Gerade wird nicht gedraftet.';
@@ -769,6 +816,11 @@ function replaceSeat(g, seat) {
  */
 function timeout(g) {
     const replaced = [], penalized = [];
+    if (g.config.arenaPair) {
+        // bots only: no KI takes a seat over, the fixture just doesn't count
+        g.status = 'cancelled';
+        return { replaced, penalized };
+    }
     const takeOver = seat => {
         replaced.push(seat.userId);
         const u = replaceSeat(g, seat);
@@ -900,9 +952,9 @@ function removeUser(g, userId) {
     }
     g.invites = g.invites.filter(i => i.userId !== userId);
     const seat = seatOf(g, userId);
-    if (seat && g.status === 'setup' && userId === g.hostUserId) {
+    if (seat && (g.status === 'arena-waiting' || (g.status === 'setup' && userId === g.hostUserId))) {
         g.status = 'cancelled';
-    } else if (seat && userId !== g.hostUserId && (g.status === 'setup' || (g.status === 'playing' && !seat.started))) {
+    } else if (seat && !g.config.arena && userId !== g.hostUserId && (g.status === 'setup' || (g.status === 'playing' && !seat.started))) {
         leave(g, userId);
     } else if (seat && g.status === 'playing') {
         replaceSeat(g, seat);
@@ -1044,7 +1096,7 @@ function view(g, userId) {
 }
 
 module.exports = {
-    create, join, leave, cancel, place, draftPick, action, drive, timeout, removeUser, resign, DELETED_NAME, IN_PREPHASE,
+    create, createArenaPair, finishArenaPairOpener, join, leave, cancel, place, draftPick, action, drive, timeout, removeUser, resign, DELETED_NAME, IN_PREPHASE,
     civDraftPick, waitingOn, summary, view, freeSeats, playerBotRoom, seatOf, stateIndex, isFree, engineVersionOf, ENG, summaryText,
     MMR_PENALTY, TURN_DAYS,
 };
