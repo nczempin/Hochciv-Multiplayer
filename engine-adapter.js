@@ -802,7 +802,7 @@ function makeAdapter(engineDir, label) {
         marathonAvailable, startDraft, draftPick, isDraftDone, finishDraft, draftPayload,
         advanceDraft, assignDoubles, isAutoPlayer, kiLevelFor, randomAbility, checkCustomMap,
         engineConst, turnOrderSlots, peekNext, advanceWithoutBegin, applyLateAbility, autoTurn,
-        finishTurnForAbsent, endTurnAsIs, ensureEngineLoaded, attachScenes, finishTurn,
+        finishTurnForAbsent, endTurnAsIs, ensureEngineLoaded, attachScenes, finishTurn, runBots,
         getEngine: () => E,
         version: () => engineConst('APP_VERSION') || label,
     };

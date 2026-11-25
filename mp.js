@@ -3336,7 +3336,7 @@ MP.arrangeMenu = function () {
     if (cont && first && (first.compareDocumentPosition(cont) & Node.DOCUMENT_POSITION_FOLLOWING)) first.after(cont);
     const more = document.createElement('div');
     more.id = 'mp-menu-more';
-    ['m-tutorial', 'mp-overall-btn', 'mp-ranking-btn', 'm-editor', 'mp-maps-btn', 'm-rules', 'm-options', 'm-load'].forEach(id => {
+    ['m-tutorial', 'mp-overall-btn', 'mp-ranking-btn', 'mp-arena-preview-btn', 'm-editor', 'mp-maps-btn', 'm-rules', 'm-options', 'm-load'].forEach(id => {
         const b = $(id);
         if (!b) return;
         b.classList.add('btn');                // since v102 Regeln, Editor and Laden are plain links
@@ -3358,6 +3358,7 @@ MP.applyLang = function () {
     set('mp-live-btn', TX('Multiplayer'));
     set('mp-overall-btn', TX('Statistiken'));
     set('mp-ranking-btn', '🏆 ' + TX('Rangliste'));
+    set('mp-arena-preview-btn', TX('Bot-Arena (Vorschau)'));
     if ($('mp-discord-btn')) this.drawDiscordButton();
     set('mp-maps-btn', TX('Karten entdecken'));
     set('mp-players-title', TX('Spieler'));
@@ -3409,6 +3410,14 @@ window.addEventListener('DOMContentLoaded', () => {
         btn.id = 'mp-ranking-btn';
         btn.textContent = '🏆 ' + TX('Rangliste');
         btn.onclick = () => RANKING.open(null);
+        mNew.parentNode.insertBefore(btn, $('m-continue'));
+    }
+    if (mNew && !$('mp-arena-preview-btn') && window.HC_ARENA_PREVIEW) {
+        const btn = document.createElement('button');
+        btn.className = 'btn';
+        btn.id = 'mp-arena-preview-btn';
+        btn.type = 'button';
+        btn.onclick = () => HC_ARENA_PREVIEW.open();
         mNew.parentNode.insertBefore(btn, $('m-continue'));
     }
     MP.arrangeMenu();

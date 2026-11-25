@@ -30,6 +30,7 @@ async function detachBotsOf(io, ownerId) {
 }
 
 const ROLES = ['user', 'botcreator', 'reviewadmin', 'admin', 'superadmin'];
+if (process.env.ARENA_PREVIEW === 'on') ROLES.push('tournamentdirector');
 const isPrivileged = role => role === 'admin' || role === 'superadmin' || role === 'reviewadmin';
 
 /*

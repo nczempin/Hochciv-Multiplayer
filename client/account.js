@@ -449,6 +449,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <td>${esc(b.gamesPlayed)}</td>
                     <td>
                         <button class="btn small" data-bot-description="${id}">${tx('Beschreibung bearbeiten')}</button>
+                        ${typeof b.arenaOptIn === 'boolean' ? `<label><input type="checkbox" data-bot-arena-opt-in="${id}" ${b.arenaOptIn ? 'checked' : ''}> ${tx('An Bot-Turnieren teilnehmen')}</label>` : ''}
+                        ${typeof b.arenaLadderOptIn === 'boolean' ? `<label><input type="checkbox" data-bot-ladder-opt-in="${id}" ${b.arenaLadderOptIn ? 'checked' : ''}> ${tx('An der Rundenspiel-Liga teilnehmen')}</label>` : ''}
                         <button class="btn small" data-bot-token="${id}">${tx('Neues Token')}</button>
                         <button class="btn small" data-bot-transfer="${id}">${tx('Übergeben')}</button>
                         <button class="btn small error" data-bot-delete="${id}">${tx('Löschen')}</button>
@@ -469,6 +471,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}),
     });
     document.getElementById('bots-all').addEventListener('change', loadBots);
+    document.getElementById('table-bots').addEventListener('change', async e => {
+        const field = e.target;
+        const id = field.dataset.botLadderOptIn || field.dataset.botArenaOptIn;
+        if (!id) return;
+        const optedIn = field.checked;
+        const mode = field.dataset.botLadderOptIn ? 'ladder-opt-in' : 'arena-opt-in';
+        const option = field.dataset.botLadderOptIn ? 'arenaLadderOptIn' : 'arenaOptIn';
+        field.disabled = true;
+        const res = await postJson(`/api/bots/${encodeURIComponent(id)}/${mode}`, { [option]: optedIn }).catch(() => null);
+        if (!res?.ok) {
+            field.checked = !optedIn;
+            botMsg(tx('Fehler'));
+        }
+        field.disabled = false;
+    });
     document.getElementById('btn-bot-token-copy').addEventListener('click', () => {
         const token = document.getElementById('bot-token-value').textContent;
         (navigator.clipboard ? navigator.clipboard.writeText(token) : Promise.reject()).then(

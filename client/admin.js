@@ -7,6 +7,7 @@
 document.addEventListener('DOMContentLoaded', async () => {
     HC_I18N.apply(document);
     let currentUser = null;
+    let arenaEnabled = false;
     let adminUsers = [];           // last loaded user list (adminDeleteUser, adminBotLimit, filter)
 
     // Each section loads when it is opened; the overview also every 10 seconds while it is open
@@ -14,6 +15,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const LOAD = {
         'tab-admin-dashboard': () => loadDashboard(),
         'tab-admin-running': () => loadAdminRunning(),
+        'tab-admin-arena': () => { loadArenaSchedule(true); loadLadderSettings(); },
         'tab-admin-games': () => loadAdminGames(false),
         'tab-admin-stats': () => GAMESTATS.render(document.getElementById('admin-stats-body'), { admin: true }),
         'tab-admin-users': () => loadUsers(),
@@ -28,9 +30,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     currentUser = await ACC.me();
     if (!currentUser) { window.location.href = '/'; return; }
-    if (!ACC.isAdmin(currentUser)) { window.location.href = 'account.html'; return; }
+    const director = currentUser.role === 'tournamentdirector';
+    if (!ACC.isAdmin(currentUser) && !director) { window.location.href = 'account.html'; return; }
     ACC.drawWho(currentUser);
-    document.querySelectorAll('.admin-tab').forEach(el => el.hidden = false);
+    if (!director) document.querySelectorAll('.admin-tab').forEach(el => el.hidden = false);
     const readOnly = ACC.isReviewAdmin(currentUser);      // sees everything, changes nothing
     if (currentUser.role === 'superadmin' || readOnly) document.querySelectorAll('.superadmin-tab').forEach(el => el.hidden = false);
     if (readOnly) {
@@ -39,8 +42,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         // switches and fields keep showing their state, but can't be used
         document.querySelectorAll('.w-lock').forEach(el => { el.disabled = true; el.readOnly = true; });
     }
-    loadReportCount();
-    setInterval(loadReportCount, 60000);
+    if (!director) {
+        loadReportCount();
+        setInterval(loadReportCount, 60000);
+    }
 
     // Changes to accounts (password, second factors, roles, deleting) and the OAuth settings need a
     // recent login (routes/admin.js requireRecentAuth): the server answers 403 { reauthRequired },
@@ -91,6 +96,91 @@ document.addEventListener('DOMContentLoaded', async () => {
         const err = res ? await res.json().catch(() => ({})) : {};
         alert(tx('Fehler: %s', err.error ? txs(err.error) : tx('Unbekannt')));
     };
+
+    const kiLevels = ['leicht', 'mittel', 'schwer'];
+    function renderArenaSchedule(data, fillForm) {
+        const form = document.getElementById('admin-arena-form');
+        const { active, enabled, options, waiting } = data;
+        const label = enabled ? 'Turnierserie läuft' : active ? 'Stoppt nach dem laufenden Turnier' : 'Turnierserie gestoppt';
+        document.getElementById('admin-arena-state').textContent = tx(label);
+        document.getElementById('admin-arena-progress').textContent = active
+            ? `${active.name} · ${tx('%s von %s Begegnungen entschieden', active.finished, active.games)}`
+            : waiting === 'bots' && enabled ? tx('Wartet auf mindestens zwei angemeldete Bots.') : '';
+        form.querySelector('[value="start"]').disabled = enabled;
+        form.querySelector('[value="drain"]').disabled = !enabled;
+        if (fillForm) {
+            form.elements.turnSeconds.value = options.turnSeconds;
+            form.elements.ranked.checked = options.ranked;
+            form.elements.doubleHeader.checked = options.doubleHeader;
+            for (const level of kiLevels) {
+                form.elements['ki-' + level].checked = !!options.ki?.[level]?.enabled;
+                form.elements['ranked-' + level].checked = !!options.ki?.[level]?.ranked;
+            }
+        }
+        form.hidden = false;
+    }
+
+    async function loadArenaSchedule(fillForm) {
+        try {
+            const res = await fetch('/api/arena-preview/schedule', { cache: 'no-store' });
+            if (!res.ok) return false;
+            renderArenaSchedule(await res.json(), fillForm);
+            return true;
+        } catch {
+            document.getElementById('admin-arena-state').textContent = tx('Netzwerkfehler.');
+            return false;
+        }
+    }
+
+    document.getElementById('admin-arena-form').addEventListener('submit', async event => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const action = event.submitter?.value || 'save';
+        const payload = {
+            action, turnSeconds: Number(form.elements.turnSeconds.value),
+            ranked: form.elements.ranked.checked, doubleHeader: form.elements.doubleHeader.checked,
+            ki: Object.fromEntries(kiLevels.map(level => [level, {
+                enabled: form.elements['ki-' + level].checked, ranked: form.elements['ranked-' + level].checked,
+            }])),
+        };
+        const output = document.getElementById('admin-arena-message');
+        try {
+            const res = await post('/api/arena-preview/schedule', payload);
+            if (!res.ok) return fail(res);
+            renderArenaSchedule(await res.json(), true);
+            output.textContent = tx('Gespeichert');
+        } catch {
+            output.textContent = tx('Netzwerkfehler.');
+        }
+    });
+
+    const ladderForm = document.getElementById('admin-ladder-form');
+    async function loadLadderSettings() {
+        try {
+            const res = await fetch('/api/arena-preview/ladder/settings', { cache: 'no-store' });
+            if (!res.ok) return;
+            const { enabled, turnDays, avoidRematches, sameOwnerRanked } = await res.json();
+            ladderForm.elements.enabled.checked = enabled;
+            ladderForm.elements.turnDays.value = turnDays;
+            ladderForm.elements.avoidRematches.checked = avoidRematches;
+            ladderForm.elements.sameOwnerRanked.checked = sameOwnerRanked;
+            ladderForm.hidden = false;
+        } catch { ladderForm.querySelector('output').textContent = tx('Netzwerkfehler.'); }
+    }
+
+    ladderForm.addEventListener('submit', async event => {
+        event.preventDefault();
+        const { enabled, turnDays, avoidRematches, sameOwnerRanked } = ladderForm.elements;
+        const output = ladderForm.querySelector('output');
+        try {
+            const res = await post('/api/arena-preview/ladder/settings', {
+                enabled: enabled.checked, turnDays: Number(turnDays.value),
+                avoidRematches: avoidRematches.checked, sameOwnerRanked: sameOwnerRanked.checked,
+            });
+            if (!res.ok) return fail(res);
+            output.textContent = tx('Gespeichert');
+        } catch { output.textContent = tx('Netzwerkfehler.'); }
+    });
 
     // --- Overview: metrics, global switches, lobbies ---
     const LIVE_STATUS = { placement: tx('Startplättchen'), draft: tx('Draft'), playing: tx('Läuft'), finished: tx('Beendet') };
@@ -273,7 +363,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    const ROLE_NAMES = { user: tx('User'), botcreator: tx('Bot-Ersteller'), reviewadmin: tx('Review Admin'), admin: 'Admin', superadmin: tx('Super Admin') };
+    const ROLE_NAMES = { user: tx('User'), botcreator: tx('Bot-Ersteller'), tournamentdirector: tx('Turnierleitung'),
+        reviewadmin: tx('Review Admin'), admin: 'Admin', superadmin: tx('Super Admin') };
     function drawUsers() {
         const q = document.getElementById('admin-users-q').value.trim().toLowerCase();
         const users = q ? adminUsers.filter(u => (u.username + ' ' + (u.email || '')).toLowerCase().includes(q)) : adminUsers;
@@ -296,6 +387,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <select onchange="adminChangeRole('${id}', this.value)" style="padding:4px 6px; font-size:13px;">
                         <option value="user" ${u.role === 'user' ? 'selected' : ''}>${tx('User')}</option>
                         <option value="botcreator" ${u.role === 'botcreator' ? 'selected' : ''}>${tx('Bot-Ersteller')}</option>
+                        ${arenaEnabled ? `<option value="tournamentdirector" ${u.role === 'tournamentdirector' ? 'selected' : ''}>${tx('Turnierleitung')}</option>` : ''}
                         <option value="reviewadmin" ${u.role === 'reviewadmin' ? 'selected' : ''}>${tx('Review Admin')}</option>
                         <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
                         <option value="superadmin" ${u.role === 'superadmin' ? 'selected' : ''}>${tx('Super Admin')}</option>
@@ -715,6 +807,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // only now: the sections' state (adminReports, adminGames, …) is declared above – opening
     // admin.html#reports directly ran into it before ("Cannot access 'adminReports' before initialization")
+    if (!readOnly) arenaEnabled = await loadArenaSchedule(true);
+    document.getElementById('admin-arena-tab').hidden = !arenaEnabled;
+    if (director && !arenaEnabled) { window.location.href = 'account.html'; return; }
     openFromHash();
+    if (arenaEnabled) setInterval(() => {
+        if (current === 'tab-admin-arena' && !document.hidden) loadArenaSchedule(false);
+    }, 5000);
     setInterval(() => { if (current === 'tab-admin-dashboard' && !document.hidden) loadDashboard(); }, 10000);
 });

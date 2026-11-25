@@ -99,6 +99,16 @@ module.exports = (sequelize) => {
             type: DataTypes.STRING(BOT_DESCRIPTION_MAX_LENGTH),
             allowNull: true,
         },
+        arenaOptIn: {
+            type: DataTypes.BOOLEAN,
+            defaultValue: false,
+            allowNull: false,
+        },
+        arenaLadderOptIn: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+        },
         // SHA-256 of the bot's token; the token itself is shown once when created or renewed
         botTokenHash: {
             type: DataTypes.STRING,

@@ -230,6 +230,7 @@ require('./utils/migrate').migrate(dbUrl).then(async () => {
     // facts of older matches for the overall statistics (needs the column `facts`)
     require('./utils/facts').startBackfill();
     // ranked seasons: the current quarter, closing the last one (utils/seasons.js)
+    await require('./utils/arena-ki-ratings').ensure();
     require('./utils/seasons').start();
     // the maps that belong to nobody (maps/builtin.js)
     require('./maps/service').seedBuiltin().catch(err => console.error('[Maps] Seeding the built-in maps failed:', err));
@@ -281,6 +282,7 @@ app.use('/api/mfa', mfaRoutes);
 app.use('/api/profile', require('./routes/profile'));
 // Finished matches with their statistics and replays (routes/games.js); old replays are deleted
 app.use('/api/games', require('./routes/games'));
+if (process.env.ARENA_PREVIEW === 'on') app.use('/api/arena-preview', require('./routes/arena-preview'));
 // Overall statistics over all matches (F13)
 app.use('/api/stats', require('./routes/stats'));
 require('./utils/replay').startCleanup();

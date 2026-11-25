@@ -17,6 +17,32 @@ node smoke.js       # the real UI in jsdom: setup, turns, tutorial, first game, 
 
 ## Server tests
 
+### Bot Arena preview
+
+```bash
+ARENA_PREVIEW=on docker compose -f docker-compose.local.yml up -d --build
+```
+
+Open **Bot Arena (preview)** from the current game's main menu. With no tournament journal,
+the picker and the tournament views show example results. **Organizer view** calculates a
+round-robin schedule size and saves the draft in the current browser.
+
+For a private rehearsal, `scripts/arena-preview-bots.js` provisions six lab-only accounts
+on the preview server. Pipe its JSON output directly to `scripts/arena-preview-run.js` on a
+machine with a v112 Hans executable and the `socket.io-client` package available. The driver
+plays through the normal live game APIs and writes the fixture schedule and saved game IDs
+to its journal. Reusing that journal skips its completed fixtures.
+
+```sh
+docker compose -f docker-compose.local.yml exec -T hochciv-local node scripts/arena-preview-bots.js |
+  node scripts/arena-preview-run.js http://localhost:3000 /path/to/hans ./event.json
+```
+
+Set `ARENA_PREVIEW_JOURNAL` to the journal's readable path inside the game container.
+The preview reads scores from the server's match history and links the saved replays.
+
+### Running individual tests
+
 Each test is a plain Node script in `tests/<area>/` that talks to a running server, by default `http://localhost:3000` (pass another URL as the first argument). Its header lists exactly how to start the server for it. Common requirements:
 
 * the local Docker setup running: `docker compose -f docker-compose.local.yml up -d --build`

@@ -1,3 +1,5 @@
+const BASE_MMR = 1000;
+
 /**
  * Calculates the new MMR for players based on their relative placement and point differentials.
  * @param {Array<{ dbUserId: string, mmr: number, points: number }>} players
@@ -55,4 +57,4 @@ function calculateMMR(players) {
     }));
 }
 
-module.exports = { calculateMMR };
+module.exports = { BASE_MMR, calculateMMR };

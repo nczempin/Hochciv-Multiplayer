@@ -347,6 +347,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
 
             if (res.ok && !data.error) {
+                if (data.username) {
+                    sessionStorage.removeItem('hochciv_guest');
+                    await fetchMe();
+                    return;
+                }
                 // Show activate form
                 document.getElementById('act-username').value = username;
                 authForms.forEach(f => f.classList.remove('active'));

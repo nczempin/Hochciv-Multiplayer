@@ -48,6 +48,9 @@ const ALERTS = '<script src="/client/alerts.js"></script>';
 const FRIENDS = '<script src="/client/friends.js"></script>';
 // Leaderboard and seasons (after mp.js and profile.js)
 const RANKING = '<script src="/client/ranking.js"></script>';
+const ARENA_PREVIEW_CSS = '<link rel="stylesheet" href="/client/arena-preview.css">';
+const ARENA_PREVIEW_DATA = '<script src="/client/arena-preview-data.js"></script>';
+const ARENA_PREVIEW = '<script src="/client/arena-preview.js"></script>';
 // Single-player games for the statistics (after mp.js: it follows saveGame / gameOver and the login)
 const SOLO = '<script src="/client/solo.js"></script>';
 // Pause a live game, continue it as a Rundenspiel (after mp.js, which calls it)
@@ -85,10 +88,19 @@ if (fs.existsSync(htmlPath)) {
     let html = fs.readFileSync(htmlPath, 'utf8');
     // without the hashes of an earlier run, so the tags below are found again
     html = html.replace(/(\s(?:src|href)="[^"?#]+\.(?:js|css))\?v=[^"]*"/g, '$1"');
+    // The Bot Arena mockup is only injected into the current game when explicitly enabled.
+    const arenaPreview = process.env.ARENA_PREVIEW === 'on' && !/^v\d+$/.test(path.basename(path.resolve(dir)));
+    if (!arenaPreview) {
+        for (const tag of [ARENA_PREVIEW_CSS, ARENA_PREVIEW_DATA, ARENA_PREVIEW]) html = html.replace(tag + '\n', '');
+    } else if (!html.includes(ARENA_PREVIEW_CSS)) {
+        html = html.replace('</head>', ARENA_PREVIEW_CSS + '\n</head>');
+    }
     html = html.replace(/<script\s+src="https:\/\/cdn\.socket\.io\/[^"]*"\s*><\/script>/g, SOCKET_IO);
     if (!html.includes(MAPS_CSS)) html = html.replace('</head>', MAPS_CSS + '\n</head>');
     if (!html.includes(MOBILE_CSS)) html = html.replace('</head>', MOBILE_CSS + '\n</head>');
-    const missing = [SOCKET_IO, I18N, LOGTEXT_JS, PROFILE, MP, ALERTS, FRIENDS, RANKING, CHALLENGE, VICTORY, PRESETS, PAUSE, SOLO, SCENES, CHAT, CONSENT, STATS, REPORT, GAMESTATS, REPLAY, MATCH, ACTIVITY, MAPS_JS, MOBILE_JS].filter(tag => !html.includes(tag));
+    const scripts = [SOCKET_IO, I18N, LOGTEXT_JS, PROFILE, MP, ALERTS, FRIENDS, RANKING, CHALLENGE, VICTORY, PRESETS, PAUSE, SOLO, SCENES, CHAT, CONSENT, STATS, REPORT, GAMESTATS, REPLAY, MATCH, ACTIVITY, MAPS_JS, MOBILE_JS];
+    if (arenaPreview) scripts.push(ARENA_PREVIEW_DATA, ARENA_PREVIEW);
+    const missing = scripts.filter(tag => !html.includes(tag));
     if (missing.length) html = html.replace('</body>', missing.join('\n') + '\n</body>');
     html = Assets.versioned(html, fileOf);
     fs.writeFileSync(htmlPath, html, 'utf8');

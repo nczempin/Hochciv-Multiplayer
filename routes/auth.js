@@ -34,6 +34,7 @@ const ipLimit = max => rateLimitLib({
     legacyHeaders: false
 });
 const registerLimit = ipLimit(15);     // register, activate
+const skipEmailVerification = process.env.NODE_ENV !== 'production' && process.env.LAB_SKIP_EMAIL_VERIFICATION === 'on';
 const loginLimit = ipLimit(15);        // password login
 const factorLimit = ipLimit(15);       // second factor: e-mail code, authenticator, passkey
 const passkeyLimit = ipLimit(15);      // passwordless passkey login
@@ -130,12 +131,17 @@ router.post('/register', registerLimit, async (req, res) => {
         }
         const owner = await User.findOne({ where: { email } });
         if (owner) {
+            if (skipEmailVerification) return res.status(400).json({ error: 'Registrierung fehlgeschlagen.' });
             const note = 'Jemand wollte mit deiner E-Mail-Adresse ein neues Hochciv-Konto anlegen. Du hast schon eines ' +
                 `(${owner.username}). Warst du das, melde dich einfach an oder setze dein Passwort zurück.`;
             await sendMail(email, 'Hochciv: Du hast schon ein Konto', note, note);
             return res.json({ ok: true, message: 'Activation code sent' });
         }
         const password_hash = await bcrypt.hash(password, 10);
+        if (skipEmailVerification) {
+            const user = await User.create({ username, email, password_hash, isActive: true });
+            return finishLogin(req, res, user);
+        }
         const user = User.build({ username, email, password_hash, isActive: false });
         const activationCode = issueCode(user, 'activationCode', 'activationCodeExpiresAt', 60 * 60 * 1000); // 1 hour
         await user.save();
