@@ -45,7 +45,7 @@
             const S = window.HC_SEASONS;
             return `<tr class="${mine ? 'rk-me' : ''}" data-user="${esc(r.id)}">
                 <td class="rk-num">${esc(r.rank)}</td>
-                <td><a href="#" class="hcp-link" data-profile="${esc(r.id)}">${esc(r.username)}</a></td>
+                <td>${r.arenaKi ? esc(r.username) : `<a href="#" class="hcp-link" data-profile="${esc(r.id)}">${esc(r.username)}</a>`}</td>
                 <td>${S.tierHtml(r.tier, r.games, this.need)}</td>
                 <td class="rk-num"><b>${esc(r.mmr)}</b></td>
                 <td class="rk-num">${esc(r.games)}</td>

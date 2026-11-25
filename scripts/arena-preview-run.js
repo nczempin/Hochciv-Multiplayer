@@ -219,7 +219,7 @@ async function play(fixture, accounts, save, rules = config) {
         const { body: game } = await request('/api/games/' + record.id);
         assert.equal(game.version, version);
         assert.deepEqual(game.players.map(p => p.name).sort(), [fixture.a, fixture.b].sort());
-        assert(game.players.every(p => ranked && p.name !== fixture.ki ? typeof p.mmrShift === 'number' : p.mmrShift === null));
+        assert(game.players.every(p => ranked ? typeof p.mmrShift === 'number' : p.mmrShift === null));
         if (fixture.lobby) assert.equal(record.id, fixture.gameId);
         const won = name => Boolean(game.players.find(p => p.name === name)?.isWinner);
         const score = won(fixture.a) === won(fixture.b) ? 0.5 : Number(won(fixture.a));

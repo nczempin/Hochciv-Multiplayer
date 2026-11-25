@@ -11,6 +11,7 @@
  */
 const { Op } = require('sequelize');
 const { sequelize, User, Season, SeasonResult } = require('../models');
+const ArenaKi = require('./arena-ki-ratings');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -23,6 +24,7 @@ const TIERS = [                          // highest first
 ];
 const PLACEMENT_GAMES = 5;
 const BOARD_SIZE = 100;
+const byMmr = (a, b) => b.mmr - a.mmr || a.username.localeCompare(b.username);
 
 function tierOf(mmr, games) {
     if (games < PLACEMENT_GAMES) return null;
@@ -96,13 +98,21 @@ async function ensureNow(now) {
 
 /** Final standings of `season`, then the soft reset. */
 async function close(season, now, transaction) {
+    const kiRow = process.env.ARENA_PREVIEW === 'on' ? await ArenaKi.lock(transaction) : null;
     const stats = await statsBetween(season.startsAt, now);
     const ids = [...stats.keys()];
     const users = ids.length ? await User.findAll({ where: { id: ids }, attributes: ['id', 'username', 'mmr', 'accountType'], transaction }) : [];
     const rows = [];
     for (const type of ['human', 'bot']) {
-        users.filter(u => (u.accountType === 'bot' ? 'bot' : 'human') === type)
-            .sort((a, b) => b.mmr - a.mmr || a.username.localeCompare(b.username))
+        const ranked = users.filter(u => (u.accountType === 'bot' ? 'bot' : 'human') === type);
+        if (type === 'bot' && kiRow) {
+            for (const ki of await ArenaKi.entries(season.id, { row: kiRow, transaction })) {
+                if (!ki.games) continue;
+                stats.set(ki.id, ki);
+                ranked.push(ki);
+            }
+        }
+        ranked.sort(byMmr)
             .forEach((u, i) => {
                 const s = stats.get(u.id);
                 rows.push({ seasonId: season.id, userId: u.id, username: u.username, accountType: type, mmr: u.mmr, rank: i + 1, tier: tierOf(u.mmr, s.games), games: s.games, wins: s.wins });
@@ -111,11 +121,13 @@ async function close(season, now, transaction) {
     if (rows.length) await SeasonResult.bulkCreate(rows, { transaction });
     await season.update({ closedAt: now, endsAt: now < season.endsAt ? now : season.endsAt }, { transaction });
     await sequelize.query('UPDATE users SET mmr = ROUND(1000 + (mmr - 1000) / 2.0) WHERE mmr <> 1000', { transaction });
+    await ArenaKi.reset(kiRow, transaction);
 }
 
 /** The leaderboard of a season: the current one live, a closed one from its results. */
 async function leaderboard({ seasonId, type, me }) {
     type = type === 'bot' ? 'bot' : 'human';
+    if (type === 'bot') await ArenaKi.ensure();
     const cur = await current();
     const season = seasonId && seasonId !== cur.id ? await Season.findByPk(String(seasonId)) : cur;
     if (!season) return { error: 'Diese Saison gibt es nicht.' };
@@ -124,7 +136,7 @@ async function leaderboard({ seasonId, type, me }) {
 
     if (season.closedAt) {
         const rows = await SeasonResult.findAll({ where: { seasonId: season.id, accountType: type }, order: [['rank', 'ASC']], limit: BOARD_SIZE });
-        const list = rows.map(r => ({ id: r.userId, username: r.username, mmr: r.mmr, rank: r.rank, tier: r.tier, games: r.games, wins: r.wins }));
+        const list = rows.map(r => ({ id: r.userId, username: r.username, mmr: r.mmr, rank: r.rank, tier: r.tier, games: r.games, wins: r.wins, ...(ArenaKi.isEntrant(r.userId) && { arenaKi: true }) }));
         let mine = null;
         if (me && !list.some(r => r.id === me.id)) {
             const r = await SeasonResult.findOne({ where: { seasonId: season.id, userId: me.id } });
@@ -138,15 +150,17 @@ async function leaderboard({ seasonId, type, me }) {
     const ids = users.map(u => u.id);
     if (me && !ids.includes(me.id)) ids.push(me.id);
     const stats = await statsBetween(season.startsAt, season.endsAt, ids);
+    const ki = type === 'bot' ? await ArenaKi.entries(season.id) : [];
     const entry = (u, rank) => {
-        const s = stats.get(u.id) || { games: 0, wins: 0 };
-        return { id: u.id, username: u.username, mmr: u.mmr, rank, tier: tierOf(u.mmr, s.games), games: s.games, wins: s.wins };
+        const s = u.arenaKi ? u : (stats.get(u.id) || { games: 0, wins: 0 });
+        return { id: u.id, username: u.username, mmr: u.mmr, rank, tier: tierOf(u.mmr, s.games), games: s.games, wins: s.wins, ...(u.arenaKi && { arenaKi: true }) };
     };
-    const list = users.map((u, i) => entry(u, i + 1));
+    const sorted = ki.length ? users.concat(ki).sort(byMmr).slice(0, BOARD_SIZE) : users;
+    const list = sorted.map((u, i) => entry(u, i + 1));
     let mine = null;
     if (me && !list.some(r => r.id === me.id) && (me.accountType === 'bot' ? 'bot' : 'human') === type) {
         const above = await User.count({ where: { ...where, mmr: { [Op.gt]: me.mmr } } });
-        mine = entry(me, above + 1);
+        mine = entry(me, above + ki.filter(u => u.mmr > me.mmr).length + 1);
     }
     return { ...head, list, me: mine };
 }

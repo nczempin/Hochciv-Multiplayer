@@ -6,10 +6,10 @@ const sessions = require('../sessions');
 const { roundRobin } = require('../client/arena-preview-data');
 const { botBlockedReason } = require('./bots');
 const serverState = require('./serverState');
+const { eventPrefix, entrants: kiEntrants } = require('./arena-ki-ratings');
 
 const scheduleKey = 'arena-preview-schedule';
-const eventPrefix = 'arena-preview-event-';
-const kiLevels = { leicht: 'KI Leicht', mittel: 'KI Mittel', schwer: 'KI Schwer' };
+const kiLevels = Object.fromEntries(Object.entries(kiEntrants).map(([level, { username }]) => [level, username]));
 const defaults = {
     enabled: false, active: null, sequence: 1,
     options: { turnSeconds: 60, ranked: true, doubleHeader: false },

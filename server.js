@@ -230,6 +230,7 @@ require('./utils/migrate').migrate(dbUrl).then(async () => {
     // facts of older matches for the overall statistics (needs the column `facts`)
     require('./utils/facts').startBackfill();
     // ranked seasons: the current quarter, closing the last one (utils/seasons.js)
+    await require('./utils/arena-ki-ratings').ensure();
     require('./utils/seasons').start();
     // the maps that belong to nobody (maps/builtin.js)
     require('./maps/service').seedBuiltin().catch(err => console.error('[Maps] Seeding the built-in maps failed:', err));

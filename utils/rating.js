@@ -17,13 +17,17 @@
  *   after    – (game, transaction) → more writes that belong to the same result
  */
 const { sequelize, User, Game } = require('../models');
-const { calculateMMR } = require('./mmr');
+const { BASE_MMR, calculateMMR } = require('./mmr');
+const ArenaKi = require('./arena-ki-ratings');
 
-const BASE_MMR = 1000;
 const PLAYED = () => sequelize.literal('"gamesPlayed" + 1');
 
 async function book({ players, ranked, penalty, record, after }) {
+    const ki = ranked && process.env.ARENA_PREVIEW === 'on' && players.find(p => p.arenaKiLevel);
+    if (ki) await ArenaKi.ensure();
     return sequelize.transaction(async transaction => {
+        const kiRow = ki && await ArenaKi.lock(transaction);
+        const kiMmr = kiRow && JSON.parse(kiRow.value)[ki.arenaKiLevel]?.mmr;
         const penalized = (penalty && penalty.userIds) || [];
         const ids = [...new Set(players.map(p => p.dbUserId).filter(Boolean).concat(penalized))].sort();
         const rows = ids.length ? await User.findAll({
@@ -31,14 +35,17 @@ async function book({ players, ranked, penalty, record, after }) {
             lock: transaction.LOCK.UPDATE, transaction,
         }) : [];
         const mmr = new Map(rows.map(r => [r.id, r.mmr]));
-        for (const p of players) p.mmr = p.dbUserId && mmr.has(p.dbUserId) ? mmr.get(p.dbUserId) : BASE_MMR;
+        for (const p of players) p.mmr = (p === ki ? kiMmr : mmr.get(p.dbUserId)) ?? BASE_MMR;
 
         if (ranked) {
-            for (const r of calculateMMR(players)) {
-                const p = players.find(x => x.dbUserId != null && x.dbUserId === r.dbUserId);
-                if (!p) continue;
+            const results = calculateMMR(players);
+            for (const [index, p] of players.entries()) {
+                if (!p.dbUserId && p !== ki) continue;
+                const r = results[index];
                 Object.assign(p, { mmrShift: r.mmrChange, oldMmr: r.oldMmr, newMmr: r.newMmr });
-                await User.update({ mmr: r.newMmr, gamesPlayed: PLAYED() }, { where: { id: p.dbUserId }, transaction });
+                if (p.dbUserId) {
+                    await User.update({ mmr: r.newMmr, gamesPlayed: PLAYED() }, { where: { id: p.dbUserId }, transaction });
+                }
             }
         } else {
             for (const p of players.filter(x => x.dbUserId))
@@ -52,6 +59,7 @@ async function book({ players, ranked, penalty, record, after }) {
         }
 
         const game = await Game.create(record(players), { transaction });
+        if (ki) await ArenaKi.record(kiRow, ki.arenaKiLevel, ki.mmrShift, ki.isWinner, game.matchDate, transaction);
         if (after) await after(game, transaction);
         return game;
     });

@@ -1417,6 +1417,7 @@ async function processGameOverMmr(session, io, sessionId, isRanked = false) {
                 drafted: lp.drafted || null,
                 isBot: lp.kind === 'bot' || lp.kind === 'ki',
                 botAccount: !!lp.playerBot,
+                arenaKiLevel: lp.kind === 'ki' ? session.arenaPreview?.ki?.level : undefined,
                 points: points,
                 scoreDetails: scoreDetails,
                 isWinner: isWinner
