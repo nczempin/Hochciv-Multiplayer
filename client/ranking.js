@@ -7,7 +7,7 @@
  * the list when it isn't in the top 100. Names open the player profile. Server: GET
  * /api/seasons/leaderboard (utils/seasons.js).
  *
- * "Bot-Liga": the bot ladder of the Rundenspiele (async/ladder.js) – per game version the
+ * "Arena": the correspondence arena (async/ladder.js) – per game version the
  * standings over the finished games and the latest games, to watch or replay. Server: GET
  * /api/async/ladder (login required, like all Rundenspiele).
  */
@@ -74,7 +74,7 @@
                 <div class="rk-types" role="tablist">
                   <button type="button" class="mph-tab ${d.type === 'human' ? 'on' : ''}" onclick="RANKING.open(undefined, 'human')">${T('Spieler')}</button>
                   <button type="button" class="mph-tab ${d.type === 'bot' ? 'on' : ''}" onclick="RANKING.open(undefined, 'bot')">🤖 ${T('Bots')}</button>
-                  ${MP.ladderPlacement === 'main-menu' ? '' : `<button type="button" class="mph-tab" onclick="RANKING.openLadder()">${T('Bot-Liga')}</button>`}
+                  ${MP.ladderPlacement === 'main-menu' ? '' : `<button type="button" class="mph-tab" onclick="RANKING.openLadder()">${T('Arena')}</button>`}
                 </div>
               </div>
               <p class="sub">${esc(info)} ${esc(T('Eine Stufe gibt es ab %s gewerteten Spielen in der Saison.', d.placementGames))}</p>
@@ -88,7 +88,7 @@
 
         openLadder: async function (version) {
             const standalone = MP.ladderPlacement === 'main-menu';
-            modal(T(standalone ? 'Bot-Liga' : 'Rangliste'), `<div id="rk-box"><p class="sub">${T('Lade...')}</p></div>`);
+            modal(T(standalone ? 'Arena' : 'Rangliste'), `<div id="rk-box"><p class="sub">${T('Lade...')}</p></div>`);
             const ov = $('overlay');
             if (ov) ov.classList.add('wide');
             let d;
@@ -104,7 +104,7 @@
             const tabs = standalone ? '' : `<div class="rk-types" role="tablist">
                   <button type="button" class="mph-tab" onclick="RANKING.open(undefined, 'human')">${T('Spieler')}</button>
                   <button type="button" class="mph-tab" onclick="RANKING.open(undefined, 'bot')">🤖 ${T('Bots')}</button>
-                  <button type="button" class="mph-tab on">${T('Bot-Liga')}</button>
+                  <button type="button" class="mph-tab on">${T('Arena')}</button>
                 </div>`;
             if (d.error) { box.innerHTML = `<div class="rk-head">${tabs}</div><p class="sub error">${esc(d.error)}</p>`; return; }
             const opts = d.editions.map(v => `<option ${v === d.version ? 'selected' : ''}>${esc(v)}</option>`).join('');
@@ -133,7 +133,7 @@
                 ${games ? `<table class="rk-table rk-ladder-games">
                 <thead><tr><th>${T('Partie')}</th><th>${T('Wertung')}</th><th>${T('Ergebnis')}</th></tr></thead>
                 <tbody>${games}</tbody></table>` : ''}</div>`
-                : `<p class="sub mph-empty">${T('Für diese Version gibt es noch keine Ligaspiele.')}</p>`}`;
+                : `<p class="sub mph-empty">${T('Für diese Version gibt es noch keine Arena-Partien.')}</p>`}`;
         },
     };
 

@@ -3415,7 +3415,7 @@ MP.drawLegalFooter = function () {
         ${link('/nutzungsbedingungen.html', TX('Nutzungsbedingungen'))} |
         ${link('/impressum.html', TX('Impressum'))}${MP.discordInvite ? ' | ' + link(escHtml(MP.discordInvite), 'Discord') : ''}`;
 };
-/* Site settings control the Bot-Liga entry point and the Discord invite. The invite is only shown
+/* Site settings control the Arena entry point and the Discord invite. The invite is only shown
    outside the Discord Activity, where the players are already in Discord. */
 MP.IN_ACTIVITY = new URLSearchParams(location.search).has('frame_id') || /\.discordsays\.com$/.test(location.hostname);
 MP.loadSiteSettings = async function () {
@@ -3437,7 +3437,7 @@ MP.drawLadderButton = function () {
     const btn = document.createElement('button');
     btn.className = 'btn';
     btn.id = 'mp-bot-ladder-btn';
-    btn.textContent = TX('Bot-Liga');
+    btn.textContent = TX('Arena');
     btn.onclick = () => RANKING.openLadder();
     ranking.after(btn);
 };
@@ -3490,7 +3490,7 @@ MP.applyLang = function () {
     set('mp-live-btn', TX('Multiplayer'));
     set('mp-overall-btn', TX('Statistiken'));
     set('mp-ranking-btn', '🏆 ' + TX('Rangliste'));
-    set('mp-bot-ladder-btn', TX('Bot-Liga'));
+    set('mp-bot-ladder-btn', TX('Arena'));
     if ($('mp-discord-btn')) this.drawDiscordButton();
     set('mp-maps-btn', TX('Karten entdecken'));
     set('mp-players-title', TX('Spieler'));

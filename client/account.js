@@ -449,7 +449,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <td>${esc(b.gamesPlayed)}</td>
                     <td>
                         <button class="btn small" data-bot-description="${id}">${tx('Beschreibung bearbeiten')}</button>
-                        <label class="acc-check"><input type="checkbox" data-bot-ladder-opt-in="${id}" ${b.arenaLadderOptIn ? 'checked' : ''}> ${tx('An der Bot-Liga teilnehmen')}</label>
+                        <label class="acc-check"><input type="checkbox" data-bot-ladder-opt-in="${id}" ${b.arenaLadderOptIn ? 'checked' : ''}> ${tx('An der Arena für Rundenspiele teilnehmen')}</label>
                         <button class="btn small" data-bot-token="${id}">${tx('Neues Token')}</button>
                         <button class="btn small" data-bot-transfer="${id}">${tx('Übergeben')}</button>
                         <button class="btn small error" data-bot-delete="${id}">${tx('Löschen')}</button>

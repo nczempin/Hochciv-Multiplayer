@@ -41,7 +41,7 @@ For bot creators and admins ([Bot accounts](bot-accounts.md)). Admins may act on
 | GET | `/[?all=1]` | login | Own bots (admins with `all=1`: every bot), `{ canCreate, limit, own, bots }`. Each bot has a `description` string or null and `arenaLadderOptIn` |
 | POST | `/` | recent | Create a bot `{ username }` → `{ bot, token }` – the token is shown only now |
 | POST | `/:id/description` | owner or admin | Set public plain text `{ description }` → `{ description }`. The string is trimmed and limited to 280 Unicode code points. An empty string clears it and returns null |
-| POST | `/:id/ladder-opt-in` | owner or admin | Take part in the [bot ladder](rundenspiele.md#bot-ladder) or not: `{ arenaLadderOptIn: true/false }` → the same |
+| POST | `/:id/ladder-opt-in` | owner or admin | Take part in the [correspondence arena](rundenspiele.md#arena) or not: `{ arenaLadderOptIn: true/false }` → the same |
 | POST | `/:id/token` | recent | New token → `{ token }`; the old one and its sessions end |
 | POST | `/:id/transfer` | recent | Hand the bot over `{ username }` to another bot creator |
 | DELETE | `/:id` | recent | Delete the bot (irreversible – a stolen session cookie alone is not enough) |
@@ -101,7 +101,7 @@ The `clientId` is a secret the browser generates and keeps; the game itself then
 | GET | `/` | Own games, invitations, open public games. Asked by a bot, each game also has `playerBotsForYou` (it may take a seat now: player-bots allowed, room under the limit, the host's bot filter lets it in) |
 | POST | `/` | Create: `{ config: { mapKey, civMode, humanCount, events, eventMode, wonders, difficulty, ranked, isPublic, playerBots, playerBotLimit, playerBotFilter, … }, civ, ability, invite: [usernames] }`. `playerBotFilter` is `{ only, own, friends, allow, block }` ([Bot accounts](bot-accounts.md#rundenspiele)). Refused in maintenance mode. |
 | GET | `/code/:code` | Look up a game by join code |
-| GET | `/ladder[?version=v112]` | The [bot ladder](rundenspiele.md#bot-ladder) of a game version (default: the current one): `{ version, editions, standings: [{ name, games, wins, draws, score }], games: [{ id, status, round, ranked, turnDays, names, winners, replay }] }` – the latest 30 games, `replay` is the match id once the replay is stored |
+| GET | `/ladder[?version=v112]` | The [correspondence arena](rundenspiele.md#arena) of a game version (default: the current one): `{ version, editions, standings: [{ name, games, wins, draws, score }], games: [{ id, status, round, ranked, turnDays, names, winners, replay }] }` – the latest games up to the configured limit (default 30), `replay` is the match id once the replay is stored |
 | POST | `/notify` | E-mail notifications on/off |
 | GET | `/:id` | Game info and the player's view |
 | POST | `/:id/join` | Take a seat |
@@ -195,7 +195,7 @@ All routes need *admin*; `/oauth*` needs *superadmin*. The review admin (`review
 |---|---|---|
 | GET | `/metrics` | Uptime, memory, CPU, maintenance/registration state, lobbies and players online |
 | POST | `/config` | `{ maintenanceMode?, registrationEnabled? }` |
-| GET | `/ladder` | The [bot ladder](rundenspiele.md#bot-ladder)'s settings `{ enabled, turnDays, avoidRematches, sameOwnerRanked, pairingIntervalSeconds, placement, recentGamesLimit, canManage }`. `canManage` reflects this viewer's permission to save. |
+| GET | `/ladder` | Settings for the [correspondence arena](rundenspiele.md#arena) `{ enabled, turnDays, avoidRematches, sameOwnerRanked, pairingIntervalSeconds, placement, recentGamesLimit, canManage }`. `canManage` reflects this viewer's permission to save. |
 | GET | `/ladder/status` | Ladder activity `{ optedIn, available, activeGames, lastCheckAt }`. `lastCheckAt` is an ISO timestamp or null. |
 | POST | `/ladder` | `turnDays` is 1, 3 or 7. `enabled`, `avoidRematches` and `sameOwnerRanked` are booleans. `pairingIntervalSeconds` is an integer from 5 to 300 (default 15). `placement` is `leaderboard` (default) or `main-menu`. `recentGamesLimit` is a positive integer (default 30). Omitting the interval, placement, or recent game limit keeps its saved value. |
 | GET | `/users` | All accounts; bots with `owner` and `botDisabled`, bot creators with `bots { count, limit }`. For the review admin the e-mail is masked (`p***@gmail.com`) |

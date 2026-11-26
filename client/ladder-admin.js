@@ -1,8 +1,9 @@
-// The Bot-Liga panel only talks to the ladder's scoped settings and status endpoints.
+// The Arena panel uses the scoped settings and status endpoints for correspondence.
 window.HC_LADDER_ADMIN = {
     mount(panel, request = fetch) {
         const endpoint = '/api/admin/ladder';
         const form = panel.querySelector('#admin-ladder-form');
+        const save = form.querySelector('button[type="submit"]');
         const status = panel.querySelector('#admin-ladder-status');
         const summary = panel.querySelector('#admin-ladder-summary');
         const pending = panel.querySelector('#admin-ladder-pending');
@@ -19,8 +20,16 @@ window.HC_LADDER_ADMIN = {
                 recentGamesLimit: fields.recentGamesLimit.valueAsNumber,
             };
         }
+        function warnUnsaved(event) {
+            event.preventDefault();
+            event.returnValue = '';
+        }
         function updatePending() {
-            pending.hidden = !savedSettings || Object.entries(draft()).every(([key, value]) => value === savedSettings[key]);
+            const dirty = Boolean(savedSettings) && Object.entries(draft()).some(([key, value]) => value !== savedSettings[key]);
+            pending.hidden = !dirty;
+            save.classList.toggle('btn-primary', dirty);
+            if (dirty) window.addEventListener('beforeunload', warnUnsaved);
+            else window.removeEventListener('beforeunload', warnUnsaved);
         }
         function showSaved(settings) {
             savedSettings = settings;
@@ -52,7 +61,7 @@ window.HC_LADDER_ADMIN = {
                 showSaved(settings);
                 lock(!settings.canManage);
             } catch (_) {
-                showMessage(T('Einstellungen der Bot-Liga konnten nicht geladen werden.'), true);
+                showMessage(T('Einstellungen der Arena konnten nicht geladen werden.'), true);
             }
         }
 
@@ -67,7 +76,7 @@ window.HC_LADDER_ADMIN = {
                 summary.textContent = T('Angemeldet %s · Paarungsbereit %s · Laufende Partien %s · Letzte Prüfung %s',
                     data.optedIn, data.available, data.activeGames, last);
             } catch (_) {
-                summary.textContent = T('Status der Bot-Liga konnte nicht geladen werden.');
+                summary.textContent = T('Status der Arena konnte nicht geladen werden.');
             }
         }
 

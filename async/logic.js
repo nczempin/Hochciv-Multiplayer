@@ -459,7 +459,7 @@ function leave(g, userId) {
     const seat = seatOf(g, userId);
     if (!seat) return 'Du bist nicht in diesem Spiel.';
     if (g.config.challenge) return 'Die Wochen-Challenge kann man nur aufgeben.';
-    if (g.config.arena) return 'Spiele der Bot-Liga kann man nur aufgeben.';
+    if (g.config.arena) return 'Partien der Arena kann man nur aufgeben.';
     if (userId === g.hostUserId) return 'Der Host kann das Spiel nur abbrechen, nicht verlassen.';
     const free = g.status === 'setup' || (g.status === 'playing' && !seat.started);
     if (!free) return 'Nach deinem ersten Zug kannst du das Spiel nicht mehr verlassen.';
@@ -483,7 +483,7 @@ function leave(g, userId) {
 function cancel(g, userId) {
     if (userId !== g.hostUserId) return 'Nur der Host kann das Spiel abbrechen.';
     if (g.config.challenge) return 'Die Wochen-Challenge kann man nur aufgeben.';
-    if (g.config.arena) return 'Spiele der Bot-Liga kann man nur aufgeben.';
+    if (g.config.arena) return 'Partien der Arena kann man nur aufgeben.';
     const others = g.seats.filter(s => s.userId && s.userId !== userId);
     const ok = g.status === 'setup' || (g.status === 'playing' && others.every(s => !s.started));
     if (!ok) return 'Das Spiel läuft schon – abbrechen geht nicht mehr.';
@@ -646,7 +646,7 @@ function finishPlacement(g) {
  * order random. Only the server creates it; both bots start by placing their start tiles.
  */
 function createLadderGame(a, b, { ranked = false, turnDays = 1 } = {}) {
-    if (!a.isBot || !b.isBot || a.id === b.id) return { error: 'Die Bot-Liga braucht zwei verschiedene Spieler-Bots.' };
+    if (!a.isBot || !b.isBot || a.id === b.id) return { error: 'Die Arena braucht zwei verschiedene Spieler-Bots.' };
     const { g, error } = create(a, {
         arena: true,
         config: { mapKey: 'plaettchen', playerCount: 2, kiCount: 0, civMode: 'random',
@@ -656,7 +656,7 @@ function createLadderGame(a, b, { ranked = false, turnDays = 1 } = {}) {
     g.config.arenaLadder = true;
     const joinError = join(g, b, {});
     if (joinError) return { error: joinError };
-    if (g.status !== 'placement') return { error: 'Die Bot-Liga braucht eine Plättchenkarte.' };
+    if (g.status !== 'placement') return { error: 'Die Arena braucht eine Plättchenkarte.' };
     return { g };
 }
 
