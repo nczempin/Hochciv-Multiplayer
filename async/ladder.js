@@ -1,7 +1,7 @@
 /**
  * The bot ladder of the Rundenspiele: bot accounts whose owner opted them in (users.arenaLadderOptIn,
  * routes/bots.js) are paired automatically, as long as an admin has the ladder switched on
- * (routes/admin.js GET/POST /ladder, stored in the `settings` table).
+ * (routes/ladder-admin.js, stored in the `settings` table).
  *
  * A ladder game is an ordinary Rundenspiel between two bot accounts on the tile map, nations and
  * turn order random (async/logic.js createLadderGame), public to watch. It follows the usual rules:
@@ -23,6 +23,9 @@ const serverState = require('../utils/serverState');
 const key = 'arena-correspondence-ladder';
 const defaults = { enabled: false, turnDays: 3, avoidRematches: true, sameOwnerRanked: false,
     pairingIntervalSeconds: 15, placement: 'leaderboard' };
+const enrolled = { accountType: 'bot', arenaLadderOptIn: true };
+const ladderGameData = { [Op.contains]: { config: { arenaLadder: true } } };
+const closedStatuses = ['finished', 'cancelled'];
 const presence = new Map();
 const readyForMs = 5 * 60 * 1000;          // a bot counts as there this long after its last request
 const testTickMs = Number(process.env.LADDER_TICK_MS);
@@ -30,6 +33,7 @@ const TURN_DAYS = [1, 3, 7];
 let timer;
 let timerMs;
 let running = false;
+let lastCheckAt = null;
 
 function seen(bot) {
     if (bot.arenaLadderOptIn) presence.set(bot.id, Date.now());
@@ -61,7 +65,7 @@ async function configure(body, by) {
 
 async function ladderGames() {
     return AsyncGame.findAll({
-        where: { data: { [Op.contains]: { config: { arenaLadder: true } } } },
+        where: { data: ladderGameData },
         attributes: ['id', 'status', 'participantIds', 'createdAt', 'round',
             [sequelize.literal("data->>'engine'"), 'version'],
             [sequelize.literal("data->'config'->'ranked'"), 'ranked'],
@@ -72,7 +76,43 @@ async function ladderGames() {
     });
 }
 
-const ended = g => ['finished', 'cancelled'].includes(g.status);
+function activeLadderGames() {
+    return AsyncGame.findAll({
+        where: { data: ladderGameData, status: { [Op.notIn]: closedStatuses } },
+        attributes: ['participantIds'],
+        raw: true,
+    });
+}
+
+function presentBotIds() {
+    const now = Date.now();
+    for (const [id, lastSeen] of presence) if (now - lastSeen > readyForMs) presence.delete(id);
+    return [...presence.keys()];
+}
+
+async function availableBots(ids, ladderActive) {
+    if (!ids.length) return [];
+    const service = require('./service');
+    const [bots, active] = await Promise.all([
+        User.findAll({ where: { ...enrolled, id: ids, isActive: true } }),
+        AsyncGame.findAll({ where: { status: service.ACTIVE, participantIds: { [Op.overlap]: ids } },
+            attributes: ['participantIds'], raw: true }),
+    ]);
+    const busy = new Set(ladderActive.flatMap(game => game.participantIds));
+    const total = new Map();
+    for (const game of active) for (const id of game.participantIds) total.set(id, (total.get(id) || 0) + 1);
+    const owners = await User.findAll({ where: { id: bots.map(bot => bot.ownerId).filter(Boolean) } });
+    const byId = new Map(owners.map(owner => [owner.id, owner]));
+    return bots.filter(bot => !busy.has(bot.id) && (total.get(bot.id) || 0) < service.MAX_ACTIVE_PER_USER
+        && !botBlockedReason(bot, byId.get(bot.ownerId)));
+}
+
+async function status() {
+    const [optedIn, active] = await Promise.all([User.count({ where: enrolled }), activeLadderGames()]);
+    const ready = await availableBots(presentBotIds(), active);
+    return { optedIn, available: ready.length, activeGames: active.length, lastCheckAt };
+}
+
 const counted = game => game.status === 'finished' && !!game.result?.gameId;       // booked (async/service.js processResult)
 const opponentKey = (a, b) => [a, b].sort().join('/');
 
@@ -116,24 +156,14 @@ async function tick() {
         const options = await settings();
         schedule(options.pairingIntervalSeconds);
         if (!options.enabled) return;
-        const now = Date.now();
-        for (const [id, lastSeen] of presence) if (now - lastSeen > readyForMs) presence.delete(id);
-        if (presence.size < 2) return;
+        lastCheckAt = new Date().toISOString();
+        const ids = presentBotIds();
+        if (ids.length < 2) return;
+        const ready = await availableBots(ids, await activeLadderGames());
+        if (ready.length < 2) return;
         const service = require('./service');
         const rules = version();              // ladder games are played with the current game version
-        const [games, bots, active] = await Promise.all([
-            ladderGames(),
-            User.findAll({ where: { id: [...presence.keys()], arenaLadderOptIn: true, accountType: 'bot', isActive: true } }),
-            AsyncGame.findAll({ where: { status: service.ACTIVE, participantIds: { [Op.overlap]: [...presence.keys()] } },
-                attributes: ['participantIds'] }),
-        ]);
-        const busy = new Set(games.filter(game => !ended(game)).flatMap(game => game.participantIds));
-        const total = new Map();
-        for (const game of active) for (const id of game.participantIds) total.set(id, (total.get(id) || 0) + 1);
-        const owners = await User.findAll({ where: { id: bots.map(bot => bot.ownerId).filter(Boolean) } });
-        const byId = new Map(owners.map(owner => [owner.id, owner]));
-        const ready = bots.filter(bot => !busy.has(bot.id) && (total.get(bot.id) || 0) < service.MAX_ACTIVE_PER_USER
-            && !botBlockedReason(bot, byId.get(bot.ownerId)));
+        const games = await ladderGames();
         for (const [a, b] of selectMatchups(ready, games.filter(g => g.version === rules), options.avoidRematches)) {
             const ranked = a.ownerId !== b.ownerId || options.sameOwnerRanked;
             const result = await service.createLadderGame(a, b, { ranked, turnDays: options.turnDays });
@@ -190,4 +220,4 @@ async function report(requestedVersion) {
     return { version: rules, editions, standings, games: field.slice(-30).reverse().map(publicGame) };
 }
 
-module.exports = { settings, configure, seen, start, tick, report, selectMatchups, standingsOf };
+module.exports = { settings, configure, status, seen, start, tick, report, selectMatchups, standingsOf };

@@ -82,11 +82,12 @@
                         </form>
                     </div>
                     <p id="admin-discord-msg" class="acc-setting-msg" hidden></p>
-                    <div class="acc-setting acc-setting-ladder">
+                    <div id="admin-ladder-panel" class="acc-setting acc-setting-ladder">
                         <div>
                             <strong>Bot-Liga</strong>
                             <span id="admin-ladder-status" class="acc-ladder-status" role="status"></span>
                             <small>Angemeldete Spieler-Bots werden automatisch zu Rundenspielen gepaart, zu zweit auf der Plättchenkarte.</small>
+                            <small id="admin-ladder-summary"></small>
                         </div>
                         <form id="admin-ladder-form" class="acc-ladder-form">
                             <label class="acc-check"><input name="enabled" type="checkbox" class="w-lock">Automatische Paarungen</label>
@@ -108,8 +109,8 @@
                             <button type="submit" class="btn small w-lock">Speichern</button>
                             <span id="admin-ladder-pending" class="acc-ladder-pending" role="status" hidden>Auf „Speichern“ klicken, um die Änderung zu übernehmen.</span>
                         </form>
+                        <p id="admin-ladder-msg" class="acc-setting-msg" hidden></p>
                     </div>
-                    <p id="admin-ladder-msg" class="acc-setting-msg" hidden></p>
                 </div>
 
                 <div class="acc-card">
@@ -442,6 +443,7 @@
     </script>
     <script src="stats.js"></script>
     <script src="account-common.js"></script>
+    <script src="ladder-admin.js"></script>
     <script src="admin.js"></script>
 </body>
 

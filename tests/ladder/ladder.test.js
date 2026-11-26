@@ -177,13 +177,18 @@ async function server() {
         // The admin's settings
         const first = await S.admin('GET', '/api/admin/ladder');
         ok(first.status === 200 && first.data.enabled === false && first.data.turnDays === 3 && first.data.avoidRematches === true
-            && first.data.sameOwnerRanked === false && first.data.pairingIntervalSeconds === 15 && first.data.placement === 'leaderboard',
+            && first.data.sameOwnerRanked === false && first.data.pairingIntervalSeconds === 15 && first.data.placement === 'leaderboard'
+            && first.data.canManage === true,
             'the ladder is off by default with a 15-second pairing interval', JSON.stringify(first.data));
         ok((await guest('GET', '/api/settings')).data.ladderPlacement === 'leaderboard', 'the ladder is in the leaderboard by default');
-        ok((await S.o1('GET', '/api/admin/ladder')).status === 403 && (await S.o1('POST', '/api/admin/ladder', {})).status === 403, 'settings: admins only');
+        ok((await S.o1('GET', '/api/admin/ladder')).status === 403 && (await S.o1('POST', '/api/admin/ladder', {})).status === 403
+            && (await S.o1('GET', '/api/admin/ladder/status')).status === 403 && (await guest('GET', '/api/admin/ladder/status')).status === 403,
+            'settings and activity require ladder permissions');
         const on = { enabled: true, turnDays: 1, avoidRematches: true, sameOwnerRanked: false, pairingIntervalSeconds: 5,
             placement: 'leaderboard' };
-        ok((await S.review('GET', '/api/admin/ladder')).status === 200 && (await S.review('POST', '/api/admin/ladder', on)).status === 403, 'the review admin reads the settings and changes nothing');
+        const review = await S.review('GET', '/api/admin/ladder');
+        ok(review.status === 200 && review.data.canManage === false && (await S.review('GET', '/api/admin/ladder/status')).status === 200
+            && (await S.review('POST', '/api/admin/ladder', on)).status === 403, 'the review admin can read the ladder and cannot save');
         ok((await S.admin('POST', '/api/admin/ladder', { ...on, turnDays: 2 })).status === 400
             && (await S.admin('POST', '/api/admin/ladder', { ...on, enabled: 'yes' })).status === 400
             && (await S.admin('POST', '/api/admin/ladder', {})).status === 400, 'settings: checked values');
@@ -202,6 +207,9 @@ async function server() {
         await ladderGamesOf(A); await ladderGamesOf(Bb);
         await sleep(2500);
         ok((await ladderGamesOf(A)).length === 0 && (await ladderGamesOf(Bb)).length === 0, 'ladder off: two opted-in bots are not paired');
+        const idle = await S.admin('GET', '/api/admin/ladder/status');
+        ok(idle.status === 200 && idle.data.optedIn === 2 && idle.data.available === 2 && idle.data.activeGames === 0
+            && idle.data.lastCheckAt === null, 'paused status shows ready bots and no pairing checks yet');
 
         // On: A and B (different owners) get a rated game; C (not opted in) none
         const saved = await S.admin('POST', '/api/admin/ladder', on);
@@ -213,6 +221,9 @@ async function server() {
         const game = mine && mine[0];
         ok(!!game, 'two opted-in bots are paired within the new 5-second interval plus allowance');
         if (!game) return;
+        const activity = await S.admin('GET', '/api/admin/ladder/status');
+        ok(activity.status === 200 && activity.data.optedIn === 2 && activity.data.available === 0 && activity.data.activeGames === 1
+            && Number.isFinite(Date.parse(activity.data.lastCheckAt)), 'active status shows the game and excludes both busy bots');
         const seen = (await ladderGamesOf(Bb))[0];
         ok(seen && seen.id === game.id && game.status === 'placement' && game.seats.every(s => s.botAccount)
             && game.seats.map(s => s.name).sort().join() === [A.name, Bb.name].sort().join(), 'both sit in the same game and place their start tiles', game.status);

@@ -74,6 +74,10 @@ The *Bot-Liga* standings (`GET /api/async/ladder`) count the finished games per 
 
 In the admin overview, *Position der Bot-Liga* selects the leaderboard tab (default) or a main-menu button. The game page reads the saved selection when it loads. Both entry points call `RANKING.openLadder()` in `client/ranking.js`. The main-menu hook is `MP.drawLadderButton()` in `mp.js`, and the leaderboard tab is in `RANKING.draw()`.
 
+The admin status line counts opted-in accounts, available bots, and active ladder games. Available bots meet the same check-in, eligibility and concurrency requirements as the pairing scheduler. The last-check time records the start of the latest enabled pairing pass since server start. These counts refresh independently of unsaved changes to the form.
+
+The panel in `client/ladder-admin.js` can mount separately from the global admin page. Its three endpoints are scoped in `routes/ladder-admin.js`. The `ladderAccess` check grants Admin and Super Admin write access and Review Admin read access. Giving another role just this panel can use the same scoped check.
+
 ## Resigning
 
 While the game runs, a player can resign (*Aufgeben* in the game menu, `POST /api/async/:id/resign`). The KI plays the seat to the end, like after the 7-day timeout (same level, same 15 MMR in ranked games); the player watches the game read-only. A duel without KI ends at once with the other player's win; when nobody human is left, the most points win.

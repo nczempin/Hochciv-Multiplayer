@@ -93,8 +93,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     // --- Overview: metrics, global switches, lobbies ---
+    const ladderAdmin = HC_LADDER_ADMIN.mount(document.getElementById('admin-ladder-panel'), authFetch);
     const LIVE_STATUS = { placement: tx('Startplättchen'), draft: tx('Draft'), playing: tx('Läuft'), finished: tx('Beendet') };
     async function loadDashboard() {
+        ladderAdmin.refreshStatus();
         try {
             const mData = await (await fetch('/api/admin/metrics')).json();
             document.getElementById('admin-lobbies-count').textContent = mData.lobbiesActive;
@@ -151,60 +153,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
     loadSettings();
 
-    // The bot ladder of the Rundenspiele (async/ladder.js): loaded once, like the Discord link
-    const ladderForm = document.getElementById('admin-ladder-form');
-    const ladderStatus = document.getElementById('admin-ladder-status');
-    const ladderPending = document.getElementById('admin-ladder-pending');
-    let savedLadderSettings;
-
-    function ladderDraft() {
-        const f = ladderForm.elements;
-        return {
-            enabled: f.enabled.checked, turnDays: Number(f.turnDays.value),
-            avoidRematches: f.avoidRematches.checked, sameOwnerRanked: f.sameOwnerRanked.checked,
-            pairingIntervalSeconds: f.pairingIntervalSeconds.valueAsNumber,
-            placement: f.placement.value,
-        };
-    }
-    function updateLadderPending() {
-        ladderPending.hidden = !savedLadderSettings
-            || Object.entries(ladderDraft()).every(([key, value]) => value === savedLadderSettings[key]);
-    }
-    function showSavedLadderStatus(settings) {
-        savedLadderSettings = settings;
-        ladderStatus.dataset.enabled = String(settings.enabled);
-        ladderStatus.textContent = settings.enabled ? tx('Aktiv') : tx('Inaktiv');
-        updateLadderPending();
-    }
-    ladderForm.addEventListener('input', updateLadderPending);
-
-    async function loadLadder() {
-        try {
-            const res = await fetch('/api/admin/ladder', { cache: 'no-store' });
-            if (!res.ok) return;
-            const st = await res.json();
-            ladderForm.elements.enabled.checked = !!st.enabled;
-            ladderForm.elements.turnDays.value = st.turnDays;
-            ladderForm.elements.avoidRematches.checked = !!st.avoidRematches;
-            ladderForm.elements.sameOwnerRanked.checked = !!st.sameOwnerRanked;
-            ladderForm.elements.pairingIntervalSeconds.value = st.pairingIntervalSeconds;
-            ladderForm.elements.placement.value = st.placement;
-            showSavedLadderStatus(st);
-        } catch (e) {
-            console.error(e);
-        }
-    }
-    ladderForm.addEventListener('submit', async ev => {
-        ev.preventDefault();
-        const msg = document.getElementById('admin-ladder-msg');
-        const res = await post('/api/admin/ladder', ladderDraft());
-        const data = await res.json().catch(() => ({}));
-        if (res.ok && typeof data.enabled === 'boolean') showSavedLadderStatus(data);
-        msg.hidden = false;
-        msg.classList.toggle('error', !res.ok);
-        msg.textContent = res.ok ? tx('Gespeichert.') : txs(data.error || 'Fehler');
-    });
-    loadLadder();
     window.toggleMaintenance = async () => {
         await post('/api/admin/config', { maintenanceMode: !window._maintenanceMode });
         loadDashboard();
