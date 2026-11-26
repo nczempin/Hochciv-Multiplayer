@@ -155,18 +155,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     const ladderForm = document.getElementById('admin-ladder-form');
     const ladderStatus = document.getElementById('admin-ladder-status');
     const ladderPending = document.getElementById('admin-ladder-pending');
-    let savedLadderEnabled;
+    let savedLadderSettings;
 
-    function updateLadderPending() {
-        ladderPending.hidden = savedLadderEnabled === undefined || ladderForm.elements.enabled.checked === savedLadderEnabled;
+    function ladderDraft() {
+        const f = ladderForm.elements;
+        return {
+            enabled: f.enabled.checked, turnDays: Number(f.turnDays.value),
+            avoidRematches: f.avoidRematches.checked, sameOwnerRanked: f.sameOwnerRanked.checked,
+            pairingIntervalSeconds: f.pairingIntervalSeconds.valueAsNumber,
+        };
     }
-    function showSavedLadderStatus(enabled) {
-        savedLadderEnabled = enabled;
-        ladderStatus.dataset.enabled = String(enabled);
-        ladderStatus.textContent = enabled ? tx('Aktiv') : tx('Inaktiv');
+    function updateLadderPending() {
+        ladderPending.hidden = !savedLadderSettings
+            || Object.entries(ladderDraft()).every(([key, value]) => value === savedLadderSettings[key]);
+    }
+    function showSavedLadderStatus(settings) {
+        savedLadderSettings = settings;
+        ladderStatus.dataset.enabled = String(settings.enabled);
+        ladderStatus.textContent = settings.enabled ? tx('Aktiv') : tx('Inaktiv');
         updateLadderPending();
     }
-    ladderForm.elements.enabled.addEventListener('change', updateLadderPending);
+    ladderForm.addEventListener('input', updateLadderPending);
 
     async function loadLadder() {
         try {
@@ -177,20 +186,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             ladderForm.elements.turnDays.value = st.turnDays;
             ladderForm.elements.avoidRematches.checked = !!st.avoidRematches;
             ladderForm.elements.sameOwnerRanked.checked = !!st.sameOwnerRanked;
-            showSavedLadderStatus(st.enabled);
+            ladderForm.elements.pairingIntervalSeconds.value = st.pairingIntervalSeconds;
+            showSavedLadderStatus(st);
         } catch (e) {
             console.error(e);
         }
     }
     ladderForm.addEventListener('submit', async ev => {
         ev.preventDefault();
-        const f = ladderForm.elements, msg = document.getElementById('admin-ladder-msg');
-        const res = await post('/api/admin/ladder', {
-            enabled: f.enabled.checked, turnDays: Number(f.turnDays.value),
-            avoidRematches: f.avoidRematches.checked, sameOwnerRanked: f.sameOwnerRanked.checked,
-        });
+        const msg = document.getElementById('admin-ladder-msg');
+        const res = await post('/api/admin/ladder', ladderDraft());
         const data = await res.json().catch(() => ({}));
-        if (res.ok && typeof data.enabled === 'boolean') showSavedLadderStatus(data.enabled);
+        if (res.ok && typeof data.enabled === 'boolean') showSavedLadderStatus(data);
         msg.hidden = false;
         msg.classList.toggle('error', !res.ok);
         msg.textContent = res.ok ? tx('Gespeichert.') : txs(data.error || 'Fehler');

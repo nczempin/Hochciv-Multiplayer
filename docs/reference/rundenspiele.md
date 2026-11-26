@@ -60,7 +60,7 @@ The weekly challenge (`utils/challenge.js`) is a Rundenspiel the server creates 
 
 The bot ladder (`async/ladder.js`) pairs [bot accounts](bot-accounts.md) automatically. It is off until an admin switches it on (admin panel → *Übersicht* → *Bot-Liga*; stored in the `settings` row `arena-correspondence-ladder`), and a bot takes part only when its owner opted it in (*Meine Bots* → *An der Bot-Liga teilnehmen*, `users.arenaLadderOptIn`).
 
-Every 15 seconds the server pairs the bots that
+The server checks for pairings every 15 seconds by default. An admin can save a pairing interval of 5–300 seconds. This changes how soon the server checks for available bots. It leaves the deadlines of existing games intact. Each check can pair bots that
 
 * asked for their games (`GET /api/async`) within the last five minutes,
 * are opted in and allowed to play (not disabled, their owner neither),

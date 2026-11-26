@@ -177,13 +177,22 @@ async function server() {
         // The admin's settings
         const first = await S.admin('GET', '/api/admin/ladder');
         ok(first.status === 200 && first.data.enabled === false && first.data.turnDays === 3 && first.data.avoidRematches === true
-            && first.data.sameOwnerRanked === false, 'the ladder is off until an admin switches it on', JSON.stringify(first.data));
+            && first.data.sameOwnerRanked === false && first.data.pairingIntervalSeconds === 15,
+            'the ladder is off by default with a 15-second pairing interval', JSON.stringify(first.data));
         ok((await S.o1('GET', '/api/admin/ladder')).status === 403 && (await S.o1('POST', '/api/admin/ladder', {})).status === 403, 'settings: admins only');
-        const on = { enabled: true, turnDays: 1, avoidRematches: true, sameOwnerRanked: false };
+        const on = { enabled: true, turnDays: 1, avoidRematches: true, sameOwnerRanked: false, pairingIntervalSeconds: 5 };
         ok((await S.review('GET', '/api/admin/ladder')).status === 200 && (await S.review('POST', '/api/admin/ladder', on)).status === 403, 'the review admin reads the settings and changes nothing');
         ok((await S.admin('POST', '/api/admin/ladder', { ...on, turnDays: 2 })).status === 400
             && (await S.admin('POST', '/api/admin/ladder', { ...on, enabled: 'yes' })).status === 400
             && (await S.admin('POST', '/api/admin/ladder', {})).status === 400, 'settings: checked values');
+        const invalidIntervals = await Promise.all([4, 301, 5.5, '15', null].map(pairingIntervalSeconds =>
+            S.admin('POST', '/api/admin/ladder', { ...on, pairingIntervalSeconds })));
+        ok(invalidIntervals.every(res => res.status === 400), 'pairing interval must be an integer from 5 to 300');
+        const slower = await S.admin('POST', '/api/admin/ladder', { ...on, enabled: false, pairingIntervalSeconds: 60 });
+        const { pairingIntervalSeconds, ...legacy } = on;
+        const legacySave = await S.admin('POST', '/api/admin/ladder', { ...legacy, enabled: false });
+        ok(slower.data.pairingIntervalSeconds === 60 && legacySave.data.pairingIntervalSeconds === 60,
+            'an older settings client preserves the saved pairing interval');
 
         // Off: nobody is paired
         await ladderGamesOf(A); await ladderGamesOf(Bb);
@@ -192,11 +201,13 @@ async function server() {
 
         // On: A and B (different owners) get a rated game; C (not opted in) none
         const saved = await S.admin('POST', '/api/admin/ladder', on);
-        ok(saved.status === 200 && saved.data.enabled === true && (await S.admin('GET', '/api/admin/ladder')).data.turnDays === 1, 'an admin switches the ladder on');
+        const savedSettings = (await S.admin('GET', '/api/admin/ladder')).data;
+        ok(saved.status === 200 && savedSettings.enabled === true && savedSettings.turnDays === 1
+            && savedSettings.pairingIntervalSeconds === 5, 'an admin switches the ladder on and sets its interval');
         await ladderGamesOf(C);
         const mine = await until(async () => { await ladderGamesOf(Bb); const g = await ladderGamesOf(A); return g.length ? g : null; });
         const game = mine && mine[0];
-        ok(!!game, 'two opted-in bots that ask for their games are paired');
+        ok(!!game, 'two opted-in bots are paired within the new 5-second interval plus allowance');
         if (!game) return;
         const seen = (await ladderGamesOf(Bb))[0];
         ok(seen && seen.id === game.id && game.status === 'placement' && game.seats.every(s => s.botAccount)

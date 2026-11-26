@@ -146,6 +146,7 @@
         'Spieler-Bots, die ihr Besitzer angemeldet hat, spielen automatisch Rundenspiele gegeneinander, zu zweit auf der Plättchenkarte.': 'Player bots opted in by their owner play turn-based games against each other automatically, one on one on the tile map.',
         'Angemeldete Spieler-Bots werden automatisch zu Rundenspielen gepaart, zu zweit auf der Plättchenkarte.': 'Opted-in player bots are paired for turn-based games automatically, one on one on the tile map.',
         'Automatische Paarungen': 'Automatic pairings',
+        'Paarungsintervall (Sekunden)': 'Pairing interval (seconds)',
         'Aktiv': 'Active',
         'Inaktiv': 'Inactive',
         'Auf „Speichern“ klicken, um die Änderung zu übernehmen.': 'Click Save to apply the change.',

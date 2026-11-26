@@ -97,6 +97,9 @@
                             </label>
                             <label class="acc-check"><input name="avoidRematches" type="checkbox" class="w-lock">Direkte Wiederholung vermeiden</label>
                             <label class="acc-check"><input name="sameOwnerRanked" type="checkbox" class="w-lock">Partien desselben Besitzers werten</label>
+                            <label class="acc-check">Paarungsintervall (Sekunden)
+                                <input name="pairingIntervalSeconds" type="number" min="5" max="300" step="1" value="15" required class="w-lock">
+                            </label>
                             <button type="submit" class="btn small w-lock">Speichern</button>
                             <span id="admin-ladder-pending" class="acc-ladder-pending" role="status" hidden>Auf „Speichern“ klicken, um die Änderung zu übernehmen.</span>
                         </form>

@@ -10,9 +10,9 @@
  *
  *   seen(bot)            – a bot asked for its games (async/service.js list): it is there to play
  *   tick()               – pair the bots that are there, opted in, allowed to play and without a
- *                          running ladder game; every TICK_MS
+ *                          running ladder game; at the admin's pairing interval
  *   report(version)      – standings and the latest games of one game version (GET /api/async/ladder)
- *   settings/configure   – { enabled, turnDays, avoidRematches, sameOwnerRanked }
+ *   settings/configure   – { enabled, turnDays, avoidRematches, sameOwnerRanked, pairingIntervalSeconds }
  */
 const { Op } = require('sequelize');
 const { AsyncGame, Setting, User, sequelize } = require('../models');
@@ -21,11 +21,13 @@ const { botBlockedReason } = require('../utils/bots');
 const serverState = require('../utils/serverState');
 
 const key = 'arena-correspondence-ladder';
-const defaults = { enabled: false, turnDays: 3, avoidRematches: true, sameOwnerRanked: false };
+const defaults = { enabled: false, turnDays: 3, avoidRematches: true, sameOwnerRanked: false, pairingIntervalSeconds: 15 };
 const presence = new Map();
 const readyForMs = 5 * 60 * 1000;          // a bot counts as there this long after its last request
-const TICK_MS = Number(process.env.LADDER_TICK_MS) > 0 ? Number(process.env.LADDER_TICK_MS) : 15000;   // tests: shorter
+const testTickMs = Number(process.env.LADDER_TICK_MS);
 const TURN_DAYS = [1, 3, 7];
+let timer;
+let timerMs;
 let running = false;
 
 function seen(bot) {
@@ -40,12 +42,16 @@ async function settings() {
 
 /** @returns the stored settings, or { error } */
 async function configure(body, by) {
-    const { enabled, turnDays, avoidRematches, sameOwnerRanked } = body || {};
-    if (!TURN_DAYS.includes(turnDays) || [enabled, avoidRematches, sameOwnerRanked].some(v => typeof v !== 'boolean')) {
+    const { enabled, turnDays, avoidRematches, sameOwnerRanked, pairingIntervalSeconds } = body || {};
+    if (!TURN_DAYS.includes(turnDays) || [enabled, avoidRematches, sameOwnerRanked].some(v => typeof v !== 'boolean')
+        || (pairingIntervalSeconds !== undefined && (!Number.isInteger(pairingIntervalSeconds)
+            || pairingIntervalSeconds < 5 || pairingIntervalSeconds > 300))) {
         return { error: 'Ungültiger Wert.' };
     }
-    const options = { enabled, turnDays, avoidRematches, sameOwnerRanked };
+    const options = { enabled, turnDays, avoidRematches, sameOwnerRanked,
+        pairingIntervalSeconds: pairingIntervalSeconds ?? (await settings()).pairingIntervalSeconds };
     await Setting.upsert({ key, value: JSON.stringify(options), updatedBy: by || null });
+    schedule(options.pairingIntervalSeconds);
     return options;
 }
 
@@ -104,6 +110,7 @@ async function tick() {
     running = true;
     try {
         const options = await settings();
+        schedule(options.pairingIntervalSeconds);
         if (!options.enabled) return;
         const now = Date.now();
         for (const [id, lastSeen] of presence) if (now - lastSeen > readyForMs) presence.delete(id);
@@ -134,8 +141,19 @@ async function tick() {
     }
 }
 
+function schedule(seconds) {
+    const ms = testTickMs > 0 ? testTickMs : seconds * 1000;
+    if (timerMs === ms) return;
+    clearInterval(timer);
+    timerMs = ms;
+    timer = setInterval(() => tick().catch(error => console.error('[Ladder]', error.message)), ms).unref();
+}
+
 function start() {
-    setInterval(() => tick().catch(error => console.error('[Ladder]', error.message)), TICK_MS).unref();
+    settings().then(options => schedule(options.pairingIntervalSeconds), error => {
+        console.error('[Ladder]', error.message);
+        schedule(defaults.pairingIntervalSeconds);
+    });
 }
 
 /** The standings over the games of one game version: every bot that played, the best score rate first. */
