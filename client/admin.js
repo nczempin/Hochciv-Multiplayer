@@ -153,13 +153,31 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // The bot ladder of the Rundenspiele (async/ladder.js): loaded once, like the Discord link
     const ladderForm = document.getElementById('admin-ladder-form');
+    const ladderStatus = document.getElementById('admin-ladder-status');
+    const ladderPending = document.getElementById('admin-ladder-pending');
+    let savedLadderEnabled;
+
+    function updateLadderPending() {
+        ladderPending.hidden = savedLadderEnabled === undefined || ladderForm.elements.enabled.checked === savedLadderEnabled;
+    }
+    function showSavedLadderStatus(enabled) {
+        savedLadderEnabled = enabled;
+        ladderStatus.dataset.enabled = String(enabled);
+        ladderStatus.textContent = enabled ? tx('Aktiv') : tx('Inaktiv');
+        updateLadderPending();
+    }
+    ladderForm.elements.enabled.addEventListener('change', updateLadderPending);
+
     async function loadLadder() {
         try {
-            const st = await (await fetch('/api/admin/ladder', { cache: 'no-store' })).json();
+            const res = await fetch('/api/admin/ladder', { cache: 'no-store' });
+            if (!res.ok) return;
+            const st = await res.json();
             ladderForm.elements.enabled.checked = !!st.enabled;
             ladderForm.elements.turnDays.value = st.turnDays;
             ladderForm.elements.avoidRematches.checked = !!st.avoidRematches;
             ladderForm.elements.sameOwnerRanked.checked = !!st.sameOwnerRanked;
+            showSavedLadderStatus(st.enabled);
         } catch (e) {
             console.error(e);
         }
@@ -172,6 +190,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             avoidRematches: f.avoidRematches.checked, sameOwnerRanked: f.sameOwnerRanked.checked,
         });
         const data = await res.json().catch(() => ({}));
+        if (res.ok && typeof data.enabled === 'boolean') showSavedLadderStatus(data.enabled);
         msg.hidden = false;
         msg.classList.toggle('error', !res.ok);
         msg.textContent = res.ok ? tx('Gespeichert.') : txs(data.error || 'Fehler');

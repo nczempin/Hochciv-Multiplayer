@@ -163,6 +163,10 @@ td.acc-empty { color: var(--ink-soft); text-align: center; padding: 18px; }
 .acc-setting-ladder { flex-direction: column; align-items: stretch; gap: 10px; }      /* the bot ladder: its switches below the text */
 .acc-ladder-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px; }
 .acc-ladder-form select { width: auto; margin: 0; }
+.acc-ladder-status { margin-inline-start: 8px; font-weight: bold; }
+.acc-ladder-status[data-enabled="true"] { color: var(--ok); }
+.acc-ladder-status[data-enabled="false"] { color: var(--red); }
+.acc-ladder-pending { flex-basis: 100%; font-size: 13px; color: var(--ink-soft); }
 .acc-setting-msg { margin: 0 0 8px; font-size: 13px; color: var(--ok); }
 .acc-setting-msg.error { color: var(--red); }
 

@@ -85,6 +85,7 @@
                     <div class="acc-setting acc-setting-ladder">
                         <div>
                             <strong>Bot-Liga</strong>
+                            <span id="admin-ladder-status" class="acc-ladder-status" role="status"></span>
                             <small>Angemeldete Spieler-Bots werden automatisch zu Rundenspielen gepaart, zu zweit auf der Plättchenkarte.</small>
                         </div>
                         <form id="admin-ladder-form" class="acc-ladder-form">
@@ -97,6 +98,7 @@
                             <label class="acc-check"><input name="avoidRematches" type="checkbox" class="w-lock">Direkte Wiederholung vermeiden</label>
                             <label class="acc-check"><input name="sameOwnerRanked" type="checkbox" class="w-lock">Partien desselben Besitzers werten</label>
                             <button type="submit" class="btn small w-lock">Speichern</button>
+                            <span id="admin-ladder-pending" class="acc-ladder-pending" role="status" hidden>Auf „Speichern“ klicken, um die Änderung zu übernehmen.</span>
                         </form>
                     </div>
                     <p id="admin-ladder-msg" class="acc-setting-msg" hidden></p>
