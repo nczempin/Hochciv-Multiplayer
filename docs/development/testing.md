@@ -109,6 +109,7 @@ Some tests need the same variable on the test side too (`filter`, `timer`) – t
 |---|---|
 | new game version | game tests, `mobile`, `layout`, `i18n`, `match`, `replay`, `placement`, `rematch`, `summary`, `scenes`, `spectators`, `admin/running-games` |
 | `client/mobile/` | `mobile`, `maps` (editor painting) |
+| `client/fx.js` | `fx` (screenshots in `tests/fx/shots`), `mobile`, `scenes` |
 | custom maps, map browser, editor | `maps`, `i18n` |
 | new or changed texts | `i18n` |
 | a feature from [TASKS.md](../../TASKS.md) | that feature's test (named in its section) |

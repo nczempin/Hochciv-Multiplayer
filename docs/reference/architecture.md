@@ -69,6 +69,7 @@ Node.js (Express, Socket.IO, Passport), PostgreSQL through Sequelize. The big pi
 | `client/friends.js` | Friends list: the menu tab, lobby invitations, friend names for Rundenspiel invitations, the profile button |
 | `client/maps/` | Map browser ("Karten entdecken"): published maps, favorites, reports, picking a map for a lobby or a Rundenspiel |
 | `client/mobile/` | [Mobile layer](../development/mobile-layer.md) |
+| `client/fx.js` | [Map effects](../development/map-effects.md) |
 | `client/account.html`, `account.js` | Account page and admin panel |
 | `client/passkey.js` | Passkey helpers and the wrong-address message |
 | `client/index.html`, `app.js`, `style.css` | Portal page |
