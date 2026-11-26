@@ -4,6 +4,7 @@ const router = express.Router();
 const sessions = require('../sessions');
 const serverState = require('../utils/serverState');
 const Settings = require('../utils/settings');
+const Ladder = require('../async/ladder');
 const rateLimitLib = require('../utils/rateLimit');
 
 // Lobbies live in memory – limit how fast one client can create/join them
@@ -82,11 +83,12 @@ router.get('/public-sessions', (req, res) => {
     res.json(sessions.getPublicSessions());
 });
 
-// ── GET /api/settings — what the admin set for every page: the Discord invite link ──
+// ── GET /api/settings — public settings for navigation and links ──
 router.get('/settings', async (req, res) => {
     try {
+        const [site, ladder] = await Promise.all([Settings.publicSettings(), Ladder.settings()]);
         res.set('Cache-Control', 'public, max-age=60');
-        res.json(await Settings.publicSettings());
+        res.json({ ...site, ladderPlacement: ladder.placement });
     } catch (err) {
         console.error('[Settings]', err);
         res.json({ discordInvite: null });

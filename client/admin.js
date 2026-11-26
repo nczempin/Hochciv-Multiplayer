@@ -163,6 +163,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             enabled: f.enabled.checked, turnDays: Number(f.turnDays.value),
             avoidRematches: f.avoidRematches.checked, sameOwnerRanked: f.sameOwnerRanked.checked,
             pairingIntervalSeconds: f.pairingIntervalSeconds.valueAsNumber,
+            placement: f.placement.value,
         };
     }
     function updateLadderPending() {
@@ -187,6 +188,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             ladderForm.elements.avoidRematches.checked = !!st.avoidRematches;
             ladderForm.elements.sameOwnerRanked.checked = !!st.sameOwnerRanked;
             ladderForm.elements.pairingIntervalSeconds.value = st.pairingIntervalSeconds;
+            ladderForm.elements.placement.value = st.placement;
             showSavedLadderStatus(st);
         } catch (e) {
             console.error(e);

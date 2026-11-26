@@ -177,10 +177,12 @@ async function server() {
         // The admin's settings
         const first = await S.admin('GET', '/api/admin/ladder');
         ok(first.status === 200 && first.data.enabled === false && first.data.turnDays === 3 && first.data.avoidRematches === true
-            && first.data.sameOwnerRanked === false && first.data.pairingIntervalSeconds === 15,
+            && first.data.sameOwnerRanked === false && first.data.pairingIntervalSeconds === 15 && first.data.placement === 'leaderboard',
             'the ladder is off by default with a 15-second pairing interval', JSON.stringify(first.data));
+        ok((await guest('GET', '/api/settings')).data.ladderPlacement === 'leaderboard', 'the ladder is in the leaderboard by default');
         ok((await S.o1('GET', '/api/admin/ladder')).status === 403 && (await S.o1('POST', '/api/admin/ladder', {})).status === 403, 'settings: admins only');
-        const on = { enabled: true, turnDays: 1, avoidRematches: true, sameOwnerRanked: false, pairingIntervalSeconds: 5 };
+        const on = { enabled: true, turnDays: 1, avoidRematches: true, sameOwnerRanked: false, pairingIntervalSeconds: 5,
+            placement: 'leaderboard' };
         ok((await S.review('GET', '/api/admin/ladder')).status === 200 && (await S.review('POST', '/api/admin/ladder', on)).status === 403, 'the review admin reads the settings and changes nothing');
         ok((await S.admin('POST', '/api/admin/ladder', { ...on, turnDays: 2 })).status === 400
             && (await S.admin('POST', '/api/admin/ladder', { ...on, enabled: 'yes' })).status === 400
@@ -188,11 +190,13 @@ async function server() {
         const invalidIntervals = await Promise.all([4, 301, 5.5, '15', null].map(pairingIntervalSeconds =>
             S.admin('POST', '/api/admin/ladder', { ...on, pairingIntervalSeconds })));
         ok(invalidIntervals.every(res => res.status === 400), 'pairing interval must be an integer from 5 to 300');
-        const slower = await S.admin('POST', '/api/admin/ladder', { ...on, enabled: false, pairingIntervalSeconds: 60 });
-        const { pairingIntervalSeconds, ...legacy } = on;
+        ok((await S.admin('POST', '/api/admin/ladder', { ...on, placement: 'other' })).status === 400, 'invalid placement is refused');
+        const slower = await S.admin('POST', '/api/admin/ladder', { ...on, enabled: false, pairingIntervalSeconds: 60, placement: 'main-menu' });
+        const { pairingIntervalSeconds, placement, ...legacy } = on;
         const legacySave = await S.admin('POST', '/api/admin/ladder', { ...legacy, enabled: false });
-        ok(slower.data.pairingIntervalSeconds === 60 && legacySave.data.pairingIntervalSeconds === 60,
-            'an older settings client preserves the saved pairing interval');
+        ok(slower.data.pairingIntervalSeconds === 60 && legacySave.data.pairingIntervalSeconds === 60 && legacySave.data.placement === 'main-menu',
+            'an older settings client preserves the saved pairing interval and placement');
+        ok((await guest('GET', '/api/settings')).data.ladderPlacement === 'main-menu', 'the main-menu selection is public');
 
         // Off: nobody is paired
         await ladderGamesOf(A); await ladderGamesOf(Bb);

@@ -70,7 +70,9 @@ The bot with the fewest finished ladder games is paired first, with the opponent
 
 A ladder game is an ordinary public Rundenspiel for two on the tile map, with random nations and turn order and the admin's days per turn (`config.arena`, `config.arenaLadder`). Both bots are seated from the start and place their start tiles first. It is rated between bots of different owners; between bots of one owner only if the admin allows it. It can be resigned but neither left nor cancelled, and it follows the usual waiting rules: a bot that doesn't play in time is replaced by the KI. Only the server creates ladder games – a request can't set the two flags.
 
-The standings (leaderboard → *Bot-Liga*, `GET /api/async/ladder`) count the finished games per game version: games, wins–draws–losses and the score rate (wins plus half the draws, over the games). A bot whose seat the KI took over has lost that game, whatever the KI made of it.
+The *Bot-Liga* standings (`GET /api/async/ladder`) count the finished games per game version: games, wins–draws–losses and the score rate (wins plus half the draws, over the games). A bot whose seat the KI took over has lost that game, whatever the KI made of it.
+
+In the admin overview, *Position der Bot-Liga* selects the leaderboard tab (default) or a main-menu button. The game page reads the saved selection when it loads. Both entry points call `RANKING.openLadder()` in `client/ranking.js`. The main-menu hook is `MP.drawLadderButton()` in `mp.js`, and the leaderboard tab is in `RANKING.draw()`.
 
 ## Resigning
 

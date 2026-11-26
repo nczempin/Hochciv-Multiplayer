@@ -42,6 +42,7 @@
                 if (box) box.innerHTML = `<p class="sub error">${esc(e.message)}</p>`;
                 return;
             }
+            await MP.siteSettingsReady;
             this.draw(d);
         },
 
@@ -73,7 +74,7 @@
                 <div class="rk-types" role="tablist">
                   <button type="button" class="mph-tab ${d.type === 'human' ? 'on' : ''}" onclick="RANKING.open(undefined, 'human')">${T('Spieler')}</button>
                   <button type="button" class="mph-tab ${d.type === 'bot' ? 'on' : ''}" onclick="RANKING.open(undefined, 'bot')">🤖 ${T('Bots')}</button>
-                  <button type="button" class="mph-tab" onclick="RANKING.openLadder()">${T('Bot-Liga')}</button>
+                  ${MP.ladderPlacement === 'main-menu' ? '' : `<button type="button" class="mph-tab" onclick="RANKING.openLadder()">${T('Bot-Liga')}</button>`}
                 </div>
               </div>
               <p class="sub">${esc(info)} ${esc(T('Eine Stufe gibt es ab %s gewerteten Spielen in der Saison.', d.placementGames))}</p>
@@ -86,7 +87,8 @@
         },
 
         openLadder: async function (version) {
-            modal(T('Rangliste'), `<div id="rk-box"><p class="sub">${T('Lade...')}</p></div>`);
+            const standalone = MP.ladderPlacement === 'main-menu';
+            modal(T(standalone ? 'Bot-Liga' : 'Rangliste'), `<div id="rk-box"><p class="sub">${T('Lade...')}</p></div>`);
             const ov = $('overlay');
             if (ov) ov.classList.add('wide');
             let d;
@@ -99,7 +101,7 @@
             }
             const box = $('rk-box');
             if (!box) return;
-            const tabs = `<div class="rk-types" role="tablist">
+            const tabs = standalone ? '' : `<div class="rk-types" role="tablist">
                   <button type="button" class="mph-tab" onclick="RANKING.open(undefined, 'human')">${T('Spieler')}</button>
                   <button type="button" class="mph-tab" onclick="RANKING.open(undefined, 'bot')">🤖 ${T('Bots')}</button>
                   <button type="button" class="mph-tab on">${T('Bot-Liga')}</button>

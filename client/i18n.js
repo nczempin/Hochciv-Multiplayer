@@ -147,6 +147,8 @@
         'Angemeldete Spieler-Bots werden automatisch zu Rundenspielen gepaart, zu zweit auf der Plättchenkarte.': 'Opted-in player bots are paired for turn-based games automatically, one on one on the tile map.',
         'Automatische Paarungen': 'Automatic pairings',
         'Paarungsintervall (Sekunden)': 'Pairing interval (seconds)',
+        'Position der Bot-Liga': 'Bot ladder location',
+        'Hauptmenü': 'Main menu',
         'Aktiv': 'Active',
         'Inaktiv': 'Inactive',
         'Auf „Speichern“ klicken, um die Änderung zu übernehmen.': 'Click Save to apply the change.',

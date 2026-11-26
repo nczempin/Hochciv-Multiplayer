@@ -12,7 +12,7 @@
  *   tick()               – pair the bots that are there, opted in, allowed to play and without a
  *                          running ladder game; at the admin's pairing interval
  *   report(version)      – standings and the latest games of one game version (GET /api/async/ladder)
- *   settings/configure   – { enabled, turnDays, avoidRematches, sameOwnerRanked, pairingIntervalSeconds }
+ *   settings/configure   – { enabled, turnDays, avoidRematches, sameOwnerRanked, pairingIntervalSeconds, placement }
  */
 const { Op } = require('sequelize');
 const { AsyncGame, Setting, User, sequelize } = require('../models');
@@ -21,7 +21,8 @@ const { botBlockedReason } = require('../utils/bots');
 const serverState = require('../utils/serverState');
 
 const key = 'arena-correspondence-ladder';
-const defaults = { enabled: false, turnDays: 3, avoidRematches: true, sameOwnerRanked: false, pairingIntervalSeconds: 15 };
+const defaults = { enabled: false, turnDays: 3, avoidRematches: true, sameOwnerRanked: false,
+    pairingIntervalSeconds: 15, placement: 'leaderboard' };
 const presence = new Map();
 const readyForMs = 5 * 60 * 1000;          // a bot counts as there this long after its last request
 const testTickMs = Number(process.env.LADDER_TICK_MS);
@@ -42,14 +43,17 @@ async function settings() {
 
 /** @returns the stored settings, or { error } */
 async function configure(body, by) {
-    const { enabled, turnDays, avoidRematches, sameOwnerRanked, pairingIntervalSeconds } = body || {};
+    const { enabled, turnDays, avoidRematches, sameOwnerRanked, pairingIntervalSeconds, placement } = body || {};
     if (!TURN_DAYS.includes(turnDays) || [enabled, avoidRematches, sameOwnerRanked].some(v => typeof v !== 'boolean')
         || (pairingIntervalSeconds !== undefined && (!Number.isInteger(pairingIntervalSeconds)
-            || pairingIntervalSeconds < 5 || pairingIntervalSeconds > 300))) {
+            || pairingIntervalSeconds < 5 || pairingIntervalSeconds > 300))
+        || (placement !== undefined && !['leaderboard', 'main-menu'].includes(placement))) {
         return { error: 'Ungültiger Wert.' };
     }
+    const saved = pairingIntervalSeconds === undefined || placement === undefined ? await settings() : defaults;
     const options = { enabled, turnDays, avoidRematches, sameOwnerRanked,
-        pairingIntervalSeconds: pairingIntervalSeconds ?? (await settings()).pairingIntervalSeconds };
+        pairingIntervalSeconds: pairingIntervalSeconds ?? saved.pairingIntervalSeconds,
+        placement: placement ?? saved.placement };
     await Setting.upsert({ key, value: JSON.stringify(options), updatedBy: by || null });
     schedule(options.pairingIntervalSeconds);
     return options;
