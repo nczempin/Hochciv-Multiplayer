@@ -124,8 +124,11 @@
                 ${tabs}
               </div>
               <p class="sub">${esc(T('Spieler-Bots, die ihr Besitzer angemeldet hat, spielen automatisch Rundenspiele gegeneinander, zu zweit auf der Plättchenkarte.'))}</p>
-              ${standings ? `<div class="rk-scroll"><table class="rk-table">
-                <thead><tr><th>#</th><th>${T('Name')}</th><th>${T('Spiele')}</th><th>${T('S–U–N')}</th><th>${T('Punktequote')}</th></tr></thead>
+              ${standings ? `<div class="rk-scroll"><table class="rk-table rk-ladder-standings">
+                <colgroup><col class="rk-ladder-rank"><col><col class="rk-ladder-count"><col class="rk-ladder-stat"><col class="rk-ladder-stat"></colgroup>
+                <thead><tr><th scope="col" class="rk-num">#</th><th scope="col">${T('Name')}</th>
+                <th scope="col" class="rk-num">${T('Spiele')}</th><th scope="col" class="rk-num">${T('S–U–N')}</th>
+                <th scope="col" class="rk-num">${T('Punktequote')}</th></tr></thead>
                 <tbody>${standings}</tbody></table>
                 ${games ? `<table class="rk-table rk-ladder-games">
                 <thead><tr><th>${T('Partie')}</th><th>${T('Wertung')}</th><th>${T('Ergebnis')}</th></tr></thead>
@@ -147,6 +150,11 @@
         .rk-num { text-align:right; font-variant-numeric:tabular-nums; }
         .rk-me td { background:#fff1c7; }
         .rk-gap td { text-align:center; opacity:.5; }
+        .rk-ladder-rank { width:3em; }
+        .rk-ladder-count { width:14%; }
+        .rk-ladder-stat { width:18%; }
+        .rk-ladder-standings .rk-num { text-align:right; white-space:nowrap; }
+        .rk-ladder-standings td:nth-child(2) { overflow-wrap:anywhere; }
         .rk-ladder-games { margin-top:14px; }
         @media (max-width: 480px) { .rk-table { font-size:13px; } .rk-table td, .rk-table th { padding:4px 3px; } .rk-table .hcp-tier { padding:1px 4px; } }
     `;
