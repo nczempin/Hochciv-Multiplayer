@@ -12,7 +12,8 @@
  *   tick()               – pair the bots that are there, opted in, allowed to play and without a
  *                          running ladder game; at the admin's pairing interval
  *   report(version)      – standings and the latest games of one game version (GET /api/async/ladder)
- *   settings/configure   – { enabled, turnDays, avoidRematches, sameOwnerRanked, pairingIntervalSeconds, placement }
+ *   settings/configure   – { enabled, turnDays, avoidRematches, sameOwnerRanked, pairingIntervalSeconds,
+ *                            placement, recentGamesLimit }
  */
 const { Op } = require('sequelize');
 const { AsyncGame, Setting, User, sequelize } = require('../models');
@@ -22,7 +23,7 @@ const serverState = require('../utils/serverState');
 
 const key = 'arena-correspondence-ladder';
 const defaults = { enabled: false, turnDays: 3, avoidRematches: true, sameOwnerRanked: false,
-    pairingIntervalSeconds: 15, placement: 'leaderboard' };
+    pairingIntervalSeconds: 15, placement: 'leaderboard', recentGamesLimit: 30 };
 const enrolled = { accountType: 'bot', arenaLadderOptIn: true };
 const ladderGameData = { [Op.contains]: { config: { arenaLadder: true } } };
 const closedStatuses = ['finished', 'cancelled'];
@@ -47,17 +48,20 @@ async function settings() {
 
 /** @returns the stored settings, or { error } */
 async function configure(body, by) {
-    const { enabled, turnDays, avoidRematches, sameOwnerRanked, pairingIntervalSeconds, placement } = body || {};
+    const { enabled, turnDays, avoidRematches, sameOwnerRanked, pairingIntervalSeconds, placement,
+        recentGamesLimit } = body || {};
     if (!TURN_DAYS.includes(turnDays) || [enabled, avoidRematches, sameOwnerRanked].some(v => typeof v !== 'boolean')
         || (pairingIntervalSeconds !== undefined && (!Number.isInteger(pairingIntervalSeconds)
             || pairingIntervalSeconds < 5 || pairingIntervalSeconds > 300))
-        || (placement !== undefined && !['leaderboard', 'main-menu'].includes(placement))) {
+        || (placement !== undefined && !['leaderboard', 'main-menu'].includes(placement))
+        || (recentGamesLimit !== undefined && (!Number.isSafeInteger(recentGamesLimit) || recentGamesLimit < 1))) {
         return { error: 'Ungültiger Wert.' };
     }
-    const saved = pairingIntervalSeconds === undefined || placement === undefined ? await settings() : defaults;
+    const saved = await settings();
     const options = { enabled, turnDays, avoidRematches, sameOwnerRanked,
         pairingIntervalSeconds: pairingIntervalSeconds ?? saved.pairingIntervalSeconds,
-        placement: placement ?? saved.placement };
+        placement: placement ?? saved.placement,
+        recentGamesLimit: recentGamesLimit ?? saved.recentGamesLimit };
     await Setting.upsert({ key, value: JSON.stringify(options), updatedBy: by || null });
     schedule(options.pairingIntervalSeconds);
     return options;
@@ -208,7 +212,7 @@ function standingsOf(field) {
 }
 
 async function report(requestedVersion) {
-    const games = await ladderGames();
+    const [games, { recentGamesLimit }] = await Promise.all([ladderGames(), settings()]);
     const editions = [...new Set([version(), ...games.map(g => g.version)])].sort((a, b) => Number(b.slice(1)) - Number(a.slice(1)));
     const rules = editions.includes(requestedVersion) ? requestedVersion : version();
     const field = games.filter(game => game.version === rules);
@@ -217,7 +221,7 @@ async function report(requestedVersion) {
         id, status, round, ranked, turnDays, names: seats.map(seat => seat.name),
         winners: result?.winners || [], replay: result?.replay && result.gameId,
     });
-    return { version: rules, editions, standings, games: field.slice(-30).reverse().map(publicGame) };
+    return { version: rules, editions, standings, games: field.slice(-recentGamesLimit).reverse().map(publicGame) };
 }
 
 module.exports = { settings, configure, status, seen, start, tick, report, selectMatchups, standingsOf };

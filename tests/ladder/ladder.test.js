@@ -178,8 +178,8 @@ async function server() {
         const first = await S.admin('GET', '/api/admin/ladder');
         ok(first.status === 200 && first.data.enabled === false && first.data.turnDays === 3 && first.data.avoidRematches === true
             && first.data.sameOwnerRanked === false && first.data.pairingIntervalSeconds === 15 && first.data.placement === 'leaderboard'
-            && first.data.canManage === true,
-            'the ladder is off by default with a 15-second pairing interval', JSON.stringify(first.data));
+            && first.data.recentGamesLimit === 30 && first.data.canManage === true,
+            'the ladder is off by default with a 15-second pairing interval and a 30-game list', JSON.stringify(first.data));
         ok((await guest('GET', '/api/settings')).data.ladderPlacement === 'leaderboard', 'the ladder is in the leaderboard by default');
         ok((await S.o1('GET', '/api/admin/ladder')).status === 403 && (await S.o1('POST', '/api/admin/ladder', {})).status === 403
             && (await S.o1('GET', '/api/admin/ladder/status')).status === 403 && (await guest('GET', '/api/admin/ladder/status')).status === 403,
@@ -195,12 +195,17 @@ async function server() {
         const invalidIntervals = await Promise.all([4, 301, 5.5, '15', null].map(pairingIntervalSeconds =>
             S.admin('POST', '/api/admin/ladder', { ...on, pairingIntervalSeconds })));
         ok(invalidIntervals.every(res => res.status === 400), 'pairing interval must be an integer from 5 to 300');
+        const invalidGameLimits = await Promise.all([0, -1, 1.5, '30', null].map(recentGamesLimit =>
+            S.admin('POST', '/api/admin/ladder', { ...on, recentGamesLimit })));
+        ok(invalidGameLimits.every(res => res.status === 400), 'the recent games limit must be a positive integer');
         ok((await S.admin('POST', '/api/admin/ladder', { ...on, placement: 'other' })).status === 400, 'invalid placement is refused');
-        const slower = await S.admin('POST', '/api/admin/ladder', { ...on, enabled: false, pairingIntervalSeconds: 60, placement: 'main-menu' });
+        const slower = await S.admin('POST', '/api/admin/ladder', { ...on, enabled: false, pairingIntervalSeconds: 60,
+            placement: 'main-menu', recentGamesLimit: 2 });
         const { pairingIntervalSeconds, placement, ...legacy } = on;
         const legacySave = await S.admin('POST', '/api/admin/ladder', { ...legacy, enabled: false });
-        ok(slower.data.pairingIntervalSeconds === 60 && legacySave.data.pairingIntervalSeconds === 60 && legacySave.data.placement === 'main-menu',
-            'an older settings client preserves the saved pairing interval and placement');
+        ok(slower.data.pairingIntervalSeconds === 60 && legacySave.data.pairingIntervalSeconds === 60
+            && legacySave.data.placement === 'main-menu' && legacySave.data.recentGamesLimit === 2,
+            'an older settings client preserves the saved pairing interval, placement and recent games limit');
         ok((await guest('GET', '/api/settings')).data.ladderPlacement === 'main-menu', 'the main-menu selection is public');
 
         // Off: nobody is paired
@@ -259,6 +264,12 @@ async function server() {
         ok(listed && listed.status === 'placement' && listed.ranked === true && listed.names.length === 2 && listed.winners.length === 0 && !listed.replay,
             'the running game is listed');
         ok((await S.o2('GET', '/api/async/ladder?version=v1')).data.version === game.engine, 'an unknown game version shows the current one');
+        const limitSave = await S.admin('POST', '/api/admin/ladder', { ...on, recentGamesLimit: 1 });
+        const limited = await S.o2('GET', '/api/async/ladder');
+        ok(limitSave.status === 200 && limitSave.data.recentGamesLimit === 1 && limited.status === 200
+            && limited.data.games.length === 1 && limited.data.games[0].id === same?.id
+            && JSON.stringify(limited.data.standings) === JSON.stringify(rows),
+            'a smaller recent games limit keeps the newest game and the full standings');
 
         // Opting out: no new games
         const out = await optIn(S.o1, A, false);

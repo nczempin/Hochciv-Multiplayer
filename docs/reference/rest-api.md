@@ -195,9 +195,9 @@ All routes need *admin*; `/oauth*` needs *superadmin*. The review admin (`review
 |---|---|---|
 | GET | `/metrics` | Uptime, memory, CPU, maintenance/registration state, lobbies and players online |
 | POST | `/config` | `{ maintenanceMode?, registrationEnabled? }` |
-| GET | `/ladder` | The [bot ladder](rundenspiele.md#bot-ladder)'s settings `{ enabled, turnDays, avoidRematches, sameOwnerRanked, pairingIntervalSeconds, placement, canManage }`. `canManage` reflects this viewer's permission to save. |
+| GET | `/ladder` | The [bot ladder](rundenspiele.md#bot-ladder)'s settings `{ enabled, turnDays, avoidRematches, sameOwnerRanked, pairingIntervalSeconds, placement, recentGamesLimit, canManage }`. `canManage` reflects this viewer's permission to save. |
 | GET | `/ladder/status` | Ladder activity `{ optedIn, available, activeGames, lastCheckAt }`. `lastCheckAt` is an ISO timestamp or null. |
-| POST | `/ladder` | `turnDays` is 1, 3 or 7. `enabled`, `avoidRematches` and `sameOwnerRanked` are booleans. `pairingIntervalSeconds` is an integer from 5 to 300 (default 15). `placement` is `leaderboard` (default) or `main-menu`. Omitting the interval or placement keeps its saved value. |
+| POST | `/ladder` | `turnDays` is 1, 3 or 7. `enabled`, `avoidRematches` and `sameOwnerRanked` are booleans. `pairingIntervalSeconds` is an integer from 5 to 300 (default 15). `placement` is `leaderboard` (default) or `main-menu`. `recentGamesLimit` is a positive integer (default 30). Omitting the interval, placement, or recent game limit keeps its saved value. |
 | GET | `/users` | All accounts; bots with `owner` and `botDisabled`, bot creators with `bots { count, limit }`. For the review admin the e-mail is masked (`p***@gmail.com`) |
 | GET | `/users/:id/mfa` | A user's second factors (not for the review admin: 403) |
 | DELETE | `/users/:id/mfa/:type/:tokenId?` | Remove a second factor |

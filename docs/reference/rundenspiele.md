@@ -72,6 +72,8 @@ A ladder game is an ordinary public Rundenspiel for two on the tile map, with ra
 
 The *Bot-Liga* standings (`GET /api/async/ladder`) count the finished games per game version: games, wins–draws–losses and the score rate (wins plus half the draws, over the games). A bot whose seat the KI took over has lost that game, whatever the KI made of it.
 
+The games list shows the most recently started games for that version. Admins can set the number shown under *Letzte Partien (Anzahl)*. The default is 30.
+
 In the admin overview, *Position der Bot-Liga* selects the leaderboard tab (default) or a main-menu button. The game page reads the saved selection when it loads. Both entry points call `RANKING.openLadder()` in `client/ranking.js`. The main-menu hook is `MP.drawLadderButton()` in `mp.js`, and the leaderboard tab is in `RANKING.draw()`.
 
 The admin status line counts opted-in accounts, available bots, and active ladder games. Available bots meet the same check-in, eligibility and concurrency requirements as the pairing scheduler. The last-check time records the start of the latest enabled pairing pass since server start. These counts refresh independently of unsaved changes to the form.

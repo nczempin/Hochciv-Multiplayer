@@ -16,6 +16,7 @@ window.HC_LADDER_ADMIN = {
                 enabled: fields.enabled.checked, turnDays: Number(fields.turnDays.value),
                 avoidRematches: fields.avoidRematches.checked, sameOwnerRanked: fields.sameOwnerRanked.checked,
                 pairingIntervalSeconds: fields.pairingIntervalSeconds.valueAsNumber, placement: fields.placement.value,
+                recentGamesLimit: fields.recentGamesLimit.valueAsNumber,
             };
         }
         function updatePending() {
@@ -47,6 +48,7 @@ window.HC_LADDER_ADMIN = {
                 fields.sameOwnerRanked.checked = settings.sameOwnerRanked;
                 fields.pairingIntervalSeconds.value = settings.pairingIntervalSeconds;
                 fields.placement.value = settings.placement;
+                fields.recentGamesLimit.value = settings.recentGamesLimit;
                 showSaved(settings);
                 lock(!settings.canManage);
             } catch (_) {
