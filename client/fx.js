@@ -128,6 +128,11 @@
     // ── The canvas and the frame loop ────────────────────────────────────────────
 
     let mapSvg = null, canvas = null, ctx = null, raf = 0;
+    /* While a scene of another empire's turn is drawn: its object and how long it stays. The
+       game shortens scenes when there are many (animFaktor), so effects started in a scene are
+       cut to its length and end when the next one is drawn – otherwise they would still play at
+       the last city while the game already shows the next. */
+    let scene = null, sceneMs = 0;
     let effects = [];
     const MAX_EFFECTS = 60;
 
@@ -149,6 +154,7 @@
     function add(effect) {
         if (!canvas || !ctx) return;
         if (effects.length >= MAX_EFFECTS) effects.shift();
+        if (scene) { effect.scene = scene; effect.dur = Math.min(effect.dur, Math.max(350, sceneMs - (effect.delay || 0))); }
         effect.t0 = performance.now() + (effect.delay || 0);
         effects.push(effect);
         if (!raf) raf = requestAnimationFrame(frame);
@@ -251,7 +257,7 @@
         const [x, y] = center(r, c);
         const dust = burst(x, y + 6, 22, { v0: 14, v1: 42, flat: 0.45, up: 6, g: 10, color: ['#b39b72', '#d2c19a', '#8d7a58'], s0: 1.4, s1: 3.2, a0: 0.25, a1: 0.95, jitter: 0.08 });
         const sparks = burst(x, y - 4, 12, { v0: 8, v1: 26, up: 30, g: -6, color: ['#ffe08a', '#fff6d0', color], s0: 1, s1: 2, a0: 0.3, a1: 1, jitter: 0.2 });
-        cityAnims.set(`${x},${y}`, { kind: 'found', t0: performance.now(), dur: 900 });
+        cityAnims.set(`${x},${y}`, { kind: 'found', t0: performance.now(), dur: scene ? Math.min(900, Math.max(300, sceneMs * 0.8)) : 900 });
         add({
             dur: 1500 * slow(),
             draw(ctx, t, P, k) {
@@ -292,7 +298,7 @@
             const a = rand(0, TAU), d = rand(6, 16);
             motes.push({ x: x + Math.cos(a) * d, y: y + Math.sin(a) * d * 0.6, vx: rand(-4, 4), vy: rand(-30, -18), size: rand(1.2, 2.2), color: i % 2 ? '#d7f5a0' : '#fff1a8', a0: rand(0, 0.3), a1: rand(0.7, 1) });
         }
-        cityAnims.set(`${x},${y}`, { kind: 'grow', t0: performance.now(), dur: 650 });
+        cityAnims.set(`${x},${y}`, { kind: 'grow', t0: performance.now(), dur: scene ? Math.min(650, Math.max(300, sceneMs * 0.8)) : 650 });
         add({
             dur: 1300 * slow(),
             draw(ctx, t, P, k) {
@@ -860,6 +866,13 @@
         };
     }
 
+    // how long the game shows a scene (animFrame in js/ui/turns.js)
+    function sceneLength(s) {
+        let ms = 900;
+        try { ms = ANIM_MS; } catch (e) { /* older versions */ }
+        return Math.round(ms * (s.tempo || 1) * (s.zuege && s.zuege.length ? 1.4 : 1));
+    }
+
     function compare(S2, opts) {
         const now = snapshotOf(S2);
         const prev = base;
@@ -875,10 +888,15 @@
         // a whole new picture (another game, a reload, a jump back in a replay): no effects
         if (found.length > 4 || grown.length > 12 || taken.length > 4) return prev;
         const inScene = !!opts.anim;
+        if (window.HCFX && typeof HCFX.trace === 'function')
+            try { HCFX.trace({ found, taken, grown: grown.map(([c]) => c), opts }); } catch (e) { /* debugging only */ }
+        scene = opts.anim || null;
+        sceneMs = scene ? sceneLength(scene) : 0;
         found.forEach(c => cityFound(c.r, c.c, colorOf(S2, c.owner)));
         taken.forEach(c => cityTaken(c.r, c.c, colorOf(S2, c.owner)));
         // the game's own scenes show +1 already: there only the glow
         grown.forEach(([c, n]) => cityGrow(c.r, c.c, colorOf(S2, c.owner), n, !inScene));
+        scene = null;
         return prev;
     }
 
@@ -902,6 +920,9 @@
             if (fk !== lastFight && f.r != null) { lastFight = fk; battle(f, S2); }
         } else {
             lastFight = null;
+            // a new scene, or the game after the scenes: what the scene before started ends here
+            const cur = opts.anim || null;
+            if (effects.some(e => e.scene && e.scene !== cur)) effects = effects.filter(e => !e.scene || e.scene === cur);
             const prev = compare(S2, opts);
             if (!opts.anim) {
                 const ek = eventKey(S2);
