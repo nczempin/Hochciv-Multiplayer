@@ -47,13 +47,13 @@ function addLive(rec, S) {
  * Rundenspiel: store the state as a frame row if a new turn has begun since the last one.
  * Keeps g.replay = { key, seq } (saved with the game).
  */
-async function addAsync(g, transaction) {
+async function addAsync(g) {
     const S = g.state;
     if (!S || !g.id) return;
     const r = g.replay || { key: null, seq: 0 };
     const key = turnKey(S);
     if (key === r.key || r.seq >= MAX_FRAMES) return;
-    await ReplayFrame.create({ gameKey: g.id, seq: r.seq, data: pack(S) }, { transaction });
+    await ReplayFrame.create({ gameKey: g.id, seq: r.seq, data: pack(S) });
     g.replay = { key, seq: r.seq + 1 };
 }
 

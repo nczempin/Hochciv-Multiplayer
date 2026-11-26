@@ -81,6 +81,8 @@ services:
       - ASYNC_TIMEOUT_MS=${ASYNC_TIMEOUT_MS:-}
       - ASYNC_REMINDER_MS=${ASYNC_REMINDER_MS:-}
       - ASYNC_SWEEP_MS=${ASYNC_SWEEP_MS:-}
+      # Bot ladder test (tests/ladder): LADDER_TICK_MS=500 – pair every half second instead of every 15
+      - LADDER_TICK_MS=${LADDER_TICK_MS:-}
       # Chat word filter tests (tests/filter/filter.test.js): the first writing timeout (default 5 minutes)
       - CHAT_MUTE_MS=${CHAT_MUTE_MS:-300000}
       # No popup for the terms of use in the browser tests, except tests/terms (TERMS_CHECK=on)

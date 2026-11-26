@@ -8,7 +8,7 @@
  * /api/seasons/leaderboard (utils/seasons.js).
  *
  * "Bot-Liga": the bot ladder of the Rundenspiele (async/ladder.js) – per game version the
- * standings over the counted fixtures and the latest games, to watch or replay. Server: GET
+ * standings over the finished games and the latest games, to watch or replay. Server: GET
  * /api/async/ladder (login required, like all Rundenspiele).
  */
 (function () {
@@ -111,22 +111,22 @@
                 <td class="rk-num">${esc(b.games)}</td><td class="rk-num">${esc(b.wins)}–${esc(b.draws)}–${esc(b.games - b.wins - b.draws)}</td>
                 <td class="rk-num"><b>${pct(b.score)}</b></td></tr>`).join('');
             const state = g => g.status === 'finished' ? esc(g.winners.join(', ') || T('Unentschieden'))
-                : g.status === 'cancelled' ? esc(T('Abgebrochen')) : g.status === 'arena-waiting' ? esc(T('Wartet auf das Hinspiel')) : esc(T('Läuft'));
+                : g.status === 'cancelled' ? esc(T('Abgebrochen')) : esc(T('Läuft'));
             const link = g => g.replay ? `<a href="/?replay=${encodeURIComponent(g.replay)}" target="_blank" rel="noopener">▶ ${T('Wiederholung ansehen')}</a>`
                 : g.status === 'playing' ? `<a href="/?async=${encodeURIComponent(g.id)}">${T('Zuschauen')}</a>` : '';
-            const games = d.games.map(g => `<tr><td>${esc(g.names.join(' – '))}</td><td class="rk-num">${esc(g.leg)}/2</td>
+            const games = d.games.map(g => `<tr><td>${esc(g.names.join(' – '))}</td>
                 <td>${esc(T(g.ranked ? 'Gewertet' : 'Ungewertet'))}</td><td>${state(g)} ${link(g)}</td></tr>`).join('');
             box.innerHTML = `
               <div class="rk-head">
                 <select id="rk-ladder-version" aria-label="${esc(T('Spielversion'))}" onchange="RANKING.openLadder(this.value)">${opts}</select>
                 ${tabs}
               </div>
-              <p class="sub">${esc(T('Spieler-Bots, die ihr Besitzer angemeldet hat, spielen automatisch Rundenspiele gegeneinander: je zwei Partien mit getauschten Plätzen auf derselben Karte. Gezählt wird, wenn beide regulär beendet sind.'))}</p>
+              <p class="sub">${esc(T('Spieler-Bots, die ihr Besitzer angemeldet hat, spielen automatisch Rundenspiele gegeneinander, zu zweit auf der Plättchenkarte.'))}</p>
               ${standings ? `<div class="rk-scroll"><table class="rk-table">
                 <thead><tr><th>#</th><th>${T('Name')}</th><th>${T('Spiele')}</th><th>${T('S–U–N')}</th><th>${T('Punktequote')}</th></tr></thead>
                 <tbody>${standings}</tbody></table>
                 ${games ? `<table class="rk-table rk-ladder-games">
-                <thead><tr><th>${T('Partie')}</th><th></th><th>${T('Wertung')}</th><th>${T('Ergebnis')}</th></tr></thead>
+                <thead><tr><th>${T('Partie')}</th><th>${T('Wertung')}</th><th>${T('Ergebnis')}</th></tr></thead>
                 <tbody>${games}</tbody></table>` : ''}</div>`
                 : `<p class="sub mph-empty">${T('Für diese Version gibt es noch keine Ligaspiele.')}</p>`}`;
         },

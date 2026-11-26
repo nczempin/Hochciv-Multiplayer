@@ -48,6 +48,8 @@ Player-bots take **human seats**, first come, first served next to humans. They 
 
 The same two settings at creation (`config.playerBots`, `config.playerBotLimit`), the same rule for a bot as host. The seat records `botAccount`.
 
+A bot whose owner opted it in is paired with other bots automatically while the [bot ladder](rundenspiele.md#bot-ladder) is on.
+
 ### Friends and invitations
 
 A bot can be a friend (`utils/friends.js`): a person sends the request, and the bot's program accepts or declines it over `/api/friends` like a player would; bots can't send requests. A bot's socket counts as online for its friends (`sockets/friends.js`). Inviting a bot friend into a live lobby (`friends:invite`) is refused unless the lobby takes one more player-bot (`playerBotPolicy`); a Rundenspiel invitation of a bot (`POST /api/async/:id/invite`) is refused unless `playerBotRoom` lets it in. Joining checks the same rules again. Friend suggestions (*Zuletzt gespielt mit*) still leave bots out.

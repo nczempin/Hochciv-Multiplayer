@@ -3,13 +3,14 @@
  * routes/bots.js) are paired automatically, as long as an admin has the ladder switched on
  * (routes/admin.js GET/POST /ladder, stored in the `settings` table).
  *
- * A fixture is two games on the tile map between the same two bots with the seats swapped, on the
- * same map (async/logic.js createArenaPair). It counts for the standings once both games have
- * ended regularly; a fixture that times out or loses a player is cancelled and counts for nothing.
+ * A ladder game is an ordinary Rundenspiel between two bot accounts on the tile map, nations and
+ * turn order random (async/logic.js createLadderGame), public to watch. It follows the usual rules:
+ * a bot that doesn't play in time is replaced by the KI and loses. A finished game counts for the
+ * standings.
  *
  *   seen(bot)            – a bot asked for its games (async/service.js list): it is there to play
  *   tick()               – pair the bots that are there, opted in, allowed to play and without a
- *                          running fixture; every TICK_MS
+ *                          running ladder game; every TICK_MS
  *   report(version)      – standings and the latest games of one game version (GET /api/async/ladder)
  *   settings/configure   – { enabled, turnDays, avoidRematches, sameOwnerRanked }
  */
@@ -53,7 +54,6 @@ async function ladderGames() {
         where: { data: { [Op.contains]: { config: { arenaLadder: true } } } },
         attributes: ['id', 'status', 'participantIds', 'createdAt', 'round',
             [sequelize.literal("data->>'engine'"), 'version'],
-            [sequelize.literal("data->'config'->'arenaPair'"), 'pair'],
             [sequelize.literal("data->'config'->'ranked'"), 'ranked'],
             [sequelize.literal("data->'config'->'turnDays'"), 'turnDays'],
             [sequelize.literal("data->'result'"), 'result'],
@@ -63,19 +63,19 @@ async function ladderGames() {
 }
 
 const ended = g => ['finished', 'cancelled'].includes(g.status);
-const completed = pair => pair.length === 2 && pair.every(game => game.status === 'finished' && game.result?.gameId);
+const counted = game => game.status === 'finished' && !!game.result?.gameId;       // booked (async/service.js processResult)
 const opponentKey = (a, b) => [a, b].sort().join('/');
 
 /**
- * Who plays whom next: the bots with the fewest counted fixtures first, each against the opponent
- * it has met least often (then the one with fewer fixtures, then the closest MMR). With
- * avoidRematches nobody gets the opponent of its last fixture again right away.
+ * Who plays whom next: the bots with the fewest counted games first, each against the opponent
+ * it has met least often (then the one with fewer games, then the closest MMR). With
+ * avoidRematches nobody gets the opponent of its last game again right away.
  */
 function selectMatchups(bots, games, avoidRematches) {
     const past = new Map(), last = new Map(), count = new Map();
-    for (const pair of Map.groupBy(games, game => game.pair.id).values()) {
-        if (!completed(pair)) continue;
-        const [a, b] = pair[0].participantIds;
+    for (const game of games) {
+        if (!counted(game)) continue;
+        const [a, b] = game.participantIds;
         last.set(a, b);
         last.set(b, a);
         count.set(a, (count.get(a) || 0) + 1);
@@ -109,7 +109,7 @@ async function tick() {
         for (const [id, lastSeen] of presence) if (now - lastSeen > readyForMs) presence.delete(id);
         if (presence.size < 2) return;
         const service = require('./service');
-        const rules = version();              // fixtures are played with the current game version
+        const rules = version();              // ladder games are played with the current game version
         const [games, bots, active] = await Promise.all([
             ladderGames(),
             User.findAll({ where: { id: [...presence.keys()], arenaLadderOptIn: true, accountType: 'bot', isActive: true } }),
@@ -125,9 +125,9 @@ async function tick() {
             && !botBlockedReason(bot, byId.get(bot.ownerId)));
         for (const [a, b] of selectMatchups(ready, games.filter(g => g.version === rules), options.avoidRematches)) {
             const ranked = a.ownerId !== b.ownerId || options.sameOwnerRanked;
-            const result = await service.createArenaPair(a, b, { ranked, turnDays: options.turnDays });
+            const result = await service.createLadderGame(a, b, { ranked, turnDays: options.turnDays });
             if (result.error) console.error('[Ladder]', result.error);
-            else console.log(`[Ladder] ${a.username} – ${b.username}: fixture ${result.id}`);
+            else console.log(`[Ladder] ${a.username} – ${b.username}: game ${result.id}`);
         }
     } finally {
         running = false;
@@ -138,31 +138,34 @@ function start() {
     setInterval(() => tick().catch(error => console.error('[Ladder]', error.message)), TICK_MS).unref();
 }
 
+/** The standings over the games of one game version: every bot that played, the best score rate first. */
+function standingsOf(field) {
+    const scores = new Map();
+    for (const game of field) for (const { userId, name } of game.seats) {
+        if (!scores.has(userId)) scores.set(userId, { name, games: 0, wins: 0, draws: 0 });
+    }
+    for (const game of field.filter(counted)) for (const { userId, name, replaced } of game.seats) {
+        const score = scores.get(userId);
+        score.games++;
+        if (replaced) continue;             // the KI finished the game for this bot: a loss, whatever the KI made of it
+        if (game.result.winners.length !== 1) score.draws++;
+        else if (game.result.winners.includes(name)) score.wins++;
+    }
+    return [...scores.values()].map(row => ({ ...row, score: row.games ? (row.wins + row.draws / 2) / row.games : null }))
+        .sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || b.games - a.games || a.name.localeCompare(b.name));
+}
+
 async function report(requestedVersion) {
     const games = await ladderGames();
     const editions = [...new Set([version(), ...games.map(g => g.version)])].sort((a, b) => Number(b.slice(1)) - Number(a.slice(1)));
     const rules = editions.includes(requestedVersion) ? requestedVersion : version();
     const field = games.filter(game => game.version === rules);
-    const scores = new Map();
-    for (const game of field) for (const { userId, name } of game.seats) {
-        if (!scores.has(userId)) scores.set(userId, { name, games: 0, wins: 0, draws: 0 });
-    }
-    for (const pair of Map.groupBy(field, game => game.pair.id).values()) {
-        if (!completed(pair)) continue;
-        for (const game of pair) for (const { userId, name } of game.seats) {
-            const score = scores.get(userId);
-            score.games++;
-            if (game.result.winners.length !== 1) score.draws++;
-            else if (game.result.winners.includes(name)) score.wins++;
-        }
-    }
-    const standings = [...scores.values()].map(row => ({ ...row, score: row.games ? (row.wins + row.draws / 2) / row.games : null }))
-        .sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || b.games - a.games || a.name.localeCompare(b.name));
-    const publicGame = ({ id, status, round, ranked, turnDays, pair, result, seats }) => ({
-        id, status, round, ranked, turnDays, leg: pair.leg, names: seats.map(seat => seat.name),
+    const standings = standingsOf(field);
+    const publicGame = ({ id, status, round, ranked, turnDays, result, seats }) => ({
+        id, status, round, ranked, turnDays, names: seats.map(seat => seat.name),
         winners: result?.winners || [], replay: result?.replay && result.gameId,
     });
     return { version: rules, editions, standings, games: field.slice(-30).reverse().map(publicGame) };
 }
 
-module.exports = { settings, configure, seen, start, tick, report, selectMatchups };
+module.exports = { settings, configure, seen, start, tick, report, selectMatchups, standingsOf };

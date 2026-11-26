@@ -212,7 +212,7 @@ function create(host, opts) {
     if (challenge) config.fixedDice = config.seed;
     // the weekly challenge keeps the classic rules; a draft never has the classic order
     if (challenge) Object.assign(config, { civMode: 'fixed', turnOrder: 'classic' });
-    // a fixture of the bot ladder (async/ladder.js): only the server sets it, never a request
+    // a game of the bot ladder (async/ladder.js): only the server sets it, never a request
     if (opts && opts.arena === true) config.arena = true;
     Object.assign(config, CivDraft.modesOf(config));
     Object.assign(config, { playerCount: total, humanCount: total - ki, noKi: ki === 0 });
@@ -362,7 +362,6 @@ function join(g, user, opts) {
     if (g.seats.some(s => s.userId === user.id)) return 'Du bist schon in diesem Spiel.';
     if (!['setup', 'playing'].includes(g.status)) return 'Diesem Spiel kann man nicht mehr beitreten.';
     if (claimedCount(g) >= g.config.humanCount) return 'Das Spiel ist schon voll.';
-    if (g.config.arena && !user.isBot) return 'Die Bot-Liga ist nur für Spieler-Bots.';
     if (user.isBot) {
         const why = playerBotRoom(g);
         if (why) return why;
@@ -631,45 +630,22 @@ function finishPlacement(g) {
 }
 
 /**
- * A fixture of the bot ladder (async/ladder.js): two games on the tile map between the same two
- * bot accounts with the seats swapped. Both place their start tiles in the first game; the second
- * waits ('arena-waiting') and takes over the finished map (finishArenaPairOpener).
+ * A game of the bot ladder (async/ladder.js): two bot accounts on the tile map, nations and turn
+ * order random. Only the server creates it; both bots start by placing their start tiles.
  */
-function createArenaPair(a, b, seed, { ranked = false, turnDays = 1 } = {}) {
+function createLadderGame(a, b, { ranked = false, turnDays = 1 } = {}) {
     if (!a.isBot || !b.isBot || a.id === b.id) return { error: 'Die Bot-Liga braucht zwei verschiedene Spieler-Bots.' };
-    const { g: first, error } = create(a, {
+    const { g, error } = create(a, {
         arena: true,
         config: { mapKey: 'plaettchen', playerCount: 2, kiCount: 0, civMode: 'random',
             turnOrder: 'random', ranked, isPublic: true, turnDays },
     });
     if (error) return { error };
-    first.config.seed = seed;
-    const joinError = join(first, b, {});
+    g.config.arenaLadder = true;
+    const joinError = join(g, b, {});
     if (joinError) return { error: joinError };
-    if (first.status !== 'placement') return { error: 'Die Bot-Liga braucht eine Plättchenkarte.' };
-
-    const second = deepCopy(first);
-    second.status = 'arena-waiting';
-    second.hostUserId = b.id;
-    second.pre = null;
-    for (const [slot, seat] of second.seats.entries()) {
-        const { userId, name, joinedAt, botAccount } = first.seats[1 - slot];
-        Object.assign(seat, { userId, name, joinedAt, botAccount });
-    }
-    return { first, second };
-}
-
-/** The first game of a fixture has ended: start the second on the same map, or cancel it. */
-function finishArenaPairOpener(first, second) {
-    if (first.status !== 'finished' || !first.config.map || first.seats.some(s => s.replaced)
-        || second.seats.some(s => s.kind !== 'human' || !s.userId || s.replaced)) {
-        second.status = 'cancelled';
-        return;
-    }
-    second.config.map = deepCopy(first.config.map);
-    second.config.setup = deepCopy(first.config.setup);
-    // The adapter keeps setup rolls and draws a fresh private play seed for each game.
-    startGame(second);
+    if (g.status !== 'placement') return { error: 'Die Bot-Liga braucht eine Plättchenkarte.' };
+    return { g };
 }
 
 /** A human picks a Marathon ability. */
@@ -816,11 +792,6 @@ function replaceSeat(g, seat) {
  */
 function timeout(g) {
     const replaced = [], penalized = [];
-    if (g.config.arenaPair) {
-        // bots only: no KI takes a seat over, the fixture just doesn't count
-        g.status = 'cancelled';
-        return { replaced, penalized };
-    }
     const takeOver = seat => {
         replaced.push(seat.userId);
         const u = replaceSeat(g, seat);
@@ -952,7 +923,7 @@ function removeUser(g, userId) {
     }
     g.invites = g.invites.filter(i => i.userId !== userId);
     const seat = seatOf(g, userId);
-    if (seat && (g.status === 'arena-waiting' || (g.status === 'setup' && userId === g.hostUserId))) {
+    if (seat && g.status === 'setup' && userId === g.hostUserId) {
         g.status = 'cancelled';
     } else if (seat && !g.config.arena && userId !== g.hostUserId && (g.status === 'setup' || (g.status === 'playing' && !seat.started))) {
         leave(g, userId);
@@ -1096,7 +1067,7 @@ function view(g, userId) {
 }
 
 module.exports = {
-    create, createArenaPair, finishArenaPairOpener, join, leave, cancel, place, draftPick, action, drive, timeout, removeUser, resign, DELETED_NAME, IN_PREPHASE,
+    create, createLadderGame, join, leave, cancel, place, draftPick, action, drive, timeout, removeUser, resign, DELETED_NAME, IN_PREPHASE,
     civDraftPick, waitingOn, summary, view, freeSeats, playerBotRoom, seatOf, stateIndex, isFree, engineVersionOf, ENG, summaryText,
     MMR_PENALTY, TURN_DAYS,
 };

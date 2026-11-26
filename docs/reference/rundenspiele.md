@@ -56,6 +56,22 @@ A seat taken over by the KI plays at level *mittel*, in ranked games *schwer*. I
 
 The weekly challenge (`utils/challenge.js`) is a Rundenspiel the server creates for one player with `config.challenge` = the week: the week's map, nation, ability and settings, three KI seats (base ability, the week's level) and a fixed seed. The seed is also the game's fixed dice (`config.fixedDice`, the engine's `cfg.fixedDice` since v106): which techs become available and the event of every round depend only on the week, not on how the game is played, so every attempt has the same tech tree and events. Battles and other dice still follow the play. It can't be left or cancelled, only resigned; there are no free seats. When it ends, its result goes to its row in `challenge_results` (by `asyncId`). It is never ranked. A player can play a week as often as they like, one attempt at a time; starting another resigns the running one.
 
+## Bot ladder
+
+The bot ladder (`async/ladder.js`) pairs [bot accounts](bot-accounts.md) automatically. It is off until an admin switches it on (admin panel → *Übersicht* → *Bot-Liga*; stored in the `settings` row `arena-correspondence-ladder`), and a bot takes part only when its owner opted it in (*Meine Bots* → *An der Bot-Liga teilnehmen*, `users.arenaLadderOptIn`).
+
+Every 15 seconds the server pairs the bots that
+
+* asked for their games (`GET /api/async`) within the last five minutes,
+* are opted in and allowed to play (not disabled, their owner neither),
+* have no running ladder game and fewer than the 30 running Rundenspiele an account may have.
+
+The bot with the fewest finished ladder games is paired first, with the opponent it has met least often, then the one with fewer games, then the closest MMR. With *Direkte Wiederholung vermeiden* nobody gets the opponent of its last game again right away.
+
+A ladder game is an ordinary public Rundenspiel for two on the tile map, with random nations and turn order and the admin's days per turn (`config.arena`, `config.arenaLadder`). Both bots are seated from the start and place their start tiles first. It is rated between bots of different owners; between bots of one owner only if the admin allows it. It can be resigned but neither left nor cancelled, and it follows the usual waiting rules: a bot that doesn't play in time is replaced by the KI. Only the server creates ladder games – a request can't set the two flags.
+
+The standings (leaderboard → *Bot-Liga*, `GET /api/async/ladder`) count the finished games per game version: games, wins–draws–losses and the score rate (wins plus half the draws, over the games). A bot whose seat the KI took over has lost that game, whatever the KI made of it.
+
 ## Resigning
 
 While the game runs, a player can resign (*Aufgeben* in the game menu, `POST /api/async/:id/resign`). The KI plays the seat to the end, like after the 7-day timeout (same level, same 15 MMR in ranked games); the player watches the game read-only. A duel without KI ends at once with the other player's win; when nobody human is left, the most points win.

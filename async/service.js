@@ -114,43 +114,10 @@ async function getEntry(id) {
     return e;
 }
 
-function enqueueGame(entry, fn) {
-    entry.busy++;
-    const run = entry.queue.then(() => fn(entry.g));
-    entry.queue = run.catch(() => {}).finally(() => { entry.busy--; });
-    return run;
-}
-
 async function save(g) {
     // the chat ends with the game; reports keep their own copy (utils/reports.js)
     if (ENDED.includes(g.status)) Object.assign(g, { chat: [], chatMutes: {} });
-    const pair = g.config.arenaPair;
-    if (!pair || pair.leg !== 1 || !ENDED.includes(g.status)) {
-        await AsyncGame.update(rowFields(g), { where: { id: g.id } });
-        return;
-    }
-    const entry = await getEntry(pair.otherGameId);
-    const released = await enqueueGame(entry, async () => {
-        const second = await sequelize.transaction(async transaction => {
-            const partner = await AsyncGame.findByPk(pair.otherGameId, { transaction, lock: transaction.LOCK.UPDATE });
-            await AsyncGame.update(rowFields(g), { where: { id: g.id }, transaction });
-            if (!partner || partner.status !== 'arena-waiting') return null;
-            const next = fromRow(partner);
-            L.finishArenaPairOpener(g, next);
-            next.waitSince = Date.now();
-            await recordStats(next, transaction);
-            await partner.update(rowFields(next), { transaction });
-            return next;
-        });
-        if (second) entry.g = second;
-        return second;
-    });
-    if (!released) return;
-    if (released.status === 'playing') {
-        const waiting = L.waitingOn(released).userIds;
-        if (waiting.length) notify(waiting, { type: 'turn', gameId: released.id,
-            subject: 'Du bist am Zug', text: 'Das Rückspiel deiner Bot-Liga-Paarung hat begonnen.' });
-    }
+    await AsyncGame.update(rowFields(g), { where: { id: g.id } });
 }
 
 /** At the start of the server: the chats of games that ended before they were deleted with the game. */
@@ -170,7 +137,9 @@ async function purgeEndedChats() {
 async function withGame(id, fn) {
     const e = await getEntry(id);
     if (!e.g) return { error: 'Spiel nicht gefunden.' };
-    return enqueueGame(e, async g => {
+    e.busy++;
+    const run = e.queue.then(async () => {
+        const g = e.g;
         const before = { key: waitKey(g), waiting: L.waitingOn(g).userIds, status: g.status };
         const res = await fn(g);
         if (res && res.error) return res;
@@ -182,6 +151,8 @@ async function withGame(id, fn) {
         }
         return res;
     });
+    e.queue = run.catch(() => {}).finally(() => { e.busy--; });
+    return run;
 }
 
 /** Display names by state index: the players (also after a KI takeover), null for KI seats. */
@@ -196,7 +167,7 @@ function stateNames(g) {
  * Statistics over the rounds (utils/stats.js): a new round adds a point, the end the final one.
  * The replay keeps a frame per turn until the game ends (utils/replay.js).
  */
-async function recordStats(g, transaction) {
+async function recordStats(g) {
     if (!g.state || !['playing', 'finished'].includes(g.status)) return;
     if (g.stats && g.stats.final) return;
     try {
@@ -206,7 +177,7 @@ async function recordStats(g, transaction) {
     }
     if (g.status === 'playing') {
         try {
-            await Replay.addAsync(g, transaction);
+            await Replay.addAsync(g);
         } catch (err) {
             console.error(`[Async] Replay frame failed for ${g.id}:`, err);
         }
@@ -312,8 +283,6 @@ async function processResult(g) {
         // MMR, games played, the match record and the result marker of the game row in one
         // transaction (utils/rating.js, R-18): a restart before save(g) finds the result and
         // doesn't count the game twice
-        const stats = Stats.publicStats(g.stats);
-        const arenaPair = g.config.arenaPair;
         let result;
         const game = await Rating.book({
             players,
@@ -323,11 +292,11 @@ async function processResult(g) {
                 durationRounds: S.round,
                 winnerUsername: ps.find(p => p.isWinner && p.dbUsername)?.dbUsername || null,
                 participants: ps,
-                stats: arenaPair ? { ...stats, arenaPair } : stats,
+                stats: Stats.publicStats(g.stats),
             }),
             after: async (created, transaction) => {
                 result = { winners: players.filter(p => p.isWinner).map(p => p.name), ranked, players: players.map(p => ({ name: p.name, points: p.points, mmrShift: p.mmrShift || 0, replaced: p.replaced })),
-                    gameId: created.id, replay: false, ...(arenaPair ? { arenaPair } : {}) };
+                    gameId: created.id, replay: false };
                 await sequelize.query(`UPDATE async_games SET data = jsonb_set(data, '{result}', CAST(:result AS jsonb)) WHERE id = :id`,
                     { replacements: { result: JSON.stringify(result), id: g.id }, transaction });
             },
@@ -397,11 +366,8 @@ function generateJoinCode() {
 async function create(user, body, internal) {
     const active = await AsyncGame.count({ where: { status: ACTIVE, participantIds: { [Op.contains]: [user.id] } } });
     if (active >= MAX_ACTIVE_PER_USER) return { error: `Höchstens ${MAX_ACTIVE_PER_USER} laufende Rundenspiele.` };
-    const opts = Object.assign({}, body || {}, {
-        challenge: (internal && internal.challenge) || undefined,
-        seed: (internal && internal.seed) || undefined,
-        arena: undefined,       // only createArenaPair (the bot ladder) sets it
-    });
+    // arena: only createLadderGame (the bot ladder) sets it, never a request
+    const opts = Object.assign({}, body || {}, { challenge: internal && internal.challenge || undefined, seed: internal && internal.seed || undefined, arena: undefined });
     const { g, error } = L.create(userOf(user), opts);
     if (error) return { error };
     g.joinCode = generateJoinCode();
@@ -418,26 +384,19 @@ async function create(user, body, internal) {
     return { id: g.id, joinCode: g.joinCode, inviteErrors: inviteErr };
 }
 
-/** The bot ladder (async/ladder.js): both games of a fixture, stored together; the second one waits. */
-async function createArenaPair(a, b, options) {
-    const { first, second, error } = L.createArenaPair(userOf(a), userOf(b), crypto.randomInt(1, 2 ** 31), options);
+/** The bot ladder (async/ladder.js): a game between two bot accounts, both seated from the start. */
+async function createLadderGame(a, b, options) {
+    const { g, error } = L.createLadderGame(userOf(a), userOf(b), options);
     if (error) return { error };
-    const id = crypto.randomUUID();
-    first.id = crypto.randomUUID();
-    second.id = crypto.randomUUID();
-    for (const [leg, g, other] of [[1, first, second], [2, second, first]]) {
-        g.config.arenaPair = { id, leg, otherGameId: other.id };
-        g.config.arenaLadder = true;
-        g.joinCode = generateJoinCode();
-        g.waitSince = Date.now();
-        g.reminded = false;
-    }
-    await AsyncGame.bulkCreate([first, second].map(g => ({
-        id: g.id, joinCode: g.joinCode, hostUserId: g.hostUserId, ...rowFields(g),
-    })));
-    notify(L.waitingOn(first).userIds, { type: 'turn', gameId: first.id,
+    g.joinCode = generateJoinCode();
+    g.waitSince = Date.now();
+    g.reminded = false;
+    const row = await AsyncGame.create(Object.assign({ joinCode: g.joinCode, hostUserId: a.id }, rowFields(g)));
+    g.id = row.id;
+    cache.set(g.id, { g, queue: Promise.resolve(), touched: Date.now(), busy: 0 });
+    notify(L.waitingOn(g).userIds, { type: 'turn', gameId: g.id,
         subject: 'Du bist am Zug', text: 'Lege dein Startplättchen in deinem Rundenspiel.' });
-    return { id, gameIds: [first.id, second.id] };
+    return { id: g.id };
 }
 
 /**
@@ -542,16 +501,7 @@ async function info(user, id, code) {
     const e = await getEntry(id);
     if (!e.g) return { error: 'Spiel nicht gefunden.' };
     if (!canSee(e.g, user.id, code)) return { error: 'Kein Zugriff auf dieses Spiel.' };
-    const summary = L.summary(e.g, user.id);
-    const pair = e.g.config.arenaPair;
-    if (pair) {
-        const other = await AsyncGame.findByPk(pair.otherGameId, { attributes: ['status', 'data'] });
-        const counted = (status, result) => status === 'finished' && !!result?.gameId
-            && result.replay && result.players.every(p => !p.replaced);
-        summary.arenaPair = { ...pair, otherStatus: other?.status || null,
-            complete: !!(counted(e.g.status, e.g.result) && counted(other?.status, other?.data.result)) };
-    }
-    return summary;
+    return L.summary(e.g, user.id);
 }
 
 function join(user, id, body) {
@@ -640,7 +590,7 @@ async function list(user) {
     };
     const mine = await AsyncGame.findAll({
         // Finished games are listed in the account's game history, not here
-        where: { participantIds: { [Op.contains]: [user.id] }, status: { [Op.notIn]: ['cancelled', 'finished', 'arena-waiting'] } },
+        where: { participantIds: { [Op.contains]: [user.id] }, status: { [Op.notIn]: ['cancelled', 'finished'] } },
         attributes: attrs, order: [['updatedAt', 'DESC']], limit: 100,
     });
     // … except the ones that ended in the last ENDED_LIST_DAYS and that the player has not opened
@@ -663,7 +613,8 @@ async function list(user) {
         attributes: attrs, order: [['updatedAt', 'DESC']], limit: 20,
     });
     const u = await User.findByPk(user.id);
-    const res = {
+    if (Bots.isBot(u)) require('./ladder').seen(u);     // a bot that asks for its games is there to play
+    return {
         notifyEmail: u ? u.notifyEmail : true,
         notifyPush: u ? u.notifyPush : true,
         // the Discord switch is shown only with a linked Discord account and a bot token
@@ -673,11 +624,9 @@ async function list(user) {
         mine: mine.map(summarize),
         ended: ended.map(summarize),
         invites: invites.map(summarize).filter(s => s.freeSeats.length && s.mySlot == null),
-        open: open.map(summarize).filter(s => s.freeSeats.length && !(s.config && s.config.arena)),
+        open: open.map(summarize).filter(s => s.freeSeats.length),
         watch: watch.map(summarize).filter(s => !s.freeSeats.length),
     };
-    if (Bots.isBot(u)) require('./ladder').seen(u);     // a bot that asks for its games is there to play
-    return res;
 }
 
 /**
@@ -687,7 +636,6 @@ async function list(user) {
 async function open(user, id) {
     const e = await getEntry(id);
     if (!e.g) return { error: 'Spiel nicht gefunden.' };
-    if (e.g.status === 'arena-waiting') return { error: 'Das Rückspiel hat noch nicht begonnen.' };
     const watchable = e.g.config.isPublic && ['playing', 'finished'].includes(e.g.status);
     if (!e.g.seats.some(s => s.userId === user.id) && !watchable) return { error: 'Du spielst in diesem Spiel nicht mit.' };
     // the last click on an ended game: from now on it is only in the game history
@@ -944,7 +892,7 @@ function evict(id) {
 }
 
 module.exports = {
-    init, evict, create, createArenaPair, fromLive, info, join, leave, cancel, invite, decline, list, open, action, place, draftPick, civDraftPick, chat, report, resign,
+    init, evict, create, createLadderGame, fromLive, info, join, leave, cancel, invite, decline, list, open, action, place, draftPick, civDraftPick, chat, report, resign,
     setNotifyEmail, setNotifyDiscord, sweep, room, removeUser, purgeEndedChats,
     ACTIVE, MAX_ACTIVE_PER_USER,
     processResult,      // for tests/score
