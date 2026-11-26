@@ -86,6 +86,30 @@ const ok = (cond, name, info) => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${nam
   await shot('taken');
   await settle();
 
+  // scenes of another empire's turn (animDraw): effects last as long as the scene, the next ends them
+  const sceneRes = await page.evaluate(async () => {
+    const svg = document.getElementById('map');
+    const ct = S.cities.find(c => c.id === 'fx-test');
+    const draw = (s, st) => drawMap(svg, S.map, { state: st, turn: -1, anim: s });
+    const s1 = { tempo: 0.4, zuege: [], ringe: [], marken: [], felder: [] }, s2 = Object.assign({}, s1);
+    const st1 = Object.assign({}, S, { cities: S.cities.map(c => c.id === ct.id ? Object.assign({}, c, { pop: c.pop + 1 }) : c) });
+    draw(s1, st1);
+    const a = HCFX.active;
+    const st2 = Object.assign({}, st1, { cities: st1.cities.map(c => c.id === ct.id ? c : c) });
+    draw(s2, st2);                                   // next scene, nothing new: the effect of scene 1 ends
+    const b = HCFX.active;
+    draw(s1, st1);                                   // (back to a picture of scene 1: no new effect, nothing changed)
+    st1.cities.find(c => c.id === ct.id).pop += 1;
+    draw(s1, st1);
+    await new Promise(r => setTimeout(r, ANIM_MS * 0.4 + 150));
+    const c = HCFX.active;
+    redraw();
+    return [a, b, c];
+  });
+  ok(sceneRes[0] > 0 && sceneRes[1] === 0, 'the next scene ends the effects of the scene before', sceneRes.join(' / '));
+  ok(sceneRes[2] === 0, 'an effect in a short scene ends with the scene', sceneRes.join(' / '));
+  await settle();
+
   // a battle, as combatDraw draws it (redrawn in between, as on resize)
   const fight = { ...spot, von: [[spot.r, spot.c - 1], [spot.r - 1, spot.c]] };
   await page.evaluate(f => {
