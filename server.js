@@ -161,7 +161,7 @@ app.get('/datenschutzerklaerung.html', (req, res) => res.sendFile(path.join(__di
 app.get('/nutzungsbedingungen.html', (req, res) => res.sendFile(path.join(__dirname, 'client/nutzungsbedingungen.html')));
 app.get('/nutzungserklaerung.html', (req, res) => res.sendFile(path.join(__dirname, 'client/nutzungsbedingungen.html')));
 
-// The older versions (/v110/, /v108/, /v107/ – Rundenspiele started on them) get the same no-op service
+// The older versions (/v112/, /v110/, /v108/, /v107/ – Rundenspiele started on them) get the same no-op service
 // worker and Activity bridge
 const OLD_GAME_PATHS = ['', ...require('./engine-adapter').OLD_VERSIONS.map(v => '/' + v)];
 app.get(OLD_GAME_PATHS.map(p => p + '/sw.js'), (req, res) => {
