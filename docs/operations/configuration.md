@@ -55,7 +55,8 @@ These have sensible defaults and are normally left alone. The tests in `tests/` 
 | `ASYNC_REMINDER_MS` | 5 days | Rundenspiele: when the waiting player gets a reminder (for 7 days per turn; shorter times per turn scale it). |
 | `ASYNC_TIMEOUT_MS` | 7 days | Rundenspiele: when the KI takes over a seat, for 7 days per turn; 1 and 3 days per turn scale it (see [Rundenspiele](../reference/rundenspiele.md)). |
 | `ASYNC_SWEEP_MS` | 10 minutes | Rundenspiele: how often the server checks for reminders and timeouts. |
-| `ASYNC_FLUSH_MS` | `2000` | Rundenspiele: how long after a move the game is written to the database, so a burst of moves costs one write. The end of a game, a change of whose turn it is and chat messages are written at once. `0` writes every save at once. |
+| `ASYNC_FLUSH_MS` | `2000` | Rundenspiele: how long after a move the game is written to the database, so a burst of moves costs one write. The end of a game and a change of whose turn it is are written at once. `0` writes every save at once. |
+| `ASYNC_HOLD_MS` | `60000` | Rundenspiele: statistics, marks and scenes are written when the turn changes; after a change within a turn at the latest this long later. |
 | `ASYNC_MAX_CACHED` | `200` | Rundenspiele kept in memory at most (least recently used ones go first; never one that is running, unsaved or open). |
 | `ASYNC_LIST_CACHE_MS` | `10000` | How long the game list (`GET /api/async`) of an account is kept. A change of one of the account's games, or of any public game's status or seats, drops it at once. `0` computes every list anew. |
 | `USER_CACHE_MS` | `60000` | How long the logged-in user (and a bot's owner) is kept between requests instead of being read for each one. Every change of a `users` row drops it at once (trigger and `LISTEN`, migration 0008); while that listener is not connected nothing is kept. `0` reads the user for every request. |
