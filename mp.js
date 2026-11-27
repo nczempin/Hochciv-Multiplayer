@@ -2611,26 +2611,38 @@ const patchTurnButton = setInterval(() => {
                     const stop = blockingIssues(S, S.cur);
                     if (stop.length) return toast(stop[0]);
                 }
+                // Once per turn (round:player of this game): sent – further taps wait for the server
+                // and send nothing (a second endTurn could end the next turn, once the KI turns
+                // in between have come back round). A click on the bar while the dialog is open
+                // is no confirmation, only the dialog's own "Zug beenden" is.
+                const key = (MP.asyncId || MP.joinCode || '') + ':' + S.round + ':' + S.cur;
+                if (MP.endTurnSent === key) return toast(TX('Warte auf Server...'));
+                if ($('end-ok') && $('overlay').classList.contains('show')) return;
                 // Ask once per turn, as the game does (turns.js endHumanTurn). Since v109 a dialog
                 // ("Zug beenden?": what is left and what it could still buy, open free actions);
                 // its "Zug beenden" comes back here. Older versions: a toast, tap again.
                 const warn = pendingWarnings(S, S.cur);
                 const rest = typeof unspent === 'function' && typeof endTurnAsk === 'function' && !ui.fg
                     ? unspent(S, S.cur) : { kaufbar: [], frei: [] };
-                if ((warn.length || rest.kaufbar.length || rest.frei.length) && !ui.confirmedEnd) {
-                    ui.confirmedEnd = true;
-                    if (typeof endTurnAsk !== 'function') return toast(warn[0] + ' ' + TX('Nochmal tippen zum Bestätigen.'));
+                if ((warn.length || rest.kaufbar.length || rest.frei.length) && MP.endConfirmed !== key) {
+                    if (typeof endTurnAsk !== 'function') {
+                        MP.endConfirmed = key;
+                        return toast(warn[0] + ' ' + TX('Nochmal tippen zum Bestätigen.'));
+                    }
                     endTurnAsk(warn, rest);
                     const ok = $('end-ok');
-                    if (ok) ok.onclick = () => aEnd.onclick();
+                    if (ok) ok.onclick = () => { MP.endConfirmed = key; closeModal(); aEnd.onclick(); };
                     return;
                 }
                 if ($('end-ok') && $('overlay').classList.contains('show')) closeModal();
                 ui.confirmedEnd = false; ui.army = null; ui.sel = null; ui.mode = null;
                 closeSheet();
 
-                MP.sendAction({ type: 'endTurn' }, res => {
-                    if (res && res.error && !MP.asyncId) toast(TXS(res.error));
+                MP.endTurnSent = key;
+                MP.sendAction({ type: 'endTurn', params: { round: S.round } }, res => {
+                    if (!res || !res.error) return;
+                    if (MP.endTurnSent === key) MP.endTurnSent = null;     // refused: may try again
+                    if (!MP.asyncId && res.error !== 'Dieser Zug ist schon beendet.') toast(TXS(res.error));
                 });
                 toast(TX('Warte auf Server...'));
             } else {
