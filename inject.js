@@ -32,6 +32,8 @@ const CHAT = '<script src="/client/chat.js"></script>';
 const CONSENT = '<script src="/client/consent.js"></script>';
 // Post-game statistics (after mp.js)
 const STATS = '<script src="/client/stats.js"></script>';
+// The end screen's tabs, Civ IV style (after client/stats.js and client/solo.js, whose data it shows)
+const ENDSCREEN = '<script src="/client/endscreen.js"></script>';
 // Player report (after mp.js and client/stats.js, whose chart it uses)
 const REPORT = '<script src="/client/report.js"></script>';
 // Overall statistics over all matches (menu button "Statistiken", mp.js)
@@ -91,7 +93,7 @@ if (fs.existsSync(htmlPath)) {
     html = html.replace(/<script\s+src="https:\/\/cdn\.socket\.io\/[^"]*"\s*><\/script>/g, SOCKET_IO);
     if (!html.includes(MAPS_CSS)) html = html.replace('</head>', MAPS_CSS + '\n</head>');
     if (!html.includes(MOBILE_CSS)) html = html.replace('</head>', MOBILE_CSS + '\n</head>');
-    const missing = [SOCKET_IO, I18N, LOGTEXT_JS, PROFILE, MP, ALERTS, FRIENDS, RANKING, CHALLENGE, VICTORY, PRESETS, PAUSE, SOLO, SCENES, CHAT, CONSENT, STATS, REPORT, GAMESTATS, REPLAY, MATCH, ACTIVITY, MAPS_JS, MOBILE_JS, FX].filter(tag => !html.includes(tag));
+    const missing = [SOCKET_IO, I18N, LOGTEXT_JS, PROFILE, MP, ALERTS, FRIENDS, RANKING, CHALLENGE, VICTORY, PRESETS, PAUSE, SOLO, SCENES, CHAT, CONSENT, STATS, ENDSCREEN, REPORT, GAMESTATS, REPLAY, MATCH, ACTIVITY, MAPS_JS, MOBILE_JS, FX].filter(tag => !html.includes(tag));
     if (missing.length) html = html.replace('</body>', missing.join('\n') + '\n</body>');
     html = Assets.versioned(html, fileOf);
     fs.writeFileSync(htmlPath, html, 'utf8');
