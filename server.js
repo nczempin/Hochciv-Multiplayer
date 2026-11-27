@@ -356,6 +356,12 @@ async function shutdown(signal) {
     } catch (err) {
         console.error('[Shutdown] Converting live games failed:', err);
     }
+    // Rundenspiele with changes not yet written (saving waits ASYNC_FLUSH_MS); from now on at once
+    try {
+        await require('./async/service').flushAll();
+    } catch (err) {
+        console.error('[Shutdown] Saving Rundenspiele failed:', err);
+    }
     setTimeout(() => process.exit(0), 1000);                         // the 'game:toAsync' messages still go out
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));

@@ -2,9 +2,11 @@
  * Asynchronous games: persistence, locking, live updates, notifications, MMR and the
  * inactivity scheduler. The rules themselves are in ./logic.js.
  *
- * Every change runs through withGame(): one change at a time per game (queue), the game is
- * saved to the database after every action and after every automatic (bot / KI) turn, and
- * everyone who has the game open gets the new view over Socket.IO.
+ * Every change runs through withGame(): one change at a time per game (queue), everyone who has
+ * the game open gets the new view over Socket.IO, and the game is saved: once per change (the
+ * automatic bot / KI turns it starts included), written ASYNC_FLUSH_MS later so a burst of moves
+ * costs one write – at once when it ends or when something the game list selects by changes.
+ * The cached copy is authoritative; flushAll() writes what is left at shutdown.
  */
 const { Op } = require('sequelize');
 const crypto = require('crypto');
@@ -50,9 +52,22 @@ const MAX_ACTIVE_PER_USER = 30;
 const MAX_PENDING_INVITES = 6;
 const INVITE_AGAIN_MS = 24 * 60 * 60 * 1000;     // a declined invitation is sent again at most daily
 
+const metrics = require('../utils/metrics').async;
+/* Saving (P1.3): a move marks the game dirty; the row is written FLUSH_MS later, so a burst of
+   moves costs one write. The end of a game and whatever the game list selects by (listKey) are
+   written at once. 0 = write every save at once (the old behaviour). */
+const FLUSH_MS = process.env.ASYNC_FLUSH_MS !== undefined && process.env.ASYNC_FLUSH_MS !== '' ? Number(process.env.ASYNC_FLUSH_MS) : 2000;
+const MAX_CACHED = Number(process.env.ASYNC_MAX_CACHED) || 200;    // games kept in memory (LRU)
+const IDLE_MS = 30 * 60 * 1000;                                     // … and dropped after this long unused
+const STEP_BROADCAST_MS = 500;       // while bots / the KI play several turns: a view at most this often
+
 let io = null;
-const cache = new Map();          // id → { g, queue, touched, busy }
+/* id → { g, queue, touched, busy, dirty, timer, writing, pending, listKey }
+   queue: the game's changes one after another; writing: its row writes in order */
+const cache = new Map();
 const room = id => `async:${id}`;
+let closing = false;                 // shutting down (flushAll): every save is written at once
+const newEntry = g => ({ g, queue: Promise.resolve(), touched: Date.now(), busy: 0, dirty: false, timer: null, writing: Promise.resolve(), pending: 0, listKey: null });
 
 // ── Loading and saving ───────────────────────────────────────────────────────
 
@@ -71,14 +86,17 @@ function fromRow(row) {
     };
 }
 
+/** The names of the winners of an ended game ([] while it runs). */
+function winnersOf(g) {
+    const S = g.state;
+    return S && S.over ? (S.over.winners || []).map(i => S.players[i] && g.seats[S.players[i].slot])
+        .filter(Boolean).map(s => s.name || s.civ) : [];
+}
+
 function rowFields(g) {
     const w = L.waitingOn(g);
     const S = g.state;
-    g.meta = {
-        waitingFor: w.label,
-        winners: S && S.over ? (S.over.winners || []).map(i => S.players[i] && g.seats[S.players[i].slot])
-            .filter(Boolean).map(s => s.name || s.civ) : [],
-    };
+    g.meta = { waitingFor: w.label, winners: winnersOf(g) };
     return {
         status: g.status,
         isPublic: !!g.config.isPublic,
@@ -104,22 +122,118 @@ function waitKey(g) {
 async function getEntry(id) {
     let e = cache.get(id);
     if (!e) {
-        e = { g: null, queue: null, touched: Date.now(), busy: 0 };
-        e.queue = AsyncGame.findByPk(id).then(row => { e.g = row ? fromRow(row) : null; });
+        e = newEntry(null);
+        e.loading = true;
+        e.queue = AsyncGame.findByPk(id).then(row => { e.g = row ? fromRow(row) : null; }).finally(() => { e.loading = false; });
         cache.set(id, e);
+        trimCache(id);
         await e.queue.catch(() => cache.delete(id));
     } else {
+        cache.delete(id); cache.set(id, e);          // most recently used last (trimCache)
         await e.queue.catch(() => {});
     }
     e.touched = Date.now();
     return e;
 }
 
-async function save(g) {
+/** Can the game leave memory? Not while it runs, has unwritten changes or somebody has it open. */
+function evictable(id, e) {
+    if (e.busy || e.dirty || e.timer || e.pending || e.loading) return false;
+    const rooms = io && io.sockets && io.sockets.adapter && io.sockets.adapter.rooms;
+    return !(rooms && rooms.get(room(id)) && rooms.get(room(id)).size);
+}
+
+/** At most MAX_CACHED games in memory: the least recently used ones that may go are dropped. */
+function trimCache(keep) {
+    if (cache.size <= MAX_CACHED) return;
+    for (const [id, e] of cache) {
+        if (cache.size <= MAX_CACHED) break;
+        if (id !== keep && evictable(id, e)) cache.delete(id);
+    }
+}
+
+/** What the game list and the scheduler select by: a change is written at once. */
+const listKey = f => JSON.stringify([f.status, f.isPublic, f.participantIds, f.invitedIds, f.waitingIds]);
+
+const UPDATE_SQL = `UPDATE async_games SET status = $2, "isPublic" = $3, "participantIds" = $4::uuid[],
+    "invitedIds" = $5::uuid[], "waitingIds" = $6::uuid[], "waitSince" = $7, reminded = $8, round = $9,
+    data = $10::jsonb, state = $11::jsonb, "updatedAt" = now() WHERE id = $1`;
+
+/**
+ * Write the row of the cached game now. The row is serialised right away (a later change can't
+ * slip into it); the writes of a game go out one after another (e.writing). On failure the game
+ * stays dirty and is written again later.
+ */
+function flush(e, reason) {
+    clearTimeout(e.timer);
+    e.timer = null;
+    if (!e.dirty || !e.g) return e.writing;
+    const g = e.g;
+    const f = rowFields(g);
+    const data = JSON.stringify(f.data);
+    const state = f.state == null ? null : JSON.stringify(f.state);
+    const bind = [g.id, f.status, f.isPublic, f.participantIds, f.invitedIds, f.waitingIds, f.waitSince, f.reminded, f.round, data, state];
+    e.dirty = false;
+    e.listKey = listKey(f);
+    e.pending++;
+    const run = e.writing.then(async () => {
+        const end = metrics.save.startTimer();
+        await sequelize.query(UPDATE_SQL, { bind });
+        end();
+        metrics.writes.inc({ reason });
+        metrics.saveBytes.observe(Buffer.byteLength(data) + (state ? Buffer.byteLength(state) : 0));
+    });
+    e.writing = run.catch(() => {}).finally(() => { e.pending--; });
+    return run.catch(err => {
+        e.dirty = true;
+        e.listKey = null;               // the next save writes at once
+        if (!e.timer) e.timer = setTimeout(() => flushLater(e, 'retry'), Math.max(FLUSH_MS, 1000));
+        throw err;
+    });
+}
+
+/** The timer of a dirty game: write it in the game's queue, so it never cuts into a change. */
+function flushLater(e, reason = 'delayed') {
+    e.timer = null;
+    if (!e.dirty) return;
+    e.busy++;
+    const run = e.queue.then(() => flush(e, reason));
+    e.queue = run.catch(err => console.error(`[Async] Saving ${e.g && e.g.id} failed:`, err)).finally(() => { e.busy--; });
+}
+
+/**
+ * Save the game: at once when it ended, when something the game list selects by changed
+ * (listKey) or with `now`; else FLUSH_MS later (flushLater). `defer`: only mark it unless it ended –
+ * a save later in the same change decides (withGame before the KI turns).
+ */
+async function save(g, { now = false, defer = false } = {}) {
     // the chat ends with the game; reports keep their own copy (utils/reports.js)
     if (ENDED.includes(g.status)) Object.assign(g, { chat: [], chatMutes: {} });
-    await AsyncGame.update(rowFields(g), { where: { id: g.id } });
+    metrics.saveRequests.inc();
+    let e = cache.get(g.id);
+    if (!e || e.g !== g) e = newEntry(g);          // not (or no longer) the cached copy: write it as it is
+    e.dirty = true;
+    const atOnce = closing || ENDED.includes(g.status) || !defer && (now || FLUSH_MS <= 0 || cache.get(g.id) !== e
+        || listKey(rowFields(g)) !== e.listKey);
+    if (atOnce) return flush(e, 'immediate');
+    if (!e.timer) e.timer = setTimeout(() => flushLater(e), FLUSH_MS);
 }
+
+/** Write every game with unwritten changes (shutdown) and wait for the writes under way. */
+async function flushAll() {
+    closing = true;
+    const runs = [];
+    for (const e of cache.values()) {
+        runs.push(e.dirty ? flush(e, 'shutdown').catch(err => console.error(`[Async] Saving ${e.g && e.g.id} at shutdown failed:`, err)) : e.writing);
+    }
+    await Promise.all(runs);
+}
+
+metrics.cacheGauge(() => {
+    let dirty = 0;
+    for (const e of cache.values()) if (e.dirty) dirty++;
+    return { cached: cache.size, dirty };
+});
 
 /** At the start of the server: the chats of games that ended before they were deleted with the game. */
 async function purgeEndedChats() {
@@ -135,21 +249,34 @@ async function purgeEndedChats() {
  * Run `fn(g)` exclusively for this game, then save, drive automatic turns, broadcast and
  * notify. Returns fn's result. Throws 'not found' as { error }.
  */
-async function withGame(id, fn) {
+async function withGame(id, fn, label = 'other') {
     const e = await getEntry(id);
     if (!e.g) return { error: 'Spiel nicht gefunden.' };
     e.busy++;
     const run = e.queue.then(async () => {
+        const end = metrics.action.startTimer({ action: label });
         const g = e.g;
         const before = { key: waitKey(g), waiting: L.waitingOn(g).userIds, status: g.status };
         const res = await fn(g);
         if (res && res.error) return res;
-        await settle(g, before);
-        // Bots, KI, released holds – saved and broadcast after every automatic turn
-        if (g.status === 'playing') {
-            await L.drive(g, async () => { await settle(g, null); });
-            await settle(g, before);
+        const playing = g.status === 'playing';
+        // the KI turns below save the game once at their end: here it is only marked
+        await settle(g, before, { defer: playing });
+        // Bots, KI, released holds: the statistics after every automatic turn, a view at most
+        // every STEP_BROADCAST_MS, saved once when they are through (P1.2)
+        if (playing) {
+            const key = waitKey(g);
+            let steps = 0, sent = Date.now();
+            await L.drive(g, async () => {
+                steps++;
+                if (g.state && g.state.over) return;       // the end: settle below
+                await recordStats(g);
+                if (Date.now() - sent >= STEP_BROADCAST_MS) { sent = Date.now(); await broadcast(g); }
+            });
+            if (steps || g.status !== 'playing' || waitKey(g) !== key) await settle(g, before);
+            else await save(g);
         }
+        end();
         return res;
     });
     e.queue = run.catch(() => {}).finally(() => { e.busy--; });
@@ -194,7 +321,7 @@ async function recordStats(g) {
 }
 
 /** Save + broadcast; with `before`, also restart the clock and send notifications. */
-async function settle(g, before) {
+async function settle(g, before, { defer = false } = {}) {
     // the game just ended (a move or an automatic turn): finished right away, so the first view
     // of the end already carries the statistics and the result – not only the next one
     if (g.status === 'playing' && g.state && g.state.over) g.status = 'finished';
@@ -211,15 +338,14 @@ async function settle(g, before) {
             if (g.seats.some(s => s.userId === u) && !g.endSeen.includes(u)) g.endSeen.push(u);
         }
     }
-    await save(g);
-    await broadcast(g);
+    await save(g, { defer });
+    const viewing = await broadcast(g);
     if (!before) return;
     const now = L.waitingOn(g).userIds;
     const fresh = now.filter(u => !before.waiting.includes(u));
     before.waiting = now;                 // settle runs twice per change – notify once
     before.key = waitKey(g);
     if (fresh.length) {
-        const viewing = await viewers(g.id);
         const absent = fresh.filter(u => !viewing.has(u));
         const text = g.status === 'placement' ? 'Lege dein Startplättchen in deinem Rundenspiel.'
             : g.status === 'draft' ? 'Du bist im Draft deines Rundenspiels dran.'
@@ -249,15 +375,29 @@ async function viewers(id) {
     return new Set(sockets.map(s => s.data.userId).filter(Boolean));
 }
 
+let measured = 0;
+/**
+ * Send everyone who has the game open their view. L.view copies what it hands out and emit
+ * encodes at once, so the view is sent as it is (no extra JSON copy). Returns the viewers.
+ */
 async function broadcast(g) {
-    if (!io) return;
+    const who = new Set();
+    if (!io) return who;
     const sockets = await io.in(room(g.id)).fetchSockets();
     const views = new Map();
     for (const s of sockets) {
         const uid = s.data.userId;
-        if (!views.has(uid)) views.set(uid, JSON.parse(JSON.stringify(L.view(g, uid))));
-        s.emit('async:update', views.get(uid));
+        if (uid) who.add(uid);
+        let v = views.get(uid);
+        if (!v) {
+            v = L.view(g, uid);
+            views.set(uid, v);
+            if (++measured % 20 === 0) metrics.broadcastBytes.observe(Buffer.byteLength(JSON.stringify(v)));
+        }
+        s.emit('async:update', v);
+        metrics.broadcasts.inc();
     }
+    return who;
 }
 
 // ── Results and MMR ───────────────────────────────────────────────────────────
@@ -385,7 +525,7 @@ async function create(user, body, internal) {
     g.reminded = false;
     const row = await AsyncGame.create(Object.assign({ joinCode: g.joinCode, hostUserId: user.id }, rowFields(g)));
     g.id = row.id;
-    cache.set(g.id, { g, queue: Promise.resolve(), touched: Date.now(), busy: 0 });
+    cache.set(g.id, newEntry(g)); trimCache(g.id);
     const inviteErr = [];
     for (const name of (body.invite || []).slice(0, 3)) {
         const r = await invite(user, g.id, name);
@@ -403,7 +543,7 @@ async function createLadderGame(a, b, options) {
     g.reminded = false;
     const row = await AsyncGame.create(Object.assign({ joinCode: g.joinCode, hostUserId: a.id }, rowFields(g)));
     g.id = row.id;
-    cache.set(g.id, { g, queue: Promise.resolve(), touched: Date.now(), busy: 0 });
+    cache.set(g.id, newEntry(g)); trimCache(g.id);
     notify(L.waitingOn(g).userIds, { type: 'turn', gameId: g.id,
         subject: 'Du bist am Zug', text: 'Lege dein Startplättchen in deinem Rundenspiel.' });
     return { id: g.id };
@@ -490,7 +630,7 @@ async function fromLive(hostUser, session, opts) {
         await ReplayFrame.bulkCreate(rec.frames.map((data, seq) => ({ gameKey: g.id, seq, data })));
         g.replay = { key: rec.key, seq: rec.frames.length };
     }
-    cache.set(g.id, { g, queue: Promise.resolve(), touched: now, busy: 0 });
+    cache.set(g.id, newEntry(g)); trimCache(g.id);
     // Seats resigned in the live game: the live result (processGameOverMmr) never comes, so their
     // ranked penalty is booked now, as a resign in a Rundenspiel does (R-07 of the findings report)
     const resigned = seats.filter(s => s.resigned && s.userId && s.penalty).map(s => s.userId);
@@ -594,20 +734,30 @@ function decline(user, id) {
 
 /** The game list: own games, invitations, open public games. */
 async function list(user) {
+    const end = metrics.list.startTimer();
+    try { return await listOf(user); } finally { end(); }
+}
+
+async function listOf(user) {
     const attrs = { exclude: ['state'] };
     const bot = await botOf(user);
     const summarize = row => {
-        const g = fromRow(row);
+        // a game in memory is newer than its row (saving waits FLUSH_MS): its turn, round, winners
+        const live = cache.get(row.id);
+        const mem = live && live.g && live.g.status === row.status ? live.g : null;
+        const g = mem || fromRow(row);
         const s = L.summary(g, user.id);
         // asked by a bot: may it take a seat now (allowed, room under the limit, the host's filter)?
         if (bot) s.playerBotsForYou = !L.playerBotRoom(g, bot);
+        const w = mem ? L.waitingOn(mem) : null;
         Object.assign(s, {
-            waitingFor: g.meta.waitingFor || s.waitingFor,
-            yourTurn: (row.waitingIds || []).includes(user.id),
-            round: row.round, winners: g.meta.winners || [], result: g.result,
+            waitingFor: (w ? w.label : g.meta.waitingFor) || s.waitingFor,
+            yourTurn: (w ? w.userIds : row.waitingIds || []).includes(user.id),
+            round: mem ? (mem.state ? mem.state.round : 0) : row.round,
+            winners: (mem ? winnersOf(mem) : g.meta.winners) || [], result: g.result,
             updatedAt: row.updatedAt,
             // an ended game the player has not opened since: did they win?
-            won: g.status === 'finished' ? (g.meta.winners || []).includes((g.seats.find(x => x.userId === user.id) || {}).name) : undefined,
+            won: g.status === 'finished' ? ((mem ? winnersOf(mem) : g.meta.winners) || []).includes((g.seats.find(x => x.userId === user.id) || {}).name) : undefined,
             deadline: ACTIVE.includes(g.status) ? g.waitSince + timeoutOf(g) : null,
         });
         return s;
@@ -691,24 +841,28 @@ async function chat(user, id, payload) {
         const v = await reports.moderate({ source: 'async', sourceId: id, history: e.g.chat, msg: r.msg, sender: { id: user.id, name: user.username }, mute });
         if (v) {
             // kept with the game (in its queue, like a message): the timeout outlasts a restart
-            e.busy++;
-            const run = e.queue.then(async () => {
-                e.g.chatMutes = { ...(e.g.chatMutes || {}), [user.id]: v.mute };
-                await save(e.g);
+            const cur = await getEntry(id);       // the moderation awaited: the game may have left memory
+            if (!cur.g) return v;
+            cur.busy++;
+            const run = cur.queue.then(async () => {
+                cur.g.chatMutes = { ...(cur.g.chatMutes || {}), [user.id]: v.mute };
+                await save(cur.g, { now: true });
             });
-            e.queue = run.catch(() => {}).finally(() => { e.busy--; });
+            cur.queue = run.catch(() => {}).finally(() => { cur.busy--; });
             await run;
             return v;
         }
     }
     if (r.msg.kind !== 'ping') {
         // in the game's queue, so it can't overwrite a move saved at the same time
-        e.busy++;
-        const run = e.queue.then(async () => {
-            e.g.chat = chatLib.remember(e.g.chat, r.msg, chatLib.ASYNC_HISTORY);
-            await save(e.g);
+        const cur = await getEntry(id);
+        if (!cur.g) return { error: 'Spiel nicht gefunden.' };
+        cur.busy++;
+        const run = cur.queue.then(async () => {
+            cur.g.chat = chatLib.remember(cur.g.chat, r.msg, chatLib.ASYNC_HISTORY);
+            await save(cur.g, { now: true });
         });
-        e.queue = run.catch(() => {}).finally(() => { e.busy--; });
+        cur.queue = run.catch(() => {}).finally(() => { cur.busy--; });
         await run;
     }
     if (io) io.to(room(id)).emit('async:chat', { id, msg: r.msg });
@@ -732,21 +886,21 @@ function action(user, id, type, params) {
     return withGame(id, g => {
         const err = L.action(g, user.id, type, params);
         return err ? { error: err } : { ok: true };
-    });
+    }, type === 'endTurn' ? 'end_turn' : 'move');
 }
 
 function place(user, id, o, cell) {
     return withGame(id, g => {
         const err = L.place(g, user.id, o, cell);
         return err ? { error: err } : { ok: true };
-    });
+    }, 'place');
 }
 
 function draftPick(user, id, abilityId) {
     return withGame(id, g => {
         const err = L.draftPick(g, user.id, abilityId);
         return err ? { error: err } : { ok: true };
-    });
+    }, 'draft');
 }
 
 /** Nation draft (F34): a human picks a nation (and its ability). */
@@ -754,7 +908,7 @@ function civDraftPick(user, id, pickId, ability) {
     return withGame(id, g => {
         const err = L.civDraftPick(g, user.id, pickId, ability);
         return err ? { error: err } : { ok: true };
-    });
+    }, 'civdraft');
 }
 
 /** Resign (F16): the KI plays the seat to the end; ranked games cost the takeover penalty. */
@@ -823,7 +977,7 @@ async function sweep() {
         }
         await retryResults();
         // Evict idle games from memory
-        for (const [id, e] of cache) if (!e.busy && Date.now() - e.touched > 30 * 60 * 1000) cache.delete(id);
+        for (const [id, e] of cache) if (Date.now() - e.touched > IDLE_MS && evictable(id, e)) cache.delete(id);
     } catch (err) {
         console.error('[Async] Sweep failed:', err);
     }
@@ -912,11 +1066,11 @@ async function removeUser(userId) {
 /** Drop a game from memory (it is reloaded from the database on next use). */
 function evict(id) {
     const e = cache.get(id);
-    if (e && !e.busy) cache.delete(id);
+    if (e && evictable(id, e)) cache.delete(id);
 }
 
 module.exports = {
-    init, evict, create, createLadderGame, fromLive, info, join, leave, cancel, invite, decline, list, open, action, place, draftPick, civDraftPick, chat, report, resign,
+    init, evict, flushAll, create, createLadderGame, fromLive, info, join, leave, cancel, invite, decline, list, open, action, place, draftPick, civDraftPick, chat, report, resign,
     setNotifyEmail, setNotifyDiscord, sweep, room, removeUser, purgeEndedChats,
     ACTIVE, MAX_ACTIVE_PER_USER,
     processResult,      // for tests/score
