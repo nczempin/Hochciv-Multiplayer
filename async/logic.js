@@ -992,7 +992,7 @@ function summary(g, userId) {
     const S = g.state;
     return {
         id: g.id,
-        engine: engineVersionOf(g),        // the client opens games of an older version in it (/v110/, /v108/, /v107/)
+        engine: engineVersionOf(g),        // the client opens games of an older version in it (/v112/, /v110/, /v108/, /v107/)
         joinCode: g.joinCode,
         status: g.status,
         isHost: g.hostUserId === userId,

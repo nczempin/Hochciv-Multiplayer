@@ -110,6 +110,7 @@ services:
       - ./maps:/app/maps
       # the game itself (rebuilt into public/ at every start)
       - ./HochCiv:/app/HochCiv
+      - ./HochCiv-v112:/app/HochCiv-v112
       - ./HochCiv-v110:/app/HochCiv-v110
       - ./HochCiv-v108:/app/HochCiv-v108
       - ./HochCiv-v107:/app/HochCiv-v107

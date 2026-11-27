@@ -4,7 +4,7 @@ const escHtml = t => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/
 
 /* Older game versions served at /<version>/ for Rundenspiele started on them (GAME_DIRS in
    engine-adapter.js), and the version of this page. */
-const OLD_VERSIONS = ['v110', 'v108', 'v107'];
+const OLD_VERSIONS = ['v112', 'v110', 'v108', 'v107'];
 const APP_VERSION_HERE = typeof APP_VERSION !== 'undefined' ? APP_VERSION : null;
 
 /* Texts in the player's language (client/i18n.js, loaded before this file): TX() for our own
@@ -2829,7 +2829,7 @@ const ASYNC = {
         else if (g.status === 'finished') info = TX('Gewonnen: %s', (g.winners || []).map(this.esc).join(', ') || '—');
         else if (g.resigned) info = TX('Aufgegeben');
         else if (g.replaced) info = TX('Von der KI übernommen');
-        else if (g.waitingFor) info = TX('Wartet auf %s', this.esc(TXS(g.waitingFor)));
+        else if (g.waitingFor) info = TX('Wartet auf %s', this.esc(HC_I18N.label(g.waitingFor)));
         const member = g.mySlot != null;
         // a game to join shows all its settings (as the live lobbies, MP.traitsHtml)
         const joinable = !member && g.freeSeats && g.freeSeats.length;
@@ -3292,7 +3292,7 @@ const ASYNC = {
         MP.players = view.seats.map(s => ({ index: s.slot, name: s.name, civ: s.civ, userId: s.replaced ? null : s.userId, isBot: s.kind === 'bot' || (s.kind === 'ki' && !s.replaced), resigned: !!s.resigned }));
         if (view.state && view.state.over) MP.translateOver(view.state.over);
         const toastEl = document.querySelector('.mp-waiting-toast');
-        if (toastEl) toastEl.textContent = MP.spectator ? TX('Du schaust zu') : view.waitingFor ? TX('Warte auf %s …', TXS(view.waitingFor)) : TX('Warte auf deinen Zug...');
+        if (toastEl) toastEl.textContent = MP.spectator ? TX('Du schaust zu') : view.waitingFor ? TX('Warte auf %s …', HC_I18N.label(view.waitingFor)) : TX('Warte auf deinen Zug...');
 
         if (view.status === 'cancelled') {
             toast(TX('Das Rundenspiel wurde abgebrochen.'));
@@ -3368,7 +3368,7 @@ const ASYNC = {
             <p><b>${this.mapName(c.mapKey, c)}</b> · ${MP.civModeLabel(c)} · ${ASYNC.countText(c)}${c.ranked ? ' · 🔥 ' + TX('Gewertet') : ''}${view.engine ? ' · ' + this.esc(view.engine) : ''}</p>
             ${this.seatsHtml(view.seats, view.mySlot)}
             <p>${text}</p>
-            ${view.waitingFor ? `<p class="sub">${TX('Wartet auf: %s', this.esc(TXS(view.waitingFor)))}</p>` : ''}
+            ${view.waitingFor ? `<p class="sub">${TX('Wartet auf: %s', this.esc(HC_I18N.label(view.waitingFor)))}</p>` : ''}
             ${view.freeSeats.length ? `<button class="btn wide" onclick="ASYNC.showInvite('${view.id}', '${view.joinCode}')">${TX('Mitspieler einladen (Code %s)', view.joinCode)}</button>` : ''}
             <button class="btn wide primary" onclick="ASYNC.close(); show('screen-menu'); ASYNC.showList()">${TX('Zur Liste')}</button>
             ${view.status === 'setup' && host ? `<button class="btn wide ghost" onclick="ASYNC.cancel('${view.id}')">${TX('Spiel abbrechen')}</button>` : ''}

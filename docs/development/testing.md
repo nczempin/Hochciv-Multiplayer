@@ -53,6 +53,7 @@ The server limits logins and other requests per minute, so tests run back to bac
 | `terms/terms.test.js` | consent to the terms of use: popup for accounts and guests, declining, the server's refusals, new versions | `TERMS_CHECK=on` |
 | `friends/friends.test.js` | friends list: requests, accepting, crossing requests, refusals and blocks, suggestions, profile button, live invitation into a lobby, Rundenspiel names, removing, offline, account deletion, English | default |
 | `i18n/english.test.js` | every screen in English, no German left | default |
+| `i18n/label.test.js` | „waiting for“ (`HC_I18N.label`): German texts become English, player names stay and are not reported missing (static) | default |
 | `i18n/log.test.js` | the game log (Protokoll, `logSince`) in English from the server's parts (`e.t`), German unchanged, the compressed WebSocket | default |
 | `i18n/victory.test.js` | the end screen in English: every victory text the engine writes, points comparisons with several claims, resign texts, via state and `game:over`; German unchanged | default |
 | `layout/hud.test.js` | multiplayer HUD layout on several screen sizes | default |
@@ -110,6 +111,7 @@ Some tests need the same variable on the test side too (`filter`, `timer`) – t
 |---|---|
 | new game version | game tests, `mobile`, `layout`, `i18n`, `match`, `replay`, `placement`, `rematch`, `summary`, `scenes`, `spectators`, `admin/running-games` |
 | `client/mobile/` | `mobile`, `maps` (editor painting) |
+| `client/fx.js` | `fx` (screenshots in `tests/fx/shots`), `mobile`, `scenes` |
 | custom maps, map browser, editor | `maps`, `i18n` |
 | new or changed texts | `i18n` |
 | a feature from [TASKS.md](../../TASKS.md) | that feature's test (named in its section) |
