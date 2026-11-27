@@ -160,6 +160,30 @@ async function live(browser, errors) {
         }));
         ok(coins.title === 'Münzen je Runde' && coins.lines === 4 && coins.svgs === 1, 'live: "Münzen je Runde" redraws the chart', JSON.stringify(coins));
         ok(coins.table === 'Münzen je Runde' && coins.cell === coins.want, 'live: the table follows the choice', `${coins.cell} / ${coins.want}`);
+        // "Anteile je Runde": stacked shares to 100 %, for every value; kept on the device
+        await page.selectOption('#hce-panel .hcs-metric select', 's');
+        await page.check('#hce-panel .hcs-norm input');
+        const share = await page.evaluate(() => {
+            const t = document.querySelectorAll('#hce-panel .hcs-tables table')[0];
+            const sum = [...t.rows[t.rows.length - 1].cells].slice(1).reduce((n, c) => n + (parseFloat(c.textContent) || 0), 0);
+            return {
+                areas: document.querySelectorAll('#hce-panel .hcs-area').length,
+                lines: document.querySelectorAll('#hce-panel .hcs-plot path[stroke-width="2"]').length,
+                top: [...document.querySelectorAll('#hce-panel .hcs-axis')].some(a => a.textContent === '100%'),
+                head: document.querySelector('#hce-panel .hcs-tables h4').textContent, sum,
+                kept: localStorage.getItem('hochciv.stats.norm'),
+            };
+        });
+        ok(share.areas === 4 && share.lines === 0 && share.top, 'live: "Anteile je Runde" stacks the shares to 100 %', JSON.stringify(share));
+        ok(/Anteile je Runde/.test(share.head) && Math.abs(share.sum - 100) <= 3 && share.kept === '1', 'live: the table shows the shares, the switch is kept', JSON.stringify(share));
+        await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2 + 1);
+        const pct = await page.evaluate(() => [...document.querySelectorAll('#hce-panel .hcs-tip b')].map(b => b.textContent));
+        ok(pct.length === 4 && pct.every(v => / %$/.test(v)), 'live: the tooltip in percent', pct.join(','));
+        await page.selectOption('#hce-panel .hcs-metric select', 't');
+        ok(await page.evaluate(() => document.querySelectorAll('#hce-panel .hcs-area').length) === 4, 'live: the switch applies to every value');
+        await page.uncheck('#hce-panel .hcs-norm input');
+        ok(await page.evaluate(() => document.querySelectorAll('#hce-panel .hcs-area').length === 0 && localStorage.getItem('hochciv.stats.norm') === '0'), 'live: off again – lines');
+        await page.selectOption('#hce-panel .hcs-metric select', 'yc');
 
         // the other tabs (client/endscreen.js, Civ IV style)
         await page.click('#hce-panel [data-tab="demo"]');
@@ -254,6 +278,7 @@ function rundenspiel() {
         ok(out.stats && out.stats.final && rs[0] === 1 && rs[rs.length - 1] === out.round, 'Rundenspiel: statistics stored with the game, start to end', rs.join(','));
         ok(out.stats && out.stats.players.includes(a.name) && out.stats.players.includes(b.name), 'Rundenspiel: the players are named', out.stats && out.stats.players.join(', '));
         ok(out.viewStats === rs.length, 'Rundenspiel: the finished view has them (without bookkeeping)');
+        ok(out.firstOver && out.firstOver.status === 'finished' && out.firstOver.stats && out.firstOver.record, 'Rundenspiel: the first view of the end already has the statistics and the match', JSON.stringify(out.firstOver));
         ok(out.game && out.game.rounds === rs.length && !out.game.owners, 'Rundenspiel: the match record has them', JSON.stringify(out.game));
     } finally {
         if (out && out.id) sql(`DELETE FROM async_games WHERE id = '${out.id}'`);

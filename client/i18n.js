@@ -518,6 +518,8 @@
         'Münzen je Runde': 'Coins per round',
         'Als Tabelle': 'As a table',
         'Tabelle ausblenden': 'Hide the table',
+        'Anteile je Runde': 'Share per round',
+        'Keine Werte': 'No values',
         'Am Ende': 'At the end',
         'Städte': 'Cities',
         'Bevölkerung': 'Population',
