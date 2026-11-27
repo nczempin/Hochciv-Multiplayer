@@ -130,20 +130,30 @@ async function server() {
     const TAG = 'ld' + crypto.randomBytes(3).toString('hex');
     const PASSWORD = 'Test-' + crypto.randomBytes(8).toString('hex');
     const names = { o1: 'botcreator', o2: 'botcreator', o3: 'botcreator', admin: 'admin', review: 'reviewadmin' };
+    const prevSetting = JSON.parse(inServer(`const { Setting, sequelize } = require('./models');
+        Setting.findByPk('arena-correspondence-ladder', { raw: true })
+            .then(row => { console.log(JSON.stringify(row ? { value: row.value, updatedBy: row.updatedBy } : null)); return sequelize.close(); })
+            .catch(err => { console.error(err); process.exit(1); });`));
+    const restoreSetting = prevSetting
+        ? `await Setting.upsert({ key: 'arena-correspondence-ladder', value: ${JSON.stringify(prevSetting.value)}, updatedBy: ${JSON.stringify(prevSetting.updatedBy)} });`
+        : `await Setting.destroy({ where: { key: 'arena-correspondence-ladder' } });`;
     const cleanup = () => inServer(`const { User, AsyncGame, Setting, sequelize } = require('./models'); const { Op } = require('sequelize');
         (async () => {
             const users = await User.findAll({ where: { username: { [Op.startsWith]: '${TAG}_' } }, attributes: ['id'] });
             const ids = users.map(u => u.id);
             if (ids.length) await AsyncGame.destroy({ where: { participantIds: { [Op.overlap]: ids } } });
             await User.destroy({ where: { id: ids } });
+            ${restoreSetting}
+            await sequelize.close();
+        })().catch(err => { console.error(err); process.exit(1); });`);
+    inServer(`const { User, Setting, sequelize } = require('./models');
+        const password_hash = require('bcryptjs').hashSync('${PASSWORD}', 10);
+        (async () => {
+            await User.bulkCreate(${JSON.stringify(Object.entries(names))}.map(([n, role]) => ({ username: '${TAG}_' + n, role, password_hash,
+                email: '${TAG}_' + n + '@example.com', isActive: true, emailOtpEnabled: false, notifyEmail: false })));
             await Setting.destroy({ where: { key: 'arena-correspondence-ladder' } });
             await sequelize.close();
         })().catch(err => { console.error(err); process.exit(1); });`);
-    inServer(`const { User, sequelize } = require('./models');
-        const password_hash = require('bcryptjs').hashSync('${PASSWORD}', 10);
-        User.bulkCreate(${JSON.stringify(Object.entries(names))}.map(([n, role]) => ({ username: '${TAG}_' + n, role, password_hash,
-            email: '${TAG}_' + n + '@example.com', isActive: true, emailOtpEnabled: false, notifyEmail: false })))
-            .then(() => sequelize.close()).catch(err => { console.error(err); process.exit(1); });`);
     try {
         const S = {};
         for (const n of Object.keys(names)) {
