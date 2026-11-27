@@ -105,6 +105,11 @@ module.exports = (sequelize) => {
             allowNull: false,
             defaultValue: false,
         },
+        // a bot that ran into the limits per account too often is blocked until then (utils/account-limits.js)
+        suspendedUntil: {
+            type: DataTypes.DATE,
+            allowNull: true,
+        },
         // SHA-256 of the bot's token; the token itself is shown once when created or renewed
         botTokenHash: {
             type: DataTypes.STRING,

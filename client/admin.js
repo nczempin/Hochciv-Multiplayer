@@ -501,6 +501,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         </div>`;
     }
 
+    // A bot suspended by the limits per account (utils/account-limits.js): what it ran into how often
+    function renderLimitReport(r, i, acc, closed, ban) {
+        const m = r.message || {};
+        const what = {
+            move: tx('Züge'), list: tx('Spielliste'), call: tx('Anfragen'), chat: tx('Chat'),
+            engine_budget: tx('Rechenzeit'), too_many_sockets: tx('Verbindungen'),
+        };
+        const rows = (Array.isArray(r.context) ? r.context : [])
+            .map(c => `<li>${esc(what[c.what] || c.what)}: ${Number(c.n) || 0}×</li>`).join('');
+        const actions = r.status === 'open'
+            ? `<input type="text" id="report-note-${i}" maxlength="1000" placeholder="${tx('Notiz (freiwillig)')}">
+               <button class="btn small btn-primary" onclick="reportAction(${i}, 'resolved')">${tx('Erledigt')}</button>
+               <button class="btn small" onclick="reportAction(${i}, 'dismissed')">${tx('Verwerfen')}</button>${ban}`
+            : `<button class="btn small" onclick="reportAction(${i}, 'open')">${tx('Wieder öffnen')}</button>${ban}`;
+        return `<div class="report-card">
+            <div class="report-head">
+                <strong>${esc(r.reportedName)}</strong>
+                <span class="report-meta">${fmtTime(r.createdAt)} · ${tx('Limits')}</span>
+            </div>
+            <div>${tx('Bot für eine Stunde gesperrt (bis %s): zu viele Anfragen.', m.until ? fmtTime(m.until) : '?')}</div>
+            ${m.owner ? `<div><strong>${tx('Besitzer:')}</strong> ${esc(m.owner)}</div>` : ''}
+            <ul>${rows}</ul>
+            ${closed}
+            <div class="report-actions w">${actions}</div>
+        </div>`;
+    }
+
     function renderReport(r, i) {
         const acc = r.reportedAccount;
         const where = r.source === 'async' ? tx('Rundenspiel') : tx('Live-Spiel');
@@ -511,6 +538,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             ? `<button class="btn small error" onclick="reportAction(${i}, 'ban')">${tx('Konto sperren')}</button>`
             : (acc && acc.isBanned ? `<span class="badge banned">${tx('Gesperrt')}</span>` : '');
         if (r.kind === 'map') return renderMapReport(r, i, acc, closed, ban);
+        if (r.kind === 'limit') return renderLimitReport(r, i, acc, closed, ban);
         const chat = (r.context || []).map(m => {
             const cls = m.id === r.message.id ? 'reported' : (m.name === r.reportedName ? 'by-reported' : '');
             return `<div class="${cls}"><time>${fmtTime(m.t)}</time><strong>${esc(m.name)}</strong> ${esc(chatText(m))}</div>`;

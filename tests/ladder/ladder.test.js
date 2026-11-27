@@ -172,7 +172,12 @@ async function server() {
         };
         const A = await makeBot('o1', 'A'), Bb = await makeBot('o2', 'B'), C = await makeBot('o3', 'C'), C2 = await makeBot('o3', 'C2');
         const optIn = (who, bot, on) => who('POST', `/api/bots/${bot.id}/ladder-opt-in`, { arenaLadderOptIn: on });
-        const ladderGamesOf = async bot => (await bot.session('GET', '/api/async')).data.mine.filter(g => g.config.arenaLadder);
+        // the test asks every 250 ms – far above a bot's 6 lists a minute (utils/account-limits.js): the test
+        // hook (TEST_HOOKS=on, as for every test of tests/run-all.js) resets the limits before each list
+        const ladderGamesOf = async bot => {
+            await fetch(BASE + '/api/test/reset', { method: 'POST' }).catch(() => {});
+            return (await bot.session('GET', '/api/async')).data.mine.filter(g => g.config.arenaLadder);
+        };
 
         // The owner's switch
         ok(A.json.arenaLadderOptIn === false, 'a new bot is not in the ladder');

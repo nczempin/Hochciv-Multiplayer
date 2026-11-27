@@ -268,6 +268,7 @@ if (process.env.TEST_HOOKS === 'on' && process.env.NODE_ENV !== 'production') {
     console.warn('[Test] TEST_HOOKS=on – POST /api/test/reset resets all rate limits and match caches');
     app.post('/api/test/reset', async (_req, res) => {
         require('./utils/facts').changed();
+        require('./utils/account-limits').resetAll();
         res.json({ limiters: await require('./utils/rateLimit').resetAll() });
     });
 }
@@ -339,6 +340,10 @@ io.engine.use(SessionCost.onlyForHandshake(passport.session()));
 io.engine.use(SessionCost.onlyForHandshake(SessionCost.refreshSession));
 // A rate limit for every event of every socket (utils/socket-limit.js, R-15)
 io.on('connection', socket => require('./utils/socket-limit').attach(socket));
+// Limits per account: sockets at once, moves, a bot's calls and chat (utils/account-limits.js, P1.11)
+const AccountLimits = require('./utils/account-limits');
+AccountLimits.init(io);
+io.on('connection', socket => AccountLimits.attach(socket));
 
 registerGame(io);
 registerAsync(io);

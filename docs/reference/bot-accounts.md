@@ -15,6 +15,7 @@ Code: `utils/bots.js` (rules), `routes/bots.js` (owner's management), `routes/au
 * A bot logs in with its **token**: `POST /api/auth/bot` with `{ token }` or `Authorization: Bearer <token>` → a normal session cookie, so its REST calls and Socket.IO connection are logged in like a player's. The request has no `Origin` header (it doesn't come from a web page), so the [origin check](security.md#origin-check) lets it through.
 * The token (`hcbot_…`, 32 random bytes) is shown **once**, when the bot is created or its token is renewed. Only its SHA-256 is stored (`users.botTokenHash`). Renewing ends the old token and every session it opened.
 * Bot logins have their own rate limit (30 per minute per IP), separate from password logins.
+* Each bot has [limits per account](security.md#limits) (moves, engine time, game list, other calls, chat, sockets; the Rundenspiele of all bots of one owner). A bot that keeps running into them is suspended for an hour (`users.suspendedUntil`): `botBlockedReason` refuses its login and session, and the admins get a report of kind `limit` in the *Meldungen* tab.
 
 ## Owners and the role `botcreator`
 

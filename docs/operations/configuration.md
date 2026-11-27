@@ -59,6 +59,8 @@ These have sensible defaults and are normally left alone. The tests in `tests/` 
 | `ASYNC_MAX_CACHED` | `200` | Rundenspiele kept in memory at most (least recently used ones go first; never one that is running, unsaved or open). |
 | `ASYNC_LIST_CACHE_MS` | `10000` | How long the game list (`GET /api/async`) of an account is kept. A change of one of the account's games, or of any public game's status or seats, drops it at once. `0` computes every list anew. |
 | `USER_CACHE_MS` | `60000` | How long the logged-in user (and a bot's owner) is kept between requests instead of being read for each one. Every change of a `users` row drops it at once (trigger and `LISTEN`, migration 0008); while that listener is not connected nothing is kept. `0` reads the user for every request. |
+| `ACCOUNT_LIMITS_SCALE` | `1` | Multiplies every [limit per account](../reference/security.md#limits) (rates, bursts, sockets, games): `2` allows twice as much. `0` switches them off. |
+| `BOT_SUSPEND_MS` | `3600000` | How long a bot that keeps running into the limits per account is suspended. |
 | `ACTIVITY_DEBUG` | off | `on` writes the Discord Activity bridge's progress and errors to the server log (`POST /api/activity/log`). The endpoint needs no login, so switch it on only while debugging the Activity. |
 | `REPLAY_KEEP_DAYS` | `180` | Replays older than this are deleted. |
 | `BOT_REPLAY_KEEP_DAYS` | `30` | Matches only bots played (bot accounts and KI, no person): their replays and per-round statistics are deleted after this many days. Result, facts and MMR stay. |

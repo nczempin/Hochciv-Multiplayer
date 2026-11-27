@@ -41,7 +41,7 @@ Relations: a `User` has many `Passkey`, `TotpToken` and `DeviceToken` rows (devi
 | `password_hash` | bcrypt; empty for Google/Discord/passkey-only accounts |
 | `mmr` (default 1000), `gamesPlayed` | Ranking |
 | `role` (`user`/`botcreator`/`admin`/`superadmin`), `isActive`, `isBanned` | Rights and state |
-| `accountType` (`human`/`bot`), `ownerId`, `botTokenHash`, `botLimit`, `botDescription`, `arenaLadderOptIn` | [Bot accounts](bot-accounts.md): a bot's owner and the SHA-256 of its token; how many bots a bot creator may own (null = default); the bot's public profile text (null = none); whether the bot takes part in the [correspondence arena](rundenspiele.md#arena) |
+| `accountType` (`human`/`bot`), `ownerId`, `botTokenHash`, `botLimit`, `botDescription`, `arenaLadderOptIn`, `suspendedUntil` | [Bot accounts](bot-accounts.md): a bot's owner and the SHA-256 of its token; how many bots a bot creator may own (null = default); the bot's public profile text (null = none); whether the bot takes part in the [correspondence arena](rundenspiele.md#arena); until when a bot is suspended for running into the [limits per account](security.md#limits) (migration 0009) |
 | `googleId`, `discordId`, `avatarUrl` | Linked providers |
 | `activationCode…`, `resetCode…`, `pendingEmail`, `emailChangeCode…` | One-time codes with expiry and attempt counters |
 | `totpSecret`, `totpEnabled`, `totpAttempts`, `totpLockedUntil` | Authenticator (and its lockout) |

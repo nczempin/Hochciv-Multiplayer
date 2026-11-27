@@ -20,6 +20,7 @@ const chatLib = require('../utils/chat');
 const reports = require('../utils/reports');
 const terms = require('../utils/terms');
 const Bots = require('../utils/bots');
+const Limits = require('../utils/account-limits');
 
 const ENDED = ['finished', 'cancelled'];
 const Stats = require('../utils/stats');
@@ -250,7 +251,7 @@ async function purgeEndedChats() {
  * Run `fn(g)` exclusively for this game, then save, drive automatic turns, broadcast and
  * notify. Returns fn's result. Throws 'not found' as { error }.
  */
-async function withGame(id, fn, label = 'other') {
+async function withGame(id, fn, label = 'other', by = null) {
     const e = await getEntry(id);
     if (!e.g) return { error: 'Spiel nicht gefunden.' };
     e.busy++;
@@ -277,7 +278,9 @@ async function withGame(id, fn, label = 'other') {
             if (steps || g.status !== 'playing' || waitKey(g) !== key) await settle(g, before);
             else await save(g);
         }
-        end();
+        // a bot pays the engine time of its move – the KI turns it set off included (P1.11)
+        const secs = end();
+        if (by) Limits.spend(by, secs);
         return res;
     });
     e.queue = run.catch(() => {}).finally(() => { e.busy--; });
@@ -517,6 +520,9 @@ function generateJoinCode() {
 async function create(user, body, internal) {
     const active = await AsyncGame.count({ where: { status: ACTIVE, participantIds: { [Op.contains]: [user.id] } } });
     if (active >= MAX_ACTIVE_PER_USER) return { error: `Höchstens ${MAX_ACTIVE_PER_USER} laufende Rundenspiele.` };
+    // the bots of one owner together (utils/account-limits.js)
+    const tooMany = await Limits.gamesAllowed(user, { create: true });
+    if (tooMany) return tooMany;
     // arena: only createLadderGame (the bot ladder) sets it, never a request
     const opts = Object.assign({}, body || {}, { challenge: internal && internal.challenge || undefined, seed: internal && internal.seed || undefined, arena: undefined });
     const { g, error } = L.create(userOf(user), opts);
@@ -665,6 +671,8 @@ async function info(user, id, code) {
 }
 
 async function join(user, id, body) {
+    const tooMany = await Limits.gamesAllowed(user);
+    if (tooMany) return tooMany;
     const u = Object.assign(userOf(user), await botOf(user));
     return withGame(id, async g => {
         if (!canSee(g, user.id, body && body.code)) return { error: 'Kein Zugriff auf dieses Spiel.' };
@@ -942,21 +950,21 @@ function action(user, id, type, params) {
     return withGame(id, g => {
         const err = L.action(g, user.id, type, params);
         return err ? { error: err } : { ok: true };
-    }, type === 'endTurn' ? 'end_turn' : 'move');
+    }, type === 'endTurn' ? 'end_turn' : 'move', user);
 }
 
 function place(user, id, o, cell) {
     return withGame(id, g => {
         const err = L.place(g, user.id, o, cell);
         return err ? { error: err } : { ok: true };
-    }, 'place');
+    }, 'place', user);
 }
 
 function draftPick(user, id, abilityId) {
     return withGame(id, g => {
         const err = L.draftPick(g, user.id, abilityId);
         return err ? { error: err } : { ok: true };
-    }, 'draft');
+    }, 'draft', user);
 }
 
 /** Nation draft (F34): a human picks a nation (and its ability). */
@@ -964,7 +972,7 @@ function civDraftPick(user, id, pickId, ability) {
     return withGame(id, g => {
         const err = L.civDraftPick(g, user.id, pickId, ability);
         return err ? { error: err } : { ok: true };
-    }, 'civdraft');
+    }, 'civdraft', user);
 }
 
 /** Resign (F16): the KI plays the seat to the end; ranked games cost the takeover penalty. */
