@@ -84,6 +84,7 @@ The server limits logins and other requests per minute, so tests run back to bac
 | `security/activity-handlers.test.js` | Discord Activity: the bridge's handler allow-list – every handler of `mp.js` and `client/` fits, injected ones (`fetch`, `alert`, appended calls, `javascript:` addresses) do not, the bundle carries the list (R-04); runs without a server | – |
 | `security/ranked.test.js` | ranked integrity: a seat stays with its account after the start (R-02), no timeout penalty in a converted ranked game (R-06), the resign penalty survives the conversion (R-07) | default |
 | `security/quickwins.test.js` | small hardening: clientId and join code checked in `sessions.js` (R-13, R-25), short `SESSION_SECRET` refused in production (R-05), CORS only for allowed origins (R-14), Activity log off (R-21), bot deletion needs a recent login (R-20), `/health` without uptime (R-27) | default |
+| `sync/rev.test.js` | live games: the `rev` of `game:start` and every `state:update`, the heartbeat `state:rev`, `state:request` (to the asking socket only, once in 2 s, not for a socket of no game), the full state every 4th heartbeat; runs without a server (`LIVE_HEARTBEAT_MS=300`) | – |
 | `db/migrations.test.js` | database roles and migrations on an empty database: the setup, every migration, models matching the schema, what the server's role may not do | no server – an empty PostgreSQL (see header); runs on every pull request |
 | `security/regression.test.js` | findings of the security audit of 2026-11-16: passkey login, ranked seats, parallel code guesses, sockets after a password change, invitation e-mails, password-change limit (waits a minute three times for the auth limits) | `TURN_TIMER_SCALE=0.05` |
 | `spectators/spectators.test.js` | spectator mode | default |
@@ -104,7 +105,7 @@ Some tests need the same variable on the test side too (`filter`, `timer`) – t
 
 ## On GitHub
 
-`.github/workflows/checks.yml` runs on every pull request into `development` and `main`: the tests that need no server (`security/audit`, `security/research`, `security/params`, `security/activity-handlers`, `security/continuity`, `security/abuse`, `random/deal`, `draft/civdraft`, `draft/async-draft`, `challenge/challenge-map`, `ladder/ladder`), `db/migrations` against a Postgres service container and `npm audit --omit=dev --audit-level=high`. Workflow actions are pinned to commit SHAs; Dependabot (`.github/dependabot.yml`) proposes updates of the actions and the npm packages as pull requests into `development`.
+`.github/workflows/checks.yml` runs on every pull request into `development` and `main`: the tests that need no server (`security/audit`, `security/research`, `security/params`, `security/activity-handlers`, `security/continuity`, `security/abuse`, `sync/rev`, `random/deal`, `draft/civdraft`, `draft/async-draft`, `challenge/challenge-map`, `ladder/ladder`), `db/migrations` against a Postgres service container and `npm audit --omit=dev --audit-level=high`. Workflow actions are pinned to commit SHAs; Dependabot (`.github/dependabot.yml`) proposes updates of the actions and the npm packages as pull requests into `development`.
 
 ## Which tests to run
 
@@ -120,5 +121,6 @@ Some tests need the same variable on the test side too (`filter`, `timer`) – t
 | bot accounts, player-bots | `bots`, `match`, `security` |
 | limits per account (`utils/account-limits.js`) | `limits`, `security/abuse`, `bots`, `ladder` |
 | the bot ladder (`async/ladder.js`), `arena_standings` | `ladder` (on a freshly started server), `bots`, `db/migrations` |
+| live-game sync (`broadcastState`, `state:rev`, `state:request`) | `sync`, `timer`, `pause`, `spectators`, `restart`, `rematch` |
 | `server.js` middleware order, `inject.js`, static files | `loading` |
 | `models/`, `migrations/`, database roles | `db/migrations`, then the tests of the feature |

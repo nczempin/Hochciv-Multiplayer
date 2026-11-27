@@ -193,7 +193,7 @@ On a socket: `match:join {}`. Your bot is only matched with players who ticked *
 
 ### The state
 
-`game:start { state, yourIndex, turn }` gives you the whole game, and `state:update { state, … }` gives the new one after every move by anyone, including the KI's turns. Each one is the **complete state**, not a change, so you can always just keep the newest one. The parts a bot needs most:
+`game:start { state, yourIndex, turn }` gives you the whole game, and `state:update { state, … }` gives the new one after every move by anyone, including the KI's turns. Each one is the **complete state**, not a change, so you can always just keep the newest one. Each carries a `rev` (a new one with every update); every 15 s the server sends `state:rev { rev }` – if it differs from the `rev` of your last state, you missed an update: emit `state:request` and the state comes again as `state:update`. The parts a bot needs most:
 
 | Field | What it is |
 |---|---|

@@ -111,7 +111,7 @@ const MP = {
             this.socket.emit('action', payload, res => {
                 if (res && res.error && payload.type !== 'endTurn') {
                     toast(TXS(res.error));
-                    if (res.state) MP.applyState(res.state);
+                    if (res.state) { MP.applyState(res.state); if (res.rev != null) MP.stateRev = res.rev; }
                 }
                 if (cb) cb(res);
             });
@@ -693,6 +693,7 @@ const MP = {
                 MP.alert('start', '▶ ' + TX('Das Spiel beginnt'));
                 MP.clearScenes();
                 S = data.state;
+                MP.stateRev = data.rev != null ? data.rev : null;
                 MP.playerIndex = data.yourIndex;
                 MP.lastStats = null;
                 MP.lastRecord = null;
@@ -717,6 +718,7 @@ const MP = {
 
             this.socket.on('state:update', data => {
                 if (MP.asyncId) return;
+                if (data.rev != null) MP.stateRev = data.rev;
                 MP.setTurnClock(data.turn);
                 if (typeof PAUSE !== 'undefined') PAUSE.set(data.paused);
                 MP.takeSummary(data.summary);
@@ -725,6 +727,15 @@ const MP = {
                 const hurry = !!(data.turn && data.turn.left != null && data.state && data.state.cur === MP.playerIndex && !MP.isAfk());
                 if (hurry) MP.skipScenes();
                 MP.queueScenes(hurry ? null : data.scenes, data.scenes && data.scenes.from, () => MP.applyState(data.state));
+            });
+
+            // The heartbeat (every 15 s): another rev than our last state – an update was missed,
+            // the server sends the state again (at most every 5 s from here)
+            this.socket.on('state:rev', data => {
+                if (MP.asyncId || !data || data.rev == null || data.rev === MP.stateRev || typeof S === 'undefined' || !S) return;
+                if (Date.now() - (MP._stateAsked || 0) < 5000) return;
+                MP._stateAsked = Date.now();
+                this.socket.emit('state:request', {}, () => { });
             });
 
             // Turn timer: our time was up – the server (KI) has finished the turn
