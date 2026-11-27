@@ -139,6 +139,7 @@
         'Die Challenge startet gerade schon.': 'The challenge is starting already.',
         // seasons, leaderboard, badges (client/ranking.js, client/profile.js)
         'Rangliste': 'Leaderboard',
+        'Arena': 'Arena',
         'Discord-Server': 'Discord server',
         'Tritt unserem Discord-Server bei: Mitspieler finden, Neuigkeiten, Feedback': 'Join our Discord server: find players, news, feedback',
         'Rangliste und Saison': 'Leaderboard and season',
