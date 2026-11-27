@@ -84,6 +84,8 @@ services:
       - ASYNC_REMINDER_MS=${ASYNC_REMINDER_MS:-}
       - ASYNC_SWEEP_MS=${ASYNC_SWEEP_MS:-}
       - ASYNC_FLUSH_MS=${ASYNC_FLUSH_MS:-}
+      - ASYNC_LIST_CACHE_MS=${ASYNC_LIST_CACHE_MS:-}
+      - USER_CACHE_MS=${USER_CACHE_MS:-}
       # Bot ladder test (tests/ladder): LADDER_TICK_MS=500 – pair every half second instead of every 15
       - LADDER_TICK_MS=${LADDER_TICK_MS:-}
       # Chat word filter tests (tests/filter/filter.test.js): the first writing timeout (default 5 minutes)

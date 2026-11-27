@@ -212,6 +212,7 @@ async function save(g, { now = false, defer = false } = {}) {
     metrics.saveRequests.inc();
     let e = cache.get(g.id);
     if (!e || e.g !== g) e = newEntry(g);          // not (or no longer) the cached copy: write it as it is
+    listTouched(g, e);
     e.dirty = true;
     const atOnce = closing || ENDED.includes(g.status) || !defer && (now || FLUSH_MS <= 0 || cache.get(g.id) !== e
         || listKey(rowFields(g)) !== e.listKey);
@@ -732,16 +733,80 @@ function decline(user, id) {
     });
 }
 
+/* ── The game list (scalability P1.5) ──
+   Read by every client and every bot again and again. The rows come without the heavy parts
+   (state, chat, stats, replay, marks, scenes, the map in the config), the five lists in parallel,
+   and the answer is kept LIST_TTL_MS per account: saving a game drops it for its players and
+   invited (listTouched); a change of a public game (status, seats taken) drops every kept list
+   (publicGen). Express answers a repeat with 304 (weak ETag). */
+const LIST_TTL_MS = process.env.ASYNC_LIST_CACHE_MS !== undefined && process.env.ASYNC_LIST_CACHE_MS !== ''
+    ? Math.max(0, Number(process.env.ASYNC_LIST_CACHE_MS) || 0) : 10 * 1000;
+const MAX_LISTS = 5000;
+const lists = new Map();             // userId → { at, gen, value } (value null: being computed)
+let publicGen = 0;
+
+function dropLists(ids) { for (const id of ids) if (id) lists.delete(id); }
+
+/** A game changed: the kept lists of its players and invited, and on a public game every list. */
+function listTouched(g, e) {
+    dropLists(g.seats.map(s => s.userId));
+    dropLists((g.invites || []).map(i => i.userId));
+    const key = JSON.stringify([!!g.config.isPublic, g.status, g.seats.filter(s => s.userId).length, !!g.hold]);
+    if (e.publicKey !== key) {
+        if (g.config.isPublic || (e.publicKey && JSON.parse(e.publicKey)[0])) publicGen++;
+        e.publicKey = key;
+    }
+}
+// new rows (create) and changes past save(): bulk changes drop every list
+AsyncGame.addHook('afterCreate', row => {
+    dropLists(row.participantIds || []); dropLists(row.invitedIds || []);
+    if (row.isPublic) publicGen++;
+});
+for (const h of ['afterDestroy', 'afterBulkUpdate', 'afterBulkDestroy']) AsyncGame.addHook(h, () => { lists.clear(); publicGen++; });
+// the notification switches are part of the list
+User.addHook('afterSave', u => lists.delete(u.id));
+
 /** The game list: own games, invitations, open public games. */
 async function list(user) {
     const end = metrics.list.startTimer();
-    try { return await listOf(user); } finally { end(); }
+    try {
+        const hit = lists.get(user.id);
+        if (hit && hit.value && hit.gen === publicGen && Date.now() - hit.at < LIST_TTL_MS) {
+            if (Bots.isBot(user)) require('./ladder').seen(user);
+            return hit.value;
+        }
+        // a save while it is computed drops `mark` – then the answer is not kept
+        const mark = { at: Date.now(), gen: publicGen, value: null };
+        if (LIST_TTL_MS > 0) {
+            if (lists.size >= MAX_LISTS) lists.delete(lists.keys().next().value);
+            lists.set(user.id, mark);
+        }
+        const value = await listOf(user);
+        if (lists.get(user.id) === mark) mark.value = value;
+        return value;
+    } finally { end(); }
 }
 
+/* The columns of a list row: `data` with only what L.summary needs (no chat, stats, replay,
+   marks, scenes, endSeen; the config without the rolled map and setup, a custom map by its name
+   and marathon flag). Parentheses throughout: `-` binds tighter than `->`. */
+const LIST_COLS = `id, "joinCode", "hostUserId", status, "waitingIds", round, "waitSince", reminded, "updatedAt",
+    jsonb_build_object(
+        'engine', data->'engine',
+        'config', ((data->'config') - 'map' - 'setup' - 'customMap') || CASE
+            WHEN jsonb_typeof((data->'config')->'customMap') = 'object'
+            THEN jsonb_build_object('customMap', jsonb_build_object('name', ((data->'config')->'customMap')->'name',
+                                                                   'marathon', ((data->'config')->'customMap')->'marathon'))
+            ELSE '{}'::jsonb END,
+        'seats', data->'seats', 'invites', data->'invites', 'pre', data->'pre', 'hold', data->'hold',
+        'result', data->'result', 'meta', data->'meta') AS data`;
+const ME = `"participantIds" @> ARRAY[$1]::uuid[]`;          // uses the GIN index
+const listRows = (where, bind, limit) => sequelize.query(
+    `SELECT ${LIST_COLS} FROM async_games WHERE ${where} ORDER BY "updatedAt" DESC LIMIT ${limit}`,
+    { bind, type: sequelize.QueryTypes.SELECT });
+
 async function listOf(user) {
-    const attrs = { exclude: ['state'] };
-    const bot = await botOf(user);
-    const summarize = row => {
+    const summarize = (row, bot) => {
         // a game in memory is newer than its row (saving waits FLUSH_MS): its turn, round, winners
         const live = cache.get(row.id);
         const mem = live && live.g && live.g.status === row.status ? live.g : null;
@@ -762,32 +827,23 @@ async function listOf(user) {
         });
         return s;
     };
-    const mine = await AsyncGame.findAll({
-        // Finished games are listed in the account's game history, not here
-        where: { participantIds: { [Op.contains]: [user.id] }, status: { [Op.notIn]: ['cancelled', 'finished'] } },
-        attributes: attrs, order: [['updatedAt', 'DESC']], limit: 100,
-    });
-    // … except the ones that ended in the last ENDED_LIST_DAYS and that the player has not opened
-    // since (open() marks them): one last click to see who won
-    const ended = (await AsyncGame.findAll({
-        where: { participantIds: { [Op.contains]: [user.id] }, status: 'finished', updatedAt: { [Op.gt]: new Date(Date.now() - ENDED_LIST_DAYS * DAY) } },
-        attributes: attrs, order: [['updatedAt', 'DESC']], limit: 20,
-    })).filter(row => !((row.data || {}).endSeen || []).includes(user.id));
-    const invites = await AsyncGame.findAll({
-        where: { invitedIds: { [Op.contains]: [user.id] }, status: { [Op.in]: ['setup', 'playing'] } },
-        attributes: attrs, order: [['updatedAt', 'DESC']], limit: 50,
-    });
-    const open = await AsyncGame.findAll({
-        where: { isPublic: true, status: { [Op.in]: ['setup', 'playing'] }, [Op.not]: { participantIds: { [Op.contains]: [user.id] } } },
-        attributes: attrs, order: [['updatedAt', 'DESC']], limit: 50,
-    });
-    // Spectator mode: public games that are being played, to watch
-    const watch = await AsyncGame.findAll({
-        where: { isPublic: true, status: 'playing', [Op.not]: { participantIds: { [Op.contains]: [user.id] } } },
-        attributes: attrs, order: [['updatedAt', 'DESC']], limit: 20,
-    });
-    const u = await User.findByPk(user.id);
+    const since = new Date(Date.now() - ENDED_LIST_DAYS * DAY);
+    const [bot, u, mine, ended, invites, open, watch] = await Promise.all([
+        botOf(user),
+        User.findByPk(user.id),
+        // Finished games are listed in the account's game history, not here …
+        listRows(`${ME} AND status NOT IN ('cancelled', 'finished')`, [user.id], 100),
+        // … except the ones that ended in the last ENDED_LIST_DAYS and that the player has not
+        // opened since (open() marks them): one last click to see who won
+        listRows(`${ME} AND status = 'finished' AND "updatedAt" > $2
+                  AND NOT (COALESCE(data->'endSeen', '[]'::jsonb) @> to_jsonb($1::text))`, [user.id, since], 20),
+        listRows(`"invitedIds" @> ARRAY[$1]::uuid[] AND status IN ('setup', 'playing')`, [user.id], 50),
+        listRows(`"isPublic" AND status IN ('setup', 'playing') AND NOT (${ME})`, [user.id], 50),
+        // Spectator mode: public games that are being played, to watch
+        listRows(`"isPublic" AND status = 'playing' AND NOT (${ME})`, [user.id], 20),
+    ]);
     if (Bots.isBot(u)) require('./ladder').seen(u);     // a bot that asks for its games is there to play
+    const sum = row => summarize(row, bot);
     return {
         notifyEmail: u ? u.notifyEmail : true,
         notifyPush: u ? u.notifyPush : true,
@@ -795,11 +851,11 @@ async function listOf(user) {
         notifyDiscord: u ? u.notifyDiscord : false,
         discord: !!(u && u.discordId) && await Discord.enabled(),
         timeoutDays: TIMEOUT_MS / DAY,
-        mine: mine.map(summarize),
-        ended: ended.map(summarize),
-        invites: invites.map(summarize).filter(s => s.freeSeats.length && s.mySlot == null),
-        open: open.map(summarize).filter(s => s.freeSeats.length),
-        watch: watch.map(summarize).filter(s => !s.freeSeats.length),
+        mine: mine.map(sum),
+        ended: ended.map(sum),
+        invites: invites.map(sum).filter(s => s.freeSeats.length && s.mySlot == null),
+        open: open.map(sum).filter(s => s.freeSeats.length),
+        watch: watch.map(sum).filter(s => !s.freeSeats.length),
     };
 }
 

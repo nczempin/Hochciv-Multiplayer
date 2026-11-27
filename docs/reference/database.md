@@ -66,6 +66,10 @@ A Rundenspiel as a whole: `id`, `joinCode`, `hostUserId`, `status` (`setup` → 
 
 `replay_frames`: while a Rundenspiel runs, its turn states wait here (`gameKey`, `seq`, `data`), because Rundenspiele run for days and survive restarts. At the end they become one `replays` row and are deleted. Live games keep their frames in memory.
 
+## User changes
+
+A trigger on `users` (migrations/0008-user-changed-notify.js) sends `pg_notify('hochciv_user_changed', id)` after every update or delete of a row. The server keeps the logged-in users for a short while (`utils/session-cost.js`, `USER_CACHE_MS`) and drops one as soon as its id is announced; the listener has a connection of its own from the session store's pool and switches the cache off while it is away.
+
 ## Other tables
 
 * **`custom_maps`:** `ownerId` (null: a map that belongs to nobody, `maps/builtin.js`), `name` (unique per owner), `map` (the clean copy `checkCustomMap` returns: `{ name, rows, capitals }`), `code` (6 characters when published, else null – every published map is in the map browser), `publishedAt`, `loads` (loaded by code or picked in the browser, by others), `favorites` (count of `map_favorites` rows, for sorting).
