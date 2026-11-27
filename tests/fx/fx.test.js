@@ -153,6 +153,33 @@ const ok = (cond, name, info) => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${nam
   await page.evaluate(() => { prefs.anim = 'langsam'; S.cities = S.cities.filter(c => c.id !== 'fx-test'); redraw(); });
 
   ok(!errors.length, 'no page errors', errors.slice(0, 3).join(' | '));
+
+  // big and wide screens: the game zooms the page (html{zoom}), the effect must still sit on the city
+  for (const [vw, vh, wheel] of [[1920, 1080, 0], [2560, 1080, 0], [1920, 1080, -400], [1280, 800, 0]]) {
+    const p2 = await (await browser.newContext({ viewport: { width: vw, height: vh }, locale: 'de-DE' })).newPage();
+    await p2.goto(URL, { waitUntil: 'networkidle' });
+    await p2.evaluate(() => localStorage.removeItem('hochciv.save'));
+    await p2.goto(URL, { waitUntil: 'networkidle' });
+    await p2.click('#m-new');
+    await p2.evaluate(() => { const st = document.getElementById('setup-start'); st.value = '0'; st.onchange(); });
+    await p2.evaluate(() => document.getElementById('setup-go').click());
+    await p2.waitForTimeout(1500);
+    if (wheel) { await p2.mouse.move(vw / 2, vh / 2); await p2.mouse.wheel(0, wheel); await p2.waitForTimeout(400); }
+    await p2.evaluate(() => HCFX.cityGrow(S.cities[0].r, S.cities[0].c, '#f00', 1, false));
+    await p2.waitForTimeout(100);
+    const at = await p2.evaluate(() => {
+      const world = document.querySelector('#map #world'), ct = S.cities[0], [x, y] = hexCenter(ct.r, ct.c, HEX);
+      const circ = [...world.querySelectorAll('circle')].find(c => +c.getAttribute('cx') === x && +c.getAttribute('cy') === y);
+      if (!circ) return null;
+      const b = circ.getBoundingClientRect(), sr = document.getElementById('map').getBoundingClientRect();
+      const cr = document.querySelector('.hcfx-layer').getBoundingClientRect();
+      return { city: [b.left + b.width / 2, b.top + b.height / 2], fx: HCFX.toScreen(ct.r, ct.c), cover: Math.max(Math.abs(sr.left - cr.left), Math.abs(sr.top - cr.top), Math.abs(sr.width - cr.width), Math.abs(sr.height - cr.height)) };
+    });
+    const off = at && at.fx ? Math.hypot(at.city[0] - at.fx[0], at.city[1] - at.fx[1]) : Infinity;
+    ok(off < 3, `${vw}x${vh}${wheel ? ' zoomed' : ''}: the effect sits on the city`, at && `${off.toFixed(1)} px off`);
+    ok(at && at.cover < 2, `${vw}x${vh}${wheel ? ' zoomed' : ''}: the canvas covers the map`, at && `${at.cover.toFixed(1)} px`);
+    await p2.context().close();
+  }
   await browser.close();
   console.log(failed ? `\n${failed} FAILED` : '\nall passed');
   process.exit(failed ? 1 : 0);

@@ -37,6 +37,8 @@
     const reduced = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
     function enabled() {
         if (reduced() || document.hidden) return false;
+        // v102–v110 turn the page by 90° on phones (html.turn): the canvas would not follow the map
+        if (document.documentElement.classList.contains('turn')) return false;
         try { if (typeof prefs !== 'undefined' && prefs && prefs.anim === 'aus') return false; } catch (e) { /* older versions */ }
         try { if (typeof ANIM_MS !== 'undefined' && ANIM_MS <= 0) return false; } catch (e) { /* older versions */ }
         return true;
@@ -160,6 +162,22 @@
         if (!raf) raf = requestAnimationFrame(frame);
     }
 
+    /* Map → canvas through the screen: getCTM() is wrong where the page is enlarged with CSS
+       zoom (the game does that on big screens), getScreenCTM() and getBoundingClientRect()
+       are not. Both are in zoomed pixels, the canvas draws in its own: w / box.width. */
+    function mapping(w, h) {
+        const world = mapSvg && mapSvg.querySelector('#world');
+        const m = world && world.getScreenCTM && world.getScreenCTM();
+        const box = canvas && canvas.getBoundingClientRect();
+        if (!m || !box || !box.width || !box.height) return null;
+        const zx = w / box.width, zy = h / box.height;
+        return {
+            P: (x, y) => [(m.a * x + m.c * y + m.e - box.left) * zx, (m.b * x + m.d * y + m.f - box.top) * zy],
+            k: (Math.hypot(m.a, m.b) * zx) || 1,
+            box, zx, zy,
+        };
+    }
+
     function frame(now) {
         raf = 0;
         if (!canvas || !mapSvg || !mapSvg.isConnected || !enabled()) { clear(); return; }
@@ -168,17 +186,18 @@
         if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
             canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
         }
-        canvas.style.left = mapSvg.offsetLeft + 'px';
-        canvas.style.top = mapSvg.offsetTop + 'px';
+        // over the svg (SVG elements have no offsetLeft): the gap between the boxes, in unzoomed px
+        const sr = mapSvg.getBoundingClientRect(), hr = canvas.parentElement.getBoundingClientRect();
+        const zoom = (sr.width / w) || 1;
+        canvas.style.left = ((sr.left - hr.left) / zoom - canvas.parentElement.clientLeft) + 'px';
+        canvas.style.top = ((sr.top - hr.top) / zoom - canvas.parentElement.clientTop) + 'px';
         canvas.style.width = w + 'px';
         canvas.style.height = h + 'px';
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, w, h);
-        const world = mapSvg.querySelector('#world');
-        const m = world && world.getCTM && world.getCTM();
-        if (m) {
-            const P = (x, y) => [m.a * x + m.c * y + m.e, m.b * x + m.d * y + m.f];
-            const k = Math.hypot(m.a, m.b) || 1;
+        const map = mapping(w, h);
+        if (map) {
+            const { P, k } = map;
             const view = { w, h };
             effects = effects.filter(e => {
                 const t = (now - e.t0) / e.dur;
@@ -950,5 +969,13 @@
         cityFound, cityGrow, cityTaken, battle, playEvent,
         get active() { return effects.length; },
         clear,
+        // where an effect on field r,c lands on the screen (tests: it must be the city's spot)
+        toScreen(r, c) {
+            if (!mapSvg || !canvas) return null;
+            const map = mapping(mapSvg.clientWidth, mapSvg.clientHeight);
+            if (!map) return null;
+            const [x, y] = map.P(...center(r, c));
+            return [map.box.left + x / map.zx, map.box.top + y / map.zy];
+        },
     };
 })();
