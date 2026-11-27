@@ -82,6 +82,20 @@ module.exports = (sequelize) => {
             type: DataTypes.JSONB,
             allowNull: true,
         },
+        // statistics over the rounds (utils/stats.js), "since your last turn" (utils/summary.js) and
+        // the scenes of the running game (utils/scenes.js): written once per turn (async/service.js flush)
+        stats: {
+            type: DataTypes.JSONB,
+            allowNull: true,
+        },
+        marks: {
+            type: DataTypes.JSONB,
+            allowNull: true,
+        },
+        scenes: {
+            type: DataTypes.JSONB,
+            allowNull: true,
+        },
     }, {
         tableName: 'async_games',
         timestamps: true,

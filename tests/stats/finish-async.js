@@ -34,10 +34,10 @@ const { AsyncGame, Game, Replay, ReplayFrame } = require('./models');
         row = await AsyncGame.findByPk(made.id);
         if (row.status === 'finished') break;
     }
-    const stats = row.data.stats;
+    const stats = row.stats;             // its own column (migration 0011)
     service.evict(made.id);
     const game = await Game.findOne({ where: { id: (await Game.findAll({ order: [['createdAt', 'DESC']], limit: 5 })).find(g => (g.participants || []).some(p => p.replacedUserId === a.id || p.dbUserId === a.id)).id } });
-    const view = L.view({ ...row.data, id: row.id, status: row.status, state: row.state, seats: row.data.seats, invites: row.data.invites || [], config: row.data.config, hostUserId: row.hostUserId }, a.id);
+    const view = L.view({ ...row.data, stats: row.stats, id: row.id, status: row.status, state: row.state, seats: row.data.seats, invites: row.data.invites || [], config: row.data.config, hostUserId: row.hostUserId }, a.id);
     console.log(JSON.stringify({
         id: made.id, status: row.status, round: row.round,
         stats: stats && { rounds: stats.rounds.map(r => r.r), final: !!stats.final, events: stats.events.length, players: stats.players.map(p => p.name), hasOwners: !!stats.owners },

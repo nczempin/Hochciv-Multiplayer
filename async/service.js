@@ -62,13 +62,17 @@ const MAX_CACHED = Number(process.env.ASYNC_MAX_CACHED) || 200;    // games kept
 const IDLE_MS = 30 * 60 * 1000;                                     // … and dropped after this long unused
 const STEP_BROADCAST_MS = 500;       // while bots / the KI play several turns: a view at most this often
 
+const HOLD_MS = Number(process.env.ASYNC_HOLD_MS) || 60 * 1000;    // statistics, marks, scenes: written at the latest this long after a change
+
 let io = null;
-/* id → { g, queue, touched, busy, dirty, timer, writing, pending, listKey }
-   queue: the game's changes one after another; writing: its row writes in order */
+/* id → { g, queue, touched, busy, dirty, timer, writing, pending, listKey, written, held, holdTimer }
+   queue: the game's changes one after another; writing: its row writes in order;
+   written: a hash of every JSON column as last written, and the turn then (flush) */
 const cache = new Map();
 const room = id => `async:${id}`;
 let closing = false;                 // shutting down (flushAll): every save is written at once
-const newEntry = g => ({ g, queue: Promise.resolve(), touched: Date.now(), busy: 0, dirty: false, timer: null, writing: Promise.resolve(), pending: 0, listKey: null });
+const newEntry = g => ({ g, queue: Promise.resolve(), touched: Date.now(), busy: 0, dirty: false, timer: null, writing: Promise.resolve(), pending: 0, listKey: null,
+    written: {}, held: false, holdTimer: null, force: false });
 
 // ── Loading and saving ───────────────────────────────────────────────────────
 
@@ -78,8 +82,9 @@ function fromRow(row) {
         id: row.id, joinCode: row.joinCode, hostUserId: row.hostUserId, status: row.status,
         engine: d.engine || null,          // null: started before versions were recorded = v83
         config: d.config, seats: d.seats || [], invites: d.invites || [], pre: d.pre || null,
-        hold: !!d.hold, result: d.result || null, meta: d.meta || {}, chat: d.chat || [], chatMutes: d.chatMutes || {}, stats: d.stats || null,
-        replay: d.replay || null, marks: d.marks || null, scenes: d.scenes || null,
+        // the chat is in async_chat (getEntry loads it); statistics, marks and scenes have their own columns
+        hold: !!d.hold, result: d.result || null, meta: d.meta || {}, chat: [], chatMutes: d.chatMutes || {}, stats: row.stats || null,
+        replay: d.replay || null, marks: row.marks || null, scenes: row.scenes || null,
         endSeen: d.endSeen || [],          // players who opened the game after it ended (the game list keeps it until then)
         state: row.state || null,
         waitSince: row.waitSince ? new Date(row.waitSince).getTime() : Date.now(),
@@ -108,8 +113,11 @@ function rowFields(g) {
         waitSince: new Date(g.waitSince),
         reminded: !!g.reminded,
         round: S ? S.round : 0,
-        data: { engine: g.engine || null, config: g.config, seats: g.seats, invites: g.invites, pre: g.pre, hold: g.hold, result: g.result, meta: g.meta, chat: g.chat || [], chatMutes: g.chatMutes || {}, stats: g.stats || null, replay: g.replay || null, marks: g.marks || null, scenes: g.status === 'playing' ? g.scenes || null : null, endSeen: g.endSeen || [] },
+        data: { engine: g.engine || null, config: g.config, seats: g.seats, invites: g.invites, pre: g.pre, hold: g.hold, result: g.result, meta: g.meta, chatMutes: g.chatMutes || {}, replay: g.replay || null, endSeen: g.endSeen || [] },
         state: S,
+        stats: g.stats || null,
+        marks: g.marks || null,
+        scenes: g.status === 'playing' ? g.scenes || null : null,
     };
 }
 
@@ -126,7 +134,12 @@ async function getEntry(id) {
     if (!e) {
         e = newEntry(null);
         e.loading = true;
-        e.queue = AsyncGame.findByPk(id).then(row => { e.g = row ? fromRow(row) : null; }).finally(() => { e.loading = false; });
+        e.queue = AsyncGame.findByPk(id).then(async row => {
+            const g = row ? fromRow(row) : null;
+            if (g && !ENDED.includes(g.status)) g.chat = await loadChat(id);
+            e.g = g;
+            if (g) wrote(e);
+        }).finally(() => { e.loading = false; });
         cache.set(id, e);
         trimCache(id);
         await e.queue.catch(() => cache.delete(id));
@@ -138,9 +151,17 @@ async function getEntry(id) {
     return e;
 }
 
+/** A game just created (AsyncGame.create of its rowFields): cached as written. */
+function cacheCreated(g) {
+    const e = newEntry(g);
+    wrote(e);
+    cache.set(g.id, e);
+    trimCache(g.id);
+}
+
 /** Can the game leave memory? Not while it runs, has unwritten changes or somebody has it open. */
 function evictable(id, e) {
-    if (e.busy || e.dirty || e.timer || e.pending || e.loading) return false;
+    if (e.busy || e.dirty || e.timer || e.pending || e.loading || e.held) return false;
     const rooms = io && io.sockets && io.sockets.adapter && io.sockets.adapter.rooms;
     return !(rooms && rooms.get(room(id)) && rooms.get(room(id)).size);
 }
@@ -157,41 +178,92 @@ function trimCache(keep) {
 /** What the game list and the scheduler select by: a change is written at once. */
 const listKey = f => JSON.stringify([f.status, f.isPublic, f.participantIds, f.invitedIds, f.waitingIds]);
 
-const UPDATE_SQL = `UPDATE async_games SET status = $2, "isPublic" = $3, "participantIds" = $4::uuid[],
-    "invitedIds" = $5::uuid[], "waitingIds" = $6::uuid[], "waitSince" = $7, reminded = $8, round = $9,
-    data = $10::jsonb, state = $11::jsonb, "updatedAt" = now() WHERE id = $1`;
+const UPDATE_CORE = `UPDATE async_games SET status = $2, "isPublic" = $3, "participantIds" = $4::uuid[],
+    "invitedIds" = $5::uuid[], "waitingIds" = $6::uuid[], "waitSince" = $7, reminded = $8, round = $9, "updatedAt" = now()`;
+const JSON_COLUMNS = ['data', 'state', 'stats', 'marks', 'scenes'];
+const ONCE_PER_TURN = new Set(['stats', 'marks', 'scenes']);   // written when the turn changes (or HOLD_MS later)
+const DROP_CHAT = 'WITH gone AS (DELETE FROM async_chat WHERE "gameId" = $1) ';
+
+const hashOf = text => (text == null ? '-' : crypto.createHash('sha1').update(text).digest('base64'));
+const turnOf = g => JSON.stringify([g.status, g.state && g.state.cur, g.state && g.state.round]);
+const jsonOf = f => Object.fromEntries(JSON_COLUMNS.map(c => [c, f[c] == null ? null : JSON.stringify(f[c])]));
+
+/** The game as it is in the database (just loaded or created): what flush compares with. */
+function wrote(e) {
+    const json = jsonOf(rowFields(e.g));
+    e.written = Object.fromEntries(JSON_COLUMNS.map(c => [c, hashOf(json[c])]));
+    e.written.turn = turnOf(e.g);
+    e.listKey = listKey(rowFields(e.g));
+}
 
 /**
- * Write the row of the cached game now. The row is serialised right away (a later change can't
- * slip into it); the writes of a game go out one after another (e.writing). On failure the game
- * stays dirty and is written again later.
+ * Write the row of the cached game now – only the columns that changed (scalability P1.4): the
+ * core columns always, `data` and `state` when they changed, statistics, marks and scenes once per
+ * turn (when the player or the round changed, the game ended, at shutdown, at the latest HOLD_MS
+ * after a change). The row is serialised right away (a later change can't slip into it); the
+ * writes of a game go out one after another (e.writing). On failure the game stays dirty and is
+ * written again later, all of it.
  */
 function flush(e, reason) {
     clearTimeout(e.timer);
     e.timer = null;
-    if (!e.dirty || !e.g) return e.writing;
+    if ((!e.dirty && !e.held) || !e.g) return e.writing;
     const g = e.g;
     const f = rowFields(g);
-    const data = JSON.stringify(f.data);
-    const state = f.state == null ? null : JSON.stringify(f.state);
-    const bind = [g.id, f.status, f.isPublic, f.participantIds, f.invitedIds, f.waitingIds, f.waitSince, f.reminded, f.round, data, state];
+    const json = jsonOf(f);
+    const w = e.written;
+    const turn = turnOf(g);
+    const ended = ENDED.includes(g.status);
+    const due = e.force || closing || ended || w.turn !== turn;
+    const bind = [g.id, f.status, f.isPublic, f.participantIds, f.invitedIds, f.waitingIds, f.waitSince, f.reminded, f.round];
+    const sets = [];
+    let bytes = 0, held = false;
+    const next = { ...w };
+    for (const c of JSON_COLUMNS) {
+        const h = hashOf(json[c]);
+        if (h === w[c]) continue;
+        if (ONCE_PER_TURN.has(c) && !due) { held = true; continue; }
+        bind.push(json[c]);
+        sets.push(`${c} = $${bind.length}::jsonb`);
+        next[c] = h;
+        bytes += json[c] ? Buffer.byteLength(json[c]) : 0;
+    }
+    if (due) { next.turn = turn; e.force = false; }
+    // the chat ends with the game (in the same statement); reports keep their own copy (utils/reports.js)
+    const dropChat = ended && !w.chatGone;
+    if (dropChat) next.chatGone = true;
+    const sql = (dropChat ? DROP_CHAT : '') + UPDATE_CORE + sets.map(s => ', ' + s).join('') + ' WHERE id = $1';
+    e.written = next;
+    e.held = held || (!due && e.held);
+    if (!e.held) { clearTimeout(e.holdTimer); e.holdTimer = null; }
+    else if (!e.holdTimer) e.holdTimer = setTimeout(() => holdOver(e), HOLD_MS);
     e.dirty = false;
     e.listKey = listKey(f);
     e.pending++;
     const run = e.writing.then(async () => {
         const end = metrics.save.startTimer();
-        await sequelize.query(UPDATE_SQL, { bind });
+        await sequelize.query(sql, { bind });
         end();
         metrics.writes.inc({ reason });
-        metrics.saveBytes.observe(Buffer.byteLength(data) + (state ? Buffer.byteLength(state) : 0));
+        metrics.saveBytes.observe(bytes);
     });
     e.writing = run.catch(() => {}).finally(() => { e.pending--; });
     return run.catch(err => {
         e.dirty = true;
-        e.listKey = null;               // the next save writes at once
+        e.written = {};                 // not known what is in the row: the next write writes all of it
+        e.listKey = null;               // … and at once
         if (!e.timer) e.timer = setTimeout(() => flushLater(e, 'retry'), Math.max(FLUSH_MS, 1000));
         throw err;
     });
+}
+
+/** Statistics, marks or scenes waited HOLD_MS for the turn to change: they are written now. */
+function holdOver(e) {
+    e.holdTimer = null;
+    if (!e.held) return;
+    e.force = true;
+    e.dirty = true;
+    if (!e.timer) flushLater(e, 'held');
 }
 
 /** The timer of a dirty game: write it in the game's queue, so it never cuts into a change. */
@@ -209,7 +281,7 @@ function flushLater(e, reason = 'delayed') {
  * a save later in the same change decides (withGame before the KI turns).
  */
 async function save(g, { now = false, defer = false } = {}) {
-    // the chat ends with the game; reports keep their own copy (utils/reports.js)
+    // the chat ends with the game (flush deletes its rows); reports keep their own copy (utils/reports.js)
     if (ENDED.includes(g.status)) Object.assign(g, { chat: [], chatMutes: {} });
     metrics.saveRequests.inc();
     let e = cache.get(g.id);
@@ -227,7 +299,7 @@ async function flushAll() {
     closing = true;
     const runs = [];
     for (const e of cache.values()) {
-        runs.push(e.dirty ? flush(e, 'shutdown').catch(err => console.error(`[Async] Saving ${e.g && e.g.id} at shutdown failed:`, err)) : e.writing);
+        runs.push(e.dirty || e.held ? flush(e, 'shutdown').catch(err => console.error(`[Async] Saving ${e.g && e.g.id} at shutdown failed:`, err)) : e.writing);
     }
     await Promise.all(runs);
 }
@@ -244,8 +316,36 @@ async function purgeEndedChats() {
         `UPDATE async_games SET data = data - 'chat' - 'chatMutes'
          WHERE status IN (:ended) AND (jsonb_exists(data, 'chat') OR jsonb_exists(data, 'chatMutes'))`,
         { replacements: { ended: ENDED } });
-    const n = meta && meta.rowCount;
-    if (n) console.log(`[Async] Deleted the chats of ${n} ended games.`);
+    const [, gone] = await sequelize.query(
+        `DELETE FROM async_chat c USING async_games g WHERE c."gameId" = g.id AND g.status IN (:ended)`,
+        { replacements: { ended: ENDED } });
+    const n = (meta && meta.rowCount) || 0, m = (gone && gone.rowCount) || 0;
+    if (n || m) console.log(`[Async] Deleted the chats of ended games (${n} games, ${m} messages).`);
+}
+
+// ── The chat of a game: one row per message in async_chat (scalability P1.4) ─────
+
+async function loadChat(gameId) {
+    const rows = await sequelize.query('SELECT msg FROM async_chat WHERE "gameId" = $1 ORDER BY id',
+        { bind: [gameId], type: sequelize.QueryTypes.SELECT });
+    return rows.map(r => r.msg).slice(-chatLib.ASYNC_HISTORY);
+}
+
+/** A new message; beyond the last ASYNC_HISTORY the oldest rows go. */
+async function storeChat(gameId, msgs, trim) {
+    await sequelize.query(`INSERT INTO async_chat ("gameId", msg)
+        SELECT $1, m FROM jsonb_array_elements($2::jsonb) WITH ORDINALITY AS t(m, n) ORDER BY n`,
+    { bind: [gameId, JSON.stringify(msgs)] });
+    if (trim) {
+        await sequelize.query(`DELETE FROM async_chat WHERE "gameId" = $1 AND id <= (SELECT id FROM async_chat
+            WHERE "gameId" = $1 ORDER BY id DESC OFFSET $2 LIMIT 1)`, { bind: [gameId, chatLib.ASYNC_HISTORY] });
+    }
+}
+
+/** Only the messages still in memory stay (logic.removeUser took some out). */
+async function syncChat(g) {
+    await sequelize.query(`DELETE FROM async_chat WHERE "gameId" = $1 AND NOT (msg->>'id' = ANY($2::text[]))`,
+        { bind: [g.id, (g.chat || []).map(m => String(m.id))] });
 }
 
 /**
@@ -535,7 +635,7 @@ async function create(user, body, internal) {
     g.reminded = false;
     const row = await AsyncGame.create(Object.assign({ joinCode: g.joinCode, hostUserId: user.id }, rowFields(g)));
     g.id = row.id;
-    cache.set(g.id, newEntry(g)); trimCache(g.id);
+    cacheCreated(g);
     const inviteErr = [];
     for (const name of (body.invite || []).slice(0, 3)) {
         const r = await invite(user, g.id, name);
@@ -554,7 +654,7 @@ async function createLadderGame(a, b, options) {
     const row = await AsyncGame.create(Object.assign({ joinCode: g.joinCode, hostUserId: a.id }, rowFields(g)));
     g.id = row.id;
     await require('./ladder').enter(g).catch(err => console.error('[Ladder] Standings row:', err.message));
-    cache.set(g.id, newEntry(g)); trimCache(g.id);
+    cacheCreated(g);
     notify(L.waitingOn(g).userIds, { type: 'turn', gameId: g.id,
         subject: 'Du bist am Zug', text: 'Lege dein Startplättchen in deinem Rundenspiel.' });
     return { id: g.id };
@@ -634,6 +734,7 @@ async function fromLive(hostUser, session, opts) {
     g.reminded = false;
     const row = await AsyncGame.create(Object.assign({ joinCode: g.joinCode, hostUserId: hostUser.id }, rowFields(g)));
     g.id = row.id;
+    if (g.chat.length) await storeChat(g.id, g.chat, false);
     // the replay so far: the live frames become the Rundenspiel's frame rows (utils/replay.js)
     const rec = session.replay;
     if (rec && rec.frames && rec.frames.length) {
@@ -641,7 +742,7 @@ async function fromLive(hostUser, session, opts) {
         await ReplayFrame.bulkCreate(rec.frames.map((data, seq) => ({ gameKey: g.id, seq, data })));
         g.replay = { key: rec.key, seq: rec.frames.length };
     }
-    cache.set(g.id, newEntry(g)); trimCache(g.id);
+    cacheCreated(g);
     // Seats resigned in the live game: the live result (processGameOverMmr) never comes, so their
     // ranked penalty is booked now, as a resign in a Rundenspiel does (R-07 of the findings report)
     const resigned = seats.filter(s => s.resigned && s.userId && s.penalty).map(s => s.userId);
@@ -927,8 +1028,9 @@ async function chat(user, id, payload) {
         if (!cur.g) return { error: 'Spiel nicht gefunden.' };
         cur.busy++;
         const run = cur.queue.then(async () => {
+            // one row per message – the game's row is not written (scalability P1.4)
             cur.g.chat = chatLib.remember(cur.g.chat, r.msg, chatLib.ASYNC_HISTORY);
-            await save(cur.g, { now: true });
+            await storeChat(id, [r.msg], cur.g.chat.length >= chatLib.ASYNC_HISTORY);
         });
         cur.queue = run.catch(() => {}).finally(() => { cur.busy--; });
         await run;
@@ -1122,7 +1224,8 @@ async function removeUser(userId) {
         const res = await withGame(row.id, g => {
             names = g.seats.filter(s => s.userId === userId && s.name).map(s => s.name);
             const err = L.removeUser(g, userId);
-            return err ? { error: err } : { ok: true };
+            if (err) return { error: err };
+            return syncChat(g).then(() => ({ ok: true }));       // their messages left the chat
         });
         if (res && res.error) return res;
         // the frames recorded so far for the replay (utils/replay.js)
