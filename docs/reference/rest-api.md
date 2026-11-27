@@ -13,7 +13,7 @@ All endpoints take and return JSON (request body limit 20 KB). Logins are cookie
 | POST | `/register` | public | Create an account (username, password, e-mail); sends an activation code. Refused while registration is off. A taken username is refused; a taken e-mail address gets the same answer as a new one (its owner gets a note instead of a code). |
 | POST | `/activate` | public | Activate with the e-mailed code |
 | POST | `/login` | public | Username + password. With 2FA, answers which second factors are needed. |
-| POST | `/bot` | public | Bot account login: `{ token }` or `Authorization: Bearer <token>` → session ([Bot accounts](bot-accounts.md)) |
+| POST | `/bot` | public | Bot account login: `{ token }` or `Authorization: Bearer <token>` → session ([Bot accounts](bot-accounts.md)). A bot suspended for running into the [limits per account](security.md#limits) gets `403` with `{ error, code: 'suspended', retryAfter }` and a `Retry-After` header |
 | POST | `/login/email-otp/request` | public | Send the e-mail code (second factor) |
 | POST | `/login/email-otp/verify` | public | Check the e-mail code |
 | POST | `/login/totp` | public | Check the authenticator code |
@@ -110,6 +110,8 @@ The `clientId` is a secret the browser generates and keeps; the game itself then
 | POST | `/:id/resign` | Resign while the game runs: the KI plays the seat to the end ([Resign](socket-events.md#resign)) |
 | POST | `/:id/invite` | Invite a player by username (a bot account only when the game takes one more player-bot and its bot filter lets this bot in). One e-mail per invitation: again while it is open → `{ ok, already }` without a mail; a declined one can be renewed once a day |
 | POST | `/:id/decline` | Decline an invitation |
+
+These routes count against the [limits per account](security.md#limits): `GET /` 6 times a minute for a bot, 30 for a person (a `304` for `If-None-Match` is not counted); every other call of a bot 30 a minute. Over a limit a call is first held back for up to 2 seconds, then refused with `429`, a `Retry-After` header and `{ error, code: 'rate_limited', retryAfter }` (`403` with `code: 'suspended'` for a suspended bot). Creating (`POST /`) and joining (`POST /:id/join`) answer `400` with `code: 'too_many_games'` when the bots of one owner already have 60 running Rundenspiele, 5 open lobbies or 20 new games in the last hour.
 
 Playing the opened game: [Socket.IO events → Rundenspiele](socket-events.md#rundenspiele). Rules: [Rundenspiele](rundenspiele.md).
 
