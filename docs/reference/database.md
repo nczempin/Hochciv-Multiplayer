@@ -13,6 +13,7 @@ Live lobbies and games are **not** in the database – they live in memory (`ses
 | `users` | `User` | Accounts |
 | `games` | `Game` | Finished matches (live games and Rundenspiele) |
 | `async_games` | `AsyncGame` | Rundenspiele, running and finished |
+| `arena_standings` | – | Standings of the [correspondence arena](rundenspiele.md#arena), one row per game version and bot (migration 0010) |
 | `replays` | `Replay` | Replays of finished matches |
 | `replay_frames` | `ReplayFrame` | Turn states of Rundenspiele that are still running |
 | `custom_maps` | `CustomMap` | Custom maps in accounts |
@@ -56,7 +57,7 @@ One row per finished match: `id` (UUID, used in `/api/games/:id` and `/?replay=`
 
 ## `async_games`
 
-A Rundenspiel as a whole: `id`, `joinCode`, `hostUserId`, `status` (`setup` → `placement` | `draft` → `playing` → `finished` | `cancelled`), `isPublic`, `round`, `waitSince`, `reminded`. The array columns `participantIds`, `invitedIds`, `waitingIds` exist for the game list and the "your turn" badge; everything else – seats, settings, chat, statistics, pre-phase – is in `data`, and the engine state in `state`. Saved after every action. Structure of `data`: see the header of `async/logic.js` and [Rundenspiele](rundenspiele.md).
+A Rundenspiel as a whole: `id`, `joinCode`, `hostUserId`, `status` (`setup` → `placement` | `draft` → `playing` → `finished` | `cancelled`), `isPublic`, `round`, `waitSince`, `reminded`, `arenaLadder` (a game of the [correspondence arena](rundenspiele.md#arena), set at creation; partial index `async_games_arena_ladder` on (`createdAt`, `id`) of those games, migration 0010). The array columns `participantIds`, `invitedIds`, `waitingIds` exist for the game list and the "your turn" badge; everything else – seats, settings, chat, statistics, pre-phase – is in `data`, and the engine state in `state`. Saved after every action. Structure of `data`: see the header of `async/logic.js` and [Rundenspiele](rundenspiele.md).
 
 ## `replays` and `replay_frames`
 
@@ -77,7 +78,8 @@ A trigger on `users` (migrations/0008-user-changed-notify.js) sends `pg_notify('
 * **`oauth_providers`:** `provider` (`google`/`discord`), `clientId`, `clientSecret`, `botToken` (Discord Activity), `enabled`.
 * **`passkeys`:** `credentialID`, `credentialPublicKey`, `counter`, `transports`.
 * **`device_tokens`:** `token`, `platform`, `lastSeenAt`, `sessionHash` (SHA-256 of the session id that registered the device, migrations/0004-device-session.js – another account takes the device over only after that login ended).
-* **`reports`:** `kind` (`chat` or `map`), `status`, `source`/`sourceId` (live game or Rundenspiel; for a map `map` and the map's id), reporter and reported (id and name), `reason`, `message`, `context` (the game's chat history from the server's copy; for a map report the map as it was), `auto` (word filter), `matches`, `penalty`, `note`, `handledBy`, `handledAt`. Reports about an existing account are kept as long as it exists; the others for `REPORT_KEEP_YEARS` (3).
+* **`arena_standings`:** `version` (game version), `userId`, `name` (the bot's name in its first ladder game of that version), `games` (booked games), `wins`, `draws`; primary key (`version`, `userId`). A bot's row is made with its first ladder game of a version and counted when a game is booked, in the booking's transaction (async/service.js processResult → async/ladder.js `book`), so each game counts once. No foreign key: a deleted bot stays in the standings, as it stays in the games.
+* **`reports`:** `kind` (`chat`, `map` or `limit` – a bot suspended by the [limits per account](security.md#limits)), `status`, `source`/`sourceId` (live game or Rundenspiel; for a map `map` and the map's id), reporter and reported (id and name), `reason`, `message`, `context` (the game's chat history from the server's copy; for a map report the map as it was), `auto` (word filter), `matches`, `penalty`, `note`, `handledBy`, `handledAt`. Reports about an existing account are kept as long as it exists; the others for `REPORT_KEEP_YEARS` (3).
 * **`settings`:** `key` (primary key), `value` (text), `updatedBy` (admin username). Read once and kept in memory by utils/settings.js.
 * **`banned_words`:** `word` (normalized: lower case, ä → ae, ß → ss), `kind` (`ban`/`allow`), `match` (`word` – whole word, or `part` – anywhere), `addedBy`.
 
