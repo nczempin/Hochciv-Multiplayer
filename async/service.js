@@ -65,14 +65,15 @@ const STEP_BROADCAST_MS = 500;       // while bots / the KI play several turns: 
 const HOLD_MS = Number(process.env.ASYNC_HOLD_MS) || 60 * 1000;    // statistics, marks, scenes: written at the latest this long after a change
 
 let io = null;
-/* id → { g, queue, touched, busy, dirty, timer, writing, pending, listKey, written, held, holdTimer }
+/* id → { g, queue, touched, busy, dirty, timer, writing, pending, listKey, written, held, holdTimer, logSplit, logHead }
    queue: the game's changes one after another; writing: its row writes in order;
-   written: a hash of every JSON column as last written, and the turn then (flush) */
+   written: a hash of every JSON column as last written, and the turn then (flush);
+   logSplit: the row's `state` is without its log, which is in async_log up to logHead { seq, hash } */
 const cache = new Map();
 const room = id => `async:${id}`;
 let closing = false;                 // shutting down (flushAll): every save is written at once
 const newEntry = g => ({ g, queue: Promise.resolve(), touched: Date.now(), busy: 0, dirty: false, timer: null, writing: Promise.resolve(), pending: 0, listKey: null,
-    written: {}, held: false, holdTimer: null, force: false });
+    written: {}, held: false, holdTimer: null, force: false, logSplit: false, logHead: null });
 
 // ── Loading and saving ───────────────────────────────────────────────────────
 
@@ -137,6 +138,12 @@ async function getEntry(id) {
         e.queue = AsyncGame.findByPk(id).then(async row => {
             const g = row ? fromRow(row) : null;
             if (g && !ENDED.includes(g.status)) g.chat = await loadChat(id);
+            // a state written without its log: the log is in async_log
+            if (g && g.state && !Array.isArray(g.state.log)) {
+                g.state.log = await loadLog(id);
+                e.logSplit = true;
+                e.logHead = headOf(g.state.log);
+            }
             e.g = g;
             if (g) wrote(e);
         }).finally(() => { e.loading = false; });
@@ -182,15 +189,46 @@ const UPDATE_CORE = `UPDATE async_games SET status = $2, "isPublic" = $3, "parti
     "invitedIds" = $5::uuid[], "waitingIds" = $6::uuid[], "waitSince" = $7, reminded = $8, round = $9, "updatedAt" = now()`;
 const JSON_COLUMNS = ['data', 'state', 'stats', 'marks', 'scenes'];
 const ONCE_PER_TURN = new Set(['stats', 'marks', 'scenes']);   // written when the turn changes (or HOLD_MS later)
-const DROP_CHAT = 'WITH gone AS (DELETE FROM async_chat WHERE "gameId" = $1) ';
+const DROP_CHAT = 'gone AS (DELETE FROM async_chat WHERE "gameId" = $1)';
 
 const hashOf = text => (text == null ? '-' : crypto.createHash('sha1').update(text).digest('base64'));
 const turnOf = g => JSON.stringify([g.status, g.state && g.state.cur, g.state && g.state.round]);
-const jsonOf = f => Object.fromEntries(JSON_COLUMNS.map(c => [c, f[c] == null ? null : JSON.stringify(f[c])]));
+/* `split`: the state without its log (splitLog) */
+const jsonOf = (f, split) => Object.fromEntries(JSON_COLUMNS.map(c => [c, f[c] == null ? null
+    : JSON.stringify(c === 'state' && split ? withoutLog(f[c]) : f[c])]));
+
+/* ── The engine's log in async_log (migration 0012) ──────────────────────────
+   S.log is most of the engine state: the engine appends to it (seq one up per entry) and keeps
+   the last 600. While a game runs, `state` is written without it and async_log gets the entries
+   that are new since the last write; the ones the engine dropped go. An ended game has its log
+   back in `state`. A log the engine did not number throughout stays in `state`. */
+const withoutLog = S => { const { log, ...rest } = S; return rest; };
+function splitLog(S) {
+    const log = S && S.log;
+    if (!Array.isArray(log)) return null;
+    for (let i = 0; i < log.length; i++) {
+        if (!log[i] || !Number.isInteger(log[i].seq) || (i && log[i].seq !== log[i - 1].seq + 1)) return null;
+    }
+    return log;
+}
+const headOf = log => (log.length ? { seq: log[log.length - 1].seq, hash: hashOf(JSON.stringify(log[log.length - 1])) } : null);
+/* The rows outside the log's seq range ($n … $n+1) go, the new entries ($n+2) come in. */
+const logCtes = n => [
+    `log_gone AS (DELETE FROM async_log WHERE "gameId" = $1 AND (seq < $${n} OR seq > $${n + 1}))`,
+    `log_new AS (INSERT INTO async_log ("gameId", seq, entry) SELECT $1, (x->>'seq')::int, x FROM jsonb_array_elements($${n + 2}::jsonb) x
+        ON CONFLICT ("gameId", seq) DO UPDATE SET entry = EXCLUDED.entry)`,
+];
+const LOG_DROP = 'log_gone AS (DELETE FROM async_log WHERE "gameId" = $1)';
+
+async function loadLog(gameId) {
+    const rows = await sequelize.query('SELECT entry FROM async_log WHERE "gameId" = $1 ORDER BY seq DESC LIMIT 600',
+        { bind: [gameId], type: sequelize.QueryTypes.SELECT });
+    return rows.map(r => r.entry).reverse();
+}
 
 /** The game as it is in the database (just loaded or created): what flush compares with. */
 function wrote(e) {
-    const json = jsonOf(rowFields(e.g));
+    const json = jsonOf(rowFields(e.g), e.logSplit);
     e.written = Object.fromEntries(JSON_COLUMNS.map(c => [c, hashOf(json[c])]));
     e.written.turn = turnOf(e.g);
     e.listKey = listKey(rowFields(e.g));
@@ -210,10 +248,11 @@ function flush(e, reason) {
     if ((!e.dirty && !e.held) || !e.g) return e.writing;
     const g = e.g;
     const f = rowFields(g);
-    const json = jsonOf(f);
     const w = e.written;
     const turn = turnOf(g);
     const ended = ENDED.includes(g.status);
+    const log = ended ? null : splitLog(g.state);
+    const json = jsonOf(f, !!log);
     const due = e.force || closing || ended || w.turn !== turn;
     const bind = [g.id, f.status, f.isPublic, f.participantIds, f.invitedIds, f.waitingIds, f.waitSince, f.reminded, f.round];
     const sets = [];
@@ -232,8 +271,28 @@ function flush(e, reason) {
     // the chat ends with the game (in the same statement); reports keep their own copy (utils/reports.js)
     const dropChat = ended && !w.chatGone;
     if (dropChat) next.chatGone = true;
-    const sql = (dropChat ? DROP_CHAT : '') + UPDATE_CORE + sets.map(s => ', ' + s).join('') + ' WHERE id = $1';
+    const ctes = dropChat ? [DROP_CHAT] : [];
+    // the state written: its log as new rows of async_log (split), or back in it
+    const stateSet = sets.some(s => s.startsWith('state '));
+    let logSplit = e.logSplit, logHead = e.logHead;
+    if (stateSet && log) {
+        const at = logSplit && logHead ? log.findIndex(x => x.seq === logHead.seq) : -1;
+        const fresh = at >= 0 && hashOf(JSON.stringify(log[at])) === logHead.hash ? log.slice(at + 1) : log;
+        const text = JSON.stringify(fresh);
+        bind.push(log.length ? log[0].seq : 1, log.length ? log[log.length - 1].seq : 0, text);
+        ctes.push(...logCtes(bind.length - 2));
+        bytes += fresh.length ? Buffer.byteLength(text) : 0;
+        logSplit = true;
+        logHead = headOf(log);
+    } else if (stateSet) {
+        if (logSplit) ctes.push(LOG_DROP);
+        logSplit = false;
+        logHead = null;
+    }
+    const sql = (ctes.length ? 'WITH ' + ctes.join(', ') + ' ' : '') + UPDATE_CORE + sets.map(s => ', ' + s).join('') + ' WHERE id = $1';
     e.written = next;
+    e.logSplit = logSplit;
+    e.logHead = logHead;
     e.held = held || (!due && e.held);
     if (!e.held) { clearTimeout(e.holdTimer); e.holdTimer = null; }
     else if (!e.holdTimer) e.holdTimer = setTimeout(() => holdOver(e), HOLD_MS);
@@ -251,6 +310,8 @@ function flush(e, reason) {
     return run.catch(err => {
         e.dirty = true;
         e.written = {};                 // not known what is in the row: the next write writes all of it
+        e.logSplit = false;             // … the log too
+        e.logHead = null;
         e.listKey = null;               // … and at once
         if (!e.timer) e.timer = setTimeout(() => flushLater(e, 'retry'), Math.max(FLUSH_MS, 1000));
         throw err;
@@ -318,6 +379,10 @@ async function purgeEndedChats() {
         { replacements: { ended: ENDED } });
     const [, gone] = await sequelize.query(
         `DELETE FROM async_chat c USING async_games g WHERE c."gameId" = g.id AND g.status IN (:ended)`,
+        { replacements: { ended: ENDED } });
+    // the log of an ended game is back in its state (flush)
+    await sequelize.query(
+        `DELETE FROM async_log l USING async_games g WHERE l."gameId" = g.id AND g.status IN (:ended) AND jsonb_exists(g.state, 'log')`,
         { replacements: { ended: ENDED } });
     const n = (meta && meta.rowCount) || 0, m = (gone && gone.rowCount) || 0;
     if (n || m) console.log(`[Async] Deleted the chats of ended games (${n} games, ${m} messages).`);
