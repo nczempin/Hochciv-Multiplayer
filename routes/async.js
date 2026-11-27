@@ -22,6 +22,8 @@ router.use(require('../utils/rateLimit')({
     standardHeaders: true,
     legacyHeaders: false,
 }));
+// limits per account (utils/account-limits.js): the game list, a bot's other calls
+router.use(require('../utils/account-limits').asyncRoutes);
 
 const send = (res, p) => p.then(r => {
     if (r && r.error) return res.status(400).json(r);

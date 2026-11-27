@@ -86,6 +86,9 @@ services:
       - ASYNC_FLUSH_MS=${ASYNC_FLUSH_MS:-}
       - ASYNC_LIST_CACHE_MS=${ASYNC_LIST_CACHE_MS:-}
       - USER_CACHE_MS=${USER_CACHE_MS:-}
+      # Limits per account (utils/account-limits.js): ACCOUNT_LIMITS_SCALE=0 switches them off, BOT_SUSPEND_MS shortens a bot's suspension
+      - ACCOUNT_LIMITS_SCALE=${ACCOUNT_LIMITS_SCALE:-}
+      - BOT_SUSPEND_MS=${BOT_SUSPEND_MS:-}
       # Bot ladder test (tests/ladder): LADDER_TICK_MS=500 – pair every half second instead of every 15
       - LADDER_TICK_MS=${LADDER_TICK_MS:-}
       # Chat word filter tests (tests/filter/filter.test.js): the first writing timeout (default 5 minutes)
