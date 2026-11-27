@@ -202,8 +202,9 @@ const STATS = {
         hit.addEventListener('pointerleave', hide);
     },
 
-    /** Key moments: wonders, conquered cities (grouped per round), empires out, new leader, biggest jump. */
-    moments: function (box, stats) {
+    /** Key moments: wonders, conquered cities (grouped per round), empires out, new leader, biggest jump.
+        `opts.all`: every one (the end screen's chronicle, client/endscreen.js), else at most 15. */
+    moments: function (box, stats, opts) {
         const name = i => escHtml(this.short(stats, i));
         const wonder = k => {
             const w = typeof WONDER_BY_KEY !== 'undefined' && WONDER_BY_KEY[k];
@@ -240,7 +241,7 @@ const STATS = {
             lead: () => `👑 ${TX('%s übernimmt die Führung.', name(e.pi))}`,
             jump: () => `📈 ${TX('Größter Sprung: %s, +%s Punkte.', name(e.pi), e.d)}`,
         }[e.k] || (() => ''))();
-        const shown = list.length > 15 ? list.filter(e => e.k !== 'capture').slice(0, 15) : list;
+        const shown = opts && opts.all ? list : list.length > 15 ? list.filter(e => e.k !== 'capture').slice(0, 15) : list;
         box.innerHTML = `<h4>${TX('Wichtige Momente')}</h4>` + (shown.length
             ? `<ul>${shown.map(e => `<li><span class="hcs-r">${TX('Runde %s', e.r)}</span><span>${text(e)}</span></li>`).join('')}</ul>`
             : `<p class="sub">${TX('Keine besonderen Ereignisse.')}</p>`);
@@ -258,7 +259,8 @@ const STATS = {
             <h4>${TX('Am Ende')}</h4><div class="hcs-scroll"><table class="tbl"><tr><th></th>${head}</tr>${end}</table></div>`;
     },
 
-    // ── End screen: "Statistik" opens the section below the result ────────────────
+    // ── End screen: "Statistik" opens the section below the result. On the game page
+    //    client/endscreen.js replaces this with its tabs (Civ IV style).
     addToEndScreen: function (stats) {
         const body = $('ov-body');
         if (!body || !stats || $('mp-stats-btn') || !$('go-menu')) return;

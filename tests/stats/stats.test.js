@@ -124,42 +124,65 @@ async function live(browser, errors) {
         const driver = setInterval(() => page.evaluate(() => {
             if (S && !S.over && MP.isMyTurn() && MP._e !== S.round + ':' + S.cur) { MP._e = S.round + ':' + S.cur; closeModal(); MP.sendAction({ type: 'endTurn' }); }
         }).catch(() => { }), 200);
-        await page.waitForFunction(() => S && S.over && document.getElementById('mp-stats-btn'), null, { timeout: 300000 });
+        await page.waitForFunction(() => S && S.over && document.querySelector('#hce-panel .hcs-plot svg'), null, { timeout: 300000 });
         clearInterval(driver);
-        ok(true, 'live: the end screen has "📊 Statistik"');
-        await page.click('#mp-stats-btn');
+        ok(true, 'live: the end screen opens on the tab "Punkteverlauf" with the chart');
+        await page.waitForFunction(() => !document.getElementById('victory'), null, { timeout: 10000 });   // the full-screen win (client/victory.js)
         const view = await page.evaluate(() => ({
-            lines: document.querySelectorAll('#mp-stats-box svg path[stroke-width="2"]').length,
-            legend: [...document.querySelectorAll('#mp-stats-box .hcs-legend > span')].map(s => s.textContent.trim()),
-            moments: document.querySelectorAll('#mp-stats-box .hcs-moments li').length,
+            lines: document.querySelectorAll('#hce-panel svg path[stroke-width="2"]').length,
+            legend: [...document.querySelectorAll('#hce-panel .hcs-legend > span')].map(s => s.textContent.trim()),
+            moments: document.querySelectorAll('#hce-panel .hcs-moments').length,
             rounds: MP.lastStats.rounds.length, final: MP.lastStats.final, owners: 'owners' in MP.lastStats,
         }));
         ok(view.lines === 4 && view.legend.length === 4, 'live: four lines, four legend entries', view.legend.join(' | '));
         ok(view.legend.some(l => l.startsWith('Gastgeber (')), 'live: the host is named in the legend (lobby name and nation)');
-        ok(view.moments >= 1, 'live: key moments listed', String(view.moments));
+        ok(view.moments === 0, 'live: the key moments are not under the chart (tab "Chronik")', String(view.moments));
         ok(view.final && !view.owners && view.rounds >= 2, 'live: final statistics without bookkeeping', `${view.rounds} rounds`);
-        const hit = await page.$('#mp-stats-box .hcs-hit');
+        const hit = await page.$('#hce-panel .hcs-hit');
         const bb = await hit.boundingBox();
         await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2);
-        const tip = await page.evaluate(() => { const t = document.querySelector('#mp-stats-box .hcs-tip'); return { hidden: t.hidden, rows: t.querySelectorAll('div:not(.hcs-tip-head)').length }; });
+        const tip = await page.evaluate(() => { const t = document.querySelector('#hce-panel .hcs-tip'); return { hidden: t.hidden, rows: t.querySelectorAll('div:not(.hcs-tip-head)').length }; });
         ok(!tip.hidden && tip.rows === 4, 'live: the tooltip lists every empire', JSON.stringify(tip));
-        await page.click('#mp-stats-box .hcs-table-btn');
-        const rows = await page.evaluate(() => document.querySelectorAll('#mp-stats-box .hcs-tables table')[0].rows.length);
+        await page.click('#hce-panel .hcs-table-btn');
+        const rows = await page.evaluate(() => document.querySelectorAll('#hce-panel .hcs-tables table')[0].rows.length);
         ok(rows === view.rounds + 1, 'live: the table has a row per round', String(rows));
         // the value selector: every recorded value, the chart and the table follow it
-        const metrics = await page.$$eval('#mp-stats-box .hcs-metric option', os => os.map(o => o.value));
+        const metrics = await page.$$eval('#hce-panel .hcs-metric option', os => os.map(o => o.value));
         ok(['s', 'c', 'pop', 't', 'a', 'w', 'ys', 'yf', 'yc'].every(k => metrics.includes(k)) && !metrics.some(k => /^r[sfc]$/.test(k)), 'live: values to choose from (no stock)', metrics.join(','));
-        await page.selectOption('#mp-stats-box .hcs-metric select', 'yc');
+        await page.selectOption('#hce-panel .hcs-metric select', 'yc');
         const coins = await page.evaluate(() => ({
-            title: document.querySelector('#mp-stats-box .hcs-title').textContent,
-            lines: document.querySelectorAll('#mp-stats-box svg path[stroke-width="2"]').length,
-            svgs: document.querySelectorAll('#mp-stats-box .hcs-plot > svg').length,
-            table: document.querySelector('#mp-stats-box .hcs-tables h4').textContent,
-            cell: document.querySelectorAll('#mp-stats-box .hcs-tables table')[0].rows[1].cells[1].textContent,
+            title: document.querySelector('#hce-panel .hcs-title').textContent,
+            lines: document.querySelectorAll('#hce-panel svg path[stroke-width="2"]').length,
+            svgs: document.querySelectorAll('#hce-panel .hcs-plot > svg').length,
+            table: document.querySelector('#hce-panel .hcs-tables h4').textContent,
+            cell: document.querySelectorAll('#hce-panel .hcs-tables table')[0].rows[1].cells[1].textContent,
             want: String(MP.lastStats.rounds[0].p[MP.lastStats.players.findIndex(p => p.kind !== 'barbar')].yc),
         }));
         ok(coins.title === 'Münzen je Runde' && coins.lines === 4 && coins.svgs === 1, 'live: "Münzen je Runde" redraws the chart', JSON.stringify(coins));
         ok(coins.table === 'Münzen je Runde' && coins.cell === coins.want, 'live: the table follows the choice', `${coins.cell} / ${coins.want}`);
+
+        // the other tabs (client/endscreen.js, Civ IV style)
+        await page.click('#hce-panel [data-tab="demo"]');
+        const demo = await page.evaluate(() => {
+            const rows = [...document.querySelectorAll('#hce-panel .hce-demo tr')].slice(1).map(r => [...r.cells].map(c => c.textContent.trim()));
+            const me = MP.playerIndex, pop = S.cities.filter(c => c.owner === me).reduce((n, c) => n + c.pop, 0);
+            return { rows, pop, score: victoryScore(S, me).total };
+        });
+        const row = n => demo.rows.find(r => r[0] === n) || [];
+        ok(demo.rows.length >= 7, 'demographics: a row per measure', demo.rows.map(r => r[0]).join(','));
+        ok(row('Bevölkerung')[1] === String(demo.pop) && row('Punkte')[1] === String(demo.score), 'demographics: the own values', JSON.stringify([row('Bevölkerung'), row('Punkte')]));
+        ok(demo.rows.every(r => r[2] === '–' || (+r[2] >= 1 && +r[2] <= 4)) && demo.rows.every(r => +r[3] >= +r[6]), 'demographics: rank 1–4, best ≥ worst');
+        await page.click('#hce-panel [data-tab="wonders"]');
+        const won = await page.evaluate(() => ({
+            tables: document.querySelectorAll('#hce-panel table').length,
+            wonders: (S.wonders || []).length, n: S.cities.filter(c => S.players[c.owner].kind !== 'barbar').length, rows: document.querySelectorAll('#hce-panel table')[0].rows.length,
+            cities: document.querySelectorAll('#hce-panel table')[document.querySelectorAll('#hce-panel table').length - 1].rows.length,
+        }));
+        ok((won.wonders ? won.tables === 2 && won.rows === won.wonders + 1 : won.tables === 1) && won.cities === Math.min(5, won.n) + 1, 'wonders & cities: every wonder, the biggest cities', JSON.stringify(won));
+        await page.click('#hce-panel [data-tab="chronicle"]');
+        const chron = await page.evaluate(() => ({ n: document.querySelectorAll('#hce-panel .hcs-moments li').length, last: document.querySelector('#hce-panel .hcs-moments li:last-child').textContent }));
+        ok(chron.n >= 2 && /gewinnt|gewinnen/.test(chron.last), 'chronicle: the key moments and the end', `${chron.n}: ${chron.last}`);
+        await page.click('#hce-panel [data-tab="graph"]');
 
         // the match record and the API
         await page.waitForTimeout(1500);
