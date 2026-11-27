@@ -201,7 +201,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <td>${esc(g.version)}</td>
                     <td>${esc(ASYNC_STATUS[g.status] || g.status)}</td>
                     <td>${esc(g.round || '-')}</td>
-                    <td>${esc(g.waitingFor ? txs(g.waitingFor) : '-')}</td>
+                    <td>${esc(g.waitingFor ? HC_I18N.label(g.waitingFor) : '-')}</td>
                     <td style="font-size:13px">${g.players.map(p => nameLink(p.name, p.userId) + (p.isBot ? ` (${tx('Bot')})` : p.replaced ? ` (${tx('KI')})` : '')).join(', ')}</td>
                     <td>${whenAgo(g.waitSince)}</td>
                 </tr>`).join('');
