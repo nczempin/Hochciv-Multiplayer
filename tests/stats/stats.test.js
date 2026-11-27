@@ -182,6 +182,22 @@ async function live(browser, errors) {
         await page.click('#hce-panel [data-tab="chronicle"]');
         const chron = await page.evaluate(() => ({ n: document.querySelectorAll('#hce-panel .hcs-moments li').length, last: document.querySelector('#hce-panel .hcs-moments li:last-child').textContent }));
         ok(chron.n >= 2 && /gewinnt|gewinnen/.test(chron.last), 'chronicle: the key moments and the end', `${chron.n}: ${chron.last}`);
+        // Zeitraffer: the stored match round by round – map, points, log; the slider steps
+        await page.waitForFunction(() => MP.lastRecord, null, { timeout: 30000 });
+        await page.click('#hce-panel [data-tab="timelapse"]');
+        await page.waitForSelector('#hce-panel .hce-tl-map g', { timeout: 30000 });
+        const tl = await page.evaluate(async () => {
+            const n = ENDSCREEN.frames.length;
+            const r = document.querySelector('.hce-tl-range');
+            r.value = 0; r.dispatchEvent(new Event('input'));
+            const first = { round: document.querySelector('.hce-tl-round').textContent, lines: document.querySelectorAll('.hce-tl-lines .logline').length };
+            r.value = n - 1; r.dispatchEvent(new Event('input'));
+            return { n, first, last: document.querySelector('.hce-tl-round').textContent, lines: document.querySelectorAll('.hce-tl-lines .logline').length,
+                score: document.querySelectorAll('.hce-tl-score polygon').length, worlds: document.querySelectorAll('[id=world]').length, playing: !!ENDSCREEN.tl.timer };
+        });
+        ok(tl.n >= 2 && /^Runde 1$/.test(tl.first.round) && /Ende/.test(tl.last), 'Zeitraffer: one frame per round, the slider goes from round 1 to the end', `${tl.n}: ${tl.first.round} … ${tl.last}`);
+        ok(tl.lines > tl.first.lines && tl.score >= 2, 'Zeitraffer: the log grows, the points of all empires', `${tl.first.lines} → ${tl.lines} lines, ${tl.score} areas`);
+        ok(tl.worlds === 1 && !tl.playing, 'Zeitraffer: the game map keeps its id, the slider stops playing', `${tl.worlds} #world`);
         await page.click('#hce-panel [data-tab="graph"]');
 
         // the match record and the API

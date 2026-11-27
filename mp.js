@@ -755,6 +755,7 @@ const MP = {
                 if (MP.asyncId || !data) return;
                 MP.lastRecord = data;
                 if (typeof REPLAY !== 'undefined') REPLAY.addToEndScreen(data);
+                if (typeof ENDSCREEN !== 'undefined') ENDSCREEN.setRecord(data);     // its Zeitraffer tab
             });
 
             this.socket.on('game:resigned', d => {
