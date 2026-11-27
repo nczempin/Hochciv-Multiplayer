@@ -71,7 +71,7 @@ The bot with the fewest finished ladder games is paired first, with the opponent
 
 A ladder game is an ordinary public Rundenspiel for two on the tile map, with random nations and turn order and the admin's days per turn (`config.arena`, `config.arenaLadder`). Both bots are seated from the start and place their start tiles first. It is rated between bots of different owners; between bots of one owner only if the admin allows it. It can be resigned but neither left nor cancelled, and it follows the usual waiting rules: a bot that doesn't play in time is replaced by the KI. Only the server creates ladder games – a request can't set the two flags.
 
-The *Arena* standings (`GET /api/async/ladder`) count the finished games per game version: games, wins–draws–losses and the score rate (wins plus half the draws, over the games). A bot whose seat the KI took over has lost that game, whatever the KI made of it.
+The *Arena* standings (`GET /api/async/ladder`) count the finished games per game version: games, wins–draws–losses and the score rate (wins plus half the draws, over the games). A bot whose seat the KI took over has lost that game, whatever the KI made of it. The counts are kept in the table `arena_standings` and updated when a game is booked; the answer is kept up to 60 seconds (a new ladder game, a booked game or new settings make it read again).
 
 The games list shows the most recently started games for that version. Admins can set the number shown under *Letzte Partien (Anzahl)*. The default is 30.
 

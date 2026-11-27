@@ -42,7 +42,7 @@ The server limits logins and other requests per minute, so tests run back to bac
 | `alerts/alerts.test.js` | sound and tab alerts: tones for join, ready, start, turn and chat, the blinking title of a hidden tab, the sound switch | default |
 | `auth/google-app-login.test.js` | Android Google sign-in (`/api/auth/google/*`) | override file with a token stub (see header) |
 | `invite/invite.test.js` | invite links: copying, the preview, joining a private lobby and a Rundenspiel, watching a running game, guests, English | default |
-| `ladder/ladder.test.js` | bot ladder: pairing and standings (without a server); with the server's address also the owner's opt-in, the admin's settings and the pairing of bots that ask for their games (it resets the limits before each poll of the game list) | `LADDER_TICK_MS=500`, a freshly started server (the ladder's last check is kept in memory) |
+| `ladder/ladder.test.js` | bot ladder: pairing and standings (without a server); with the server's address also the owner's opt-in, the admin's settings and the pairing of bots that ask for their games, the standings table (it resets the limits before each poll of the game list) | `LADDER_TICK_MS=500`, a freshly started server (the ladder's last check is kept in memory) |
 | `limits/limits.test.js` | limits per account: the buckets (without a server); with the server's address the game list and its `304`, a bot's other calls, sockets per account, moves per account and per game, open Rundenspiele per owner, the suspension of a bot with its report | default (`ACCOUNT_LIMITS_SCALE` empty or 1) |
 | `lobbies/lobby-filter.test.js` | filters of the open games: every lobby setting in `/api/public-sessions`, each filter and combinations on live lobbies and Rundenspiele, search, reset, kept filters, phone | default |
 | `bots/bots.test.js` | bot accounts: tokens, owners, limits, the *Meine Bots* tab; player-bots in lobbies, Rundenspiele and matchmaking groups; a bot as friend, invited into a lobby and a Rundenspiel | default |
@@ -119,6 +119,6 @@ Some tests need the same variable on the test side too (`filter`, `timer`) – t
 | auth, origin check, sessions | `security`, `auth`, `loading` |
 | bot accounts, player-bots | `bots`, `match`, `security` |
 | limits per account (`utils/account-limits.js`) | `limits`, `security/abuse`, `bots`, `ladder` |
-| the bot ladder (`async/ladder.js`) | `ladder`, `bots`, `db/migrations` |
+| the bot ladder (`async/ladder.js`), `arena_standings` | `ladder` (on a freshly started server), `bots`, `db/migrations` |
 | `server.js` middleware order, `inject.js`, static files | `loading` |
 | `models/`, `migrations/`, database roles | `db/migrations`, then the tests of the feature |

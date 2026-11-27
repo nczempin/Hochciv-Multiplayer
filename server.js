@@ -269,6 +269,7 @@ if (process.env.TEST_HOOKS === 'on' && process.env.NODE_ENV !== 'production') {
     app.post('/api/test/reset', async (_req, res) => {
         require('./utils/facts').changed();
         require('./utils/account-limits').resetAll();
+        require('./async/ladder').changed();
         res.json({ limiters: await require('./utils/rateLimit').resetAll() });
     });
 }

@@ -101,6 +101,7 @@ function rowFields(g) {
     return {
         status: g.status,
         isPublic: !!g.config.isPublic,
+        arenaLadder: !!g.config.arenaLadder,
         participantIds: [...new Set(g.seats.map(s => s.userId).filter(Boolean))],
         invitedIds: g.invites.filter(i => i.status === 'pending').map(i => i.userId),
         waitingIds: w.userIds,
@@ -449,6 +450,7 @@ async function processResult(g) {
                     gameId: created.id, replay: false };
                 await sequelize.query(`UPDATE async_games SET data = jsonb_set(data, '{result}', CAST(:result AS jsonb)) WHERE id = :id`,
                     { replacements: { result: JSON.stringify(result), id: g.id }, transaction });
+                if (g.config.arenaLadder) await require('./ladder').book(g, result.winners, transaction);   // the arena standings
             },
         });
         g.result = result;
@@ -464,6 +466,7 @@ async function processResult(g) {
             catch (err) { console.error(`[Challenge] Result of ${g.id} failed:`, err); }
         }
         g.result = { ...result, replay };
+        if (g.config.arenaLadder) require('./ladder').changed();
     } catch (err) {
         console.error(`[Async] Result processing failed for ${g.id}:`, err);
         // nothing was booked: the sweep tries again (retryResults)
@@ -550,6 +553,7 @@ async function createLadderGame(a, b, options) {
     g.reminded = false;
     const row = await AsyncGame.create(Object.assign({ joinCode: g.joinCode, hostUserId: a.id }, rowFields(g)));
     g.id = row.id;
+    await require('./ladder').enter(g).catch(err => console.error('[Ladder] Standings row:', err.message));
     cache.set(g.id, newEntry(g)); trimCache(g.id);
     notify(L.waitingOn(g).userIds, { type: 'turn', gameId: g.id,
         subject: 'Du bist am Zug', text: 'Lege dein Startplättchen in deinem Rundenspiel.' });

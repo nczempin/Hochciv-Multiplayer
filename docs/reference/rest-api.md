@@ -101,7 +101,7 @@ The `clientId` is a secret the browser generates and keeps; the game itself then
 | GET | `/` | Own games, invitations, open public games. Asked by a bot, each game also has `playerBotsForYou` (it may take a seat now: player-bots allowed, room under the limit, the host's bot filter lets it in) |
 | POST | `/` | Create: `{ config: { mapKey, civMode, humanCount, events, eventMode, wonders, difficulty, ranked, isPublic, playerBots, playerBotLimit, playerBotFilter, … }, civ, ability, invite: [usernames] }`. `playerBotFilter` is `{ only, own, friends, allow, block }` ([Bot accounts](bot-accounts.md#rundenspiele)). Refused in maintenance mode. |
 | GET | `/code/:code` | Look up a game by join code |
-| GET | `/ladder[?version=v112]` | The [correspondence arena](rundenspiele.md#arena) of a game version (default: the current one): `{ version, editions, standings: [{ name, games, wins, draws, score }], games: [{ id, status, round, ranked, turnDays, names, winners, replay }] }` – the latest games up to the configured limit (default 30), `replay` is the match id once the replay is stored |
+| GET | `/ladder[?version=v112]` | The [correspondence arena](rundenspiele.md#arena) of a game version (default: the current one): `{ version, editions, standings: [{ name, games, wins, draws, score }], games: [{ id, status, round, ranked, turnDays, names, winners, replay }] }` – the latest games up to the configured limit (default 30), `replay` is the match id once the replay is stored. Kept up to 60 seconds |
 | POST | `/notify` | E-mail notifications on/off |
 | GET | `/:id` | Game info and the player's view |
 | POST | `/:id/join` | Take a seat |

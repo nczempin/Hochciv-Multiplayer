@@ -11,7 +11,11 @@
  *   seen(bot)            – a bot asked for its games (async/service.js list): it is there to play
  *   tick()               – pair the bots that are there, opted in, allowed to play and without a
  *                          running ladder game; at the admin's pairing interval
- *   report(version)      – standings and the latest games of one game version (GET /api/async/ladder)
+ *   report(version)      – standings and the latest games of one game version (GET /api/async/ladder),
+ *                          kept REPORT_CACHE_MS (60 s); a new ladder game, a booked one and new
+ *                          settings drop it
+ *   enter(g) / book(...) – the bots of a new ladder game get their row in arena_standings; a booked
+ *                          game is counted there (in the booking's transaction)
  *   settings/configure   – { enabled, turnDays, avoidRematches, sameOwnerRanked, pairingIntervalSeconds,
  *                            placement, recentGamesLimit }
  */
@@ -25,7 +29,7 @@ const key = 'arena-correspondence-ladder';
 const defaults = { enabled: false, turnDays: 3, avoidRematches: true, sameOwnerRanked: false,
     pairingIntervalSeconds: 15, placement: 'leaderboard', recentGamesLimit: 30 };
 const enrolled = { accountType: 'bot', arenaLadderOptIn: true };
-const ladderGameData = { [Op.contains]: { config: { arenaLadder: true } } };
+const REPORT_CACHE_MS = 60 * 1000;
 const closedStatuses = ['finished', 'cancelled'];
 const presence = new Map();
 const readyForMs = 5 * 60 * 1000;          // a bot counts as there this long after its last request
@@ -35,6 +39,7 @@ let timer;
 let timerMs;
 let running = false;
 let lastCheckAt = null;
+let reportCache = null;                     // { at, editions, byVersion: Map(version → Promise of the report) }
 
 function seen(bot) {
     if (bot.arenaLadderOptIn) presence.set(bot.id, Date.now());
@@ -64,25 +69,38 @@ async function configure(body, by) {
         recentGamesLimit: recentGamesLimit ?? saved.recentGamesLimit };
     await Setting.upsert({ key, value: JSON.stringify(options), updatedBy: by || null });
     schedule(options.pairingIntervalSeconds);
+    changed();
     return options;
 }
 
-async function ladderGames() {
+const ofVersion = rules => sequelize.where(sequelize.literal("data->>'engine'"), rules);
+
+/** The booked ladder games of one game version, oldest first: who played whom (selectMatchups). */
+async function bookedGames(rules) {
     return AsyncGame.findAll({
-        where: { data: ladderGameData },
-        attributes: ['id', 'status', 'participantIds', 'createdAt', 'round',
-            [sequelize.literal("data->>'engine'"), 'version'],
+        where: { arenaLadder: true, status: 'finished', [Op.and]: [ofVersion(rules),
+            sequelize.literal("data->'result'->>'gameId' IS NOT NULL")] },
+        attributes: ['status', 'participantIds', [sequelize.literal("jsonb_build_object('gameId', data->'result'->'gameId')"), 'result']],
+        order: [['createdAt', 'ASC'], ['id', 'ASC']], raw: true,
+    });
+}
+
+/** The latest ladder games of one game version, newest first. */
+async function latestGames(rules, limit) {
+    return AsyncGame.findAll({
+        where: { arenaLadder: true, [Op.and]: [ofVersion(rules)] },
+        attributes: ['id', 'status', 'round',
             [sequelize.literal("data->'config'->'ranked'"), 'ranked'],
             [sequelize.literal("data->'config'->'turnDays'"), 'turnDays'],
             [sequelize.literal("data->'result'"), 'result'],
             [sequelize.literal("data->'seats'"), 'seats']],
-        order: [['createdAt', 'ASC'], ['id', 'ASC']], raw: true,
+        order: [['createdAt', 'DESC'], ['id', 'DESC']], limit, raw: true,
     });
 }
 
 function activeLadderGames() {
     return AsyncGame.findAll({
-        where: { data: ladderGameData, status: { [Op.notIn]: closedStatuses } },
+        where: { arenaLadder: true, status: { [Op.notIn]: closedStatuses } },
         attributes: ['participantIds'],
         raw: true,
     });
@@ -167,8 +185,7 @@ async function tick() {
         if (ready.length < 2) return;
         const service = require('./service');
         const rules = version();              // ladder games are played with the current game version
-        const games = await ladderGames();
-        for (const [a, b] of selectMatchups(ready, games.filter(g => g.version === rules), options.avoidRematches)) {
+        for (const [a, b] of selectMatchups(ready, await bookedGames(rules), options.avoidRematches)) {
             const ranked = a.ownerId !== b.ownerId || options.sameOwnerRanked;
             const result = await service.createLadderGame(a, b, { ranked, turnDays: options.turnDays });
             if (result.error) console.error('[Ladder]', result.error);
@@ -206,24 +223,82 @@ function standingsOf(field) {
         const score = scores.get(userId);
         score.games++;
         if (replaced) continue;             // the KI finished the game for this bot: a loss, whatever the KI made of it
-        if (game.result.winners.length !== 1) score.draws++;
-        else if (game.result.winners.includes(name)) score.wins++;
+        const { draw, win } = outcome(game.result.winners, name);
+        if (draw) score.draws++;
+        else if (win) score.wins++;
     }
-    return [...scores.values()].map(row => ({ ...row, score: row.games ? (row.wins + row.draws / 2) / row.games : null }))
-        .sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || b.games - a.games || a.name.localeCompare(b.name));
+    return rank([...scores.values()]);
 }
 
-async function report(requestedVersion) {
-    const [games, { recentGamesLimit }] = await Promise.all([ladderGames(), settings()]);
-    const editions = [...new Set([version(), ...games.map(g => g.version)])].sort((a, b) => Number(b.slice(1)) - Number(a.slice(1)));
-    const rules = editions.includes(requestedVersion) ? requestedVersion : version();
-    const field = games.filter(game => game.version === rules);
-    const standings = standingsOf(field);
+/** One winner wins, more than one is a draw (for the bots that played to the end). */
+const outcome = (winners, name) => ({ draw: winners.length !== 1, win: winners.length === 1 && winners.includes(name) });
+
+/** Score rate, the best first; a bot without a counted game has none and comes last. */
+const rank = rows => rows.map(({ name, games, wins, draws }) => ({ name, games, wins, draws, score: games ? (wins + draws / 2) / games : null }))
+    .sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || b.games - a.games || a.name.localeCompare(b.name));
+
+/** A new ladder game: its bots are listed in the standings of its game version (without a game yet). */
+async function enter(g) {
+    const seats = g.seats.filter(seat => seat.userId);
+    if (!g.engine || !seats.length) return;
+    await sequelize.query(`INSERT INTO arena_standings (version, "userId", name)
+        SELECT :version, u, n FROM unnest(ARRAY[:ids]::uuid[], ARRAY[:names]::varchar[]) AS t(u, n) ON CONFLICT DO NOTHING`,
+    { replacements: { version: g.engine, ids: seats.map(s => s.userId), names: seats.map(s => s.name || '') } });
+    changed();
+}
+
+/**
+ * A booked ladder game (async/service.js processResult, inside the booking's transaction – so it
+ * is counted exactly once): every bot of it one game more, a win or a draw unless the KI replaced it.
+ */
+async function book(g, winners, transaction) {
+    if (!g.engine) return;
+    for (const seat of g.seats) {
+        if (!seat.userId) continue;
+        const { draw, win } = seat.replaced ? {} : outcome(winners, seat.name);
+        await sequelize.query(`INSERT INTO arena_standings (version, "userId", name, games, wins, draws) VALUES (:version, :id, :name, 1, :win, :draw)
+            ON CONFLICT (version, "userId") DO UPDATE SET games = arena_standings.games + 1,
+                wins = arena_standings.wins + EXCLUDED.wins, draws = arena_standings.draws + EXCLUDED.draws`,
+        { replacements: { version: g.engine, id: seat.userId, name: seat.name || '', win: win ? 1 : 0, draw: draw ? 1 : 0 }, transaction });
+    }
+}
+
+/** The standings or the ladder games changed: the next report is read again. */
+function changed() {
+    reportCache = null;
+}
+
+const newestFirst = (a, b) => Number(b.slice(1)) - Number(a.slice(1));
+
+async function buildReport(rules) {
+    const [rows, games] = await Promise.all([
+        sequelize.query('SELECT name, games, wins, draws FROM arena_standings WHERE version = :rules',
+            { replacements: { rules }, type: sequelize.QueryTypes.SELECT }),
+        settings().then(({ recentGamesLimit }) => latestGames(rules, recentGamesLimit)),
+    ]);
     const publicGame = ({ id, status, round, ranked, turnDays, result, seats }) => ({
-        id, status, round, ranked, turnDays, names: seats.map(seat => seat.name),
+        id, status, round, ranked, turnDays, names: (seats || []).map(seat => seat.name),
         winners: result?.winners || [], replay: result?.replay && result.gameId,
     });
-    return { version: rules, editions, standings, games: field.slice(-recentGamesLimit).reverse().map(publicGame) };
+    return { standings: rank(rows), games: games.map(publicGame) };
 }
 
-module.exports = { settings, configure, status, seen, start, tick, report, selectMatchups, standingsOf };
+/** Standings and the latest games of a game version (the current one unless another has ladder games). */
+async function report(requestedVersion) {
+    if (!reportCache || Date.now() - reportCache.at > REPORT_CACHE_MS) {
+        const at = Date.now();
+        const rows = await sequelize.query('SELECT DISTINCT version FROM arena_standings', { type: sequelize.QueryTypes.SELECT });
+        reportCache = { at, editions: [...new Set([version(), ...rows.map(r => r.version)])].sort(newestFirst), byVersion: new Map() };
+    }
+    const cache = reportCache;
+    const rules = cache.editions.includes(requestedVersion) ? requestedVersion : version();
+    if (!cache.byVersion.has(rules)) {
+        const built = buildReport(rules);
+        cache.byVersion.set(rules, built);
+        built.catch(() => { if (cache.byVersion.get(rules) === built) cache.byVersion.delete(rules); });
+    }
+    const { standings, games } = await cache.byVersion.get(rules);
+    return { version: rules, editions: cache.editions, standings, games };
+}
+
+module.exports = { settings, configure, status, seen, start, tick, report, enter, book, changed, selectMatchups, standingsOf };

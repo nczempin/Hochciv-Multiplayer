@@ -20,7 +20,9 @@
  * no pairing while the ladder is off or a bot is not opted in, the pairing of two bots that ask
  * for their games – rated between different owners, unrated between bots of one owner –, one
  * ladder game per bot at a time, that a request can't mark its own game as a ladder game, and the
- * standings page of the API. Test accounts and their games are removed again.
+ * standings page of the API; the standings table (a booked game counted once per bot, a win, a
+ * draw, a KI takeover; another game version kept apart). Test accounts, their games and their
+ * standings rows are removed again.
  *
  * Without docker: set HOCHCIV_SERVER_DIR to the server's folder (and DATABASE_URL as the server
  * has it) – the accounts are then created from there.
@@ -142,6 +144,7 @@ async function server() {
             const users = await User.findAll({ where: { username: { [Op.startsWith]: '${TAG}_' } }, attributes: ['id'] });
             const ids = users.map(u => u.id);
             if (ids.length) await AsyncGame.destroy({ where: { participantIds: { [Op.overlap]: ids } } });
+            if (ids.length) await sequelize.query('DELETE FROM arena_standings WHERE "userId" IN (:ids)', { replacements: { ids } });
             await User.destroy({ where: { id: ids } });
             ${restoreSetting}
             await sequelize.close();
@@ -285,6 +288,28 @@ async function server() {
             && limited.data.games.length === 1 && limited.data.games[0].id === same?.id
             && JSON.stringify(limited.data.standings) === JSON.stringify(rows),
             'a smaller recent games limit keeps the newest game and the full standings');
+
+        // The standings table (arena_standings): what processResult books, in another game version
+        inServer(`const ladder = require('./async/ladder'); const { sequelize } = require('./models');
+            (async () => {
+                const a = { userId: '${A.id}', name: '${A.name}' }, b = { userId: '${Bb.id}', name: '${Bb.name}' };
+                const g = { engine: 'v0', seats: [a, b] };
+                await ladder.enter(g);
+                await ladder.enter(g);                                                     // a second game: no second row
+                await sequelize.transaction(t => ladder.book(g, ['${A.name}'], t));         // A wins
+                await sequelize.transaction(t => ladder.book(g, ['${A.name}', '${Bb.name}'], t));   // a draw
+                await sequelize.transaction(t => ladder.book({ engine: 'v0', seats: [a, { ...b, replaced: true }] }, ['${Bb.name}'], t));   // the KI won for B
+                await sequelize.close();
+            })().catch(err => { console.error(err); process.exit(1); });`);
+        await fetch(BASE + '/api/test/reset', { method: 'POST' });               // drops the report cache of the server
+        const v0 = await S.o2('GET', '/api/async/ladder?version=v0');
+        const [r0, r1] = v0.data.standings || [];
+        ok(v0.status === 200 && v0.data.version === 'v0' && v0.data.editions.includes('v0') && v0.data.editions[0] === game.engine
+            && v0.data.standings.length === 2 && v0.data.games.length === 0, 'another game version has its own standings', JSON.stringify(v0.data).slice(0, 200));
+        ok(r0 && r0.name === A.name && r0.games === 3 && r0.wins === 1 && r0.draws === 1 && Math.abs(r0.score - 0.5) < 1e-9
+            && r1 && r1.name === Bb.name && r1.games === 3 && r1.wins === 0 && r1.draws === 1 && Math.abs(r1.score - 1 / 6) < 1e-9,
+            'booked games counted: a win, a draw, a KI takeover is a loss', JSON.stringify(v0.data.standings));
+        ok(JSON.stringify((await S.o2('GET', '/api/async/ladder')).data.standings) === JSON.stringify(rows), 'the current version is not touched');
 
         // Opting out: no new games
         const out = await optIn(S.o1, A, false);

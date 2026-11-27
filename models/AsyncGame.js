@@ -34,6 +34,12 @@ module.exports = (sequelize) => {
             allowNull: false,
             defaultValue: false,
         },
+        // a game of the bot ladder (async/ladder.js; data.config.arenaLadder), set at creation
+        arenaLadder: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+        },
         participantIds: {
             type: DataTypes.ARRAY(DataTypes.UUID),
             allowNull: false,
