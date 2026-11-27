@@ -175,12 +175,14 @@ async function recordStats(g) {
     } catch (err) {
         console.error(`[Async] Statistics failed for ${g.id}:`, err);
     }
-    if (g.status === 'playing') {
+    if (g.status === 'playing' || !g.result) {           // … and the final frame, before the match is booked
         try {
             await Replay.addAsync(g);
         } catch (err) {
             console.error(`[Async] Replay frame failed for ${g.id}:`, err);
         }
+    }
+    if (g.status === 'playing') {
         try {
             g.marks = Summary.track(g.marks, L.ENG(g).getEngine(), g.state);       // "since your last turn"
             Scenes.trim(g.scenes, g.marks, g.state);                               // … and its scenes
@@ -192,6 +194,9 @@ async function recordStats(g) {
 
 /** Save + broadcast; with `before`, also restart the clock and send notifications. */
 async function settle(g, before) {
+    // the game just ended (a move or an automatic turn): finished right away, so the first view
+    // of the end already carries the statistics and the result – not only the next one
+    if (g.status === 'playing' && g.state && g.state.over) g.status = 'finished';
     await recordStats(g);
     if (before) {
         const key = waitKey(g);

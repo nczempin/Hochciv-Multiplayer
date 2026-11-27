@@ -3302,6 +3302,12 @@ const ASYNC = {
         this.view = view;
         MP.lastStats = view.stats || null;            // a finished game: its statistics (client/stats.js)
         MP.lastRecord = view.record || null;          // … and its stored match with the replay (client/replay.js)
+        // the end screen is already up (the own last move ended the game on this device before the
+        // server's finished view came): give it the statistics and the match now, not on the next open
+        if (typeof ENDSCREEN !== 'undefined' && $('hce-panel')) {
+            if (view.stats && !ENDSCREEN.stats) ENDSCREEN.add(view.stats);
+            if (view.record) ENDSCREEN.setRecord(view.record);
+        }
         MP.players = view.seats.map(s => ({ index: s.slot, name: s.name, civ: s.civ, userId: s.replaced ? null : s.userId, isBot: s.kind === 'bot' || (s.kind === 'ki' && !s.replaced), resigned: !!s.resigned }));
         if (view.state && view.state.over) MP.translateOver(view.state.over);
         const toastEl = document.querySelector('.mp-waiting-toast');

@@ -18,6 +18,10 @@ const { AsyncGame, Game, Replay, ReplayFrame } = require('./models');
 (async () => {
     const a = { id: process.env.USER_A, username: process.env.NAME_A };
     const b = { id: process.env.USER_B, username: process.env.NAME_B };
+    // player A has the game open: the views it is sent (the first one with the end must already
+    // carry the statistics – the end screen is built from it)
+    const seen = [];
+    service.init({ in: () => ({ fetchSockets: async () => [{ data: { userId: a.id }, emit: (ev, v) => { if (ev === 'async:update') seen.push(v); } }] }), to: () => ({ emit: () => {} }) });
     const made = await service.create(a, { config: { mapKey: '0', civMode: 'random', playerCount: 2, kiCount: 0 } });
     if (made.error) throw new Error(made.error);
     const joined = await service.join(b, made.id, { code: made.joinCode });
@@ -44,6 +48,7 @@ const { AsyncGame, Game, Replay, ReplayFrame } = require('./models');
         record: view.record || null,
         replayFrames: game ? ((await Replay.findByPk(game.id)) || {}).frames || 0 : 0,
         framesLeft: await ReplayFrame.count({ where: { gameKey: made.id } }),
+        firstOver: (v => v && { status: v.status, stats: !!(v.stats && v.stats.final), record: !!v.record })(seen.find(v => v.state && v.state.over)),
     }));
     process.exit(0);
 })().catch(e => { console.error(e); process.exit(1); });
