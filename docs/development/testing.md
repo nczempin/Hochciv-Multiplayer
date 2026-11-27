@@ -73,6 +73,7 @@ The server limits logins and other requests per minute, so tests run back to bac
 | `replay/replay.test.js` | replays | default |
 | `reports/reports.test.js` | chat reports and their admin section | default |
 | `scenes/scenes.test.js` | what the others did, played on the map: recording, live game, Rundenspiel | default |
+| `turns/engine-log.test.js` | the engine log in `async_log`: a running game's `state` without its log, a game loaded again keeps its entries and adds only new ones, a row with its log still in `state` is split, the last 600 only, the log back in `state` at the end; runs in the server container (`docker exec`) | default |
 | `turns/end-turn.test.js` | ending a turn with something left (v109): the game's "Zug beenden?" dialog, nothing sent until its button, "Zurück" keeps the turn, asked once per turn | default |
 | `techs/tech-tree-refresh.test.js` | the open tech tree redraws from the server's state after researching (the next age's roll), other modals stay | default |
 | `score/win-bonus.test.js` | the winner's points doubled (live, Rundenspiel, end screen) | default |
@@ -121,6 +122,7 @@ Some tests need the same variable on the test side too (`filter`, `timer`) – t
 | bot accounts, player-bots | `bots`, `match`, `security` |
 | limits per account (`utils/account-limits.js`) | `limits`, `security/abuse`, `bots`, `ladder` |
 | the bot ladder (`async/ladder.js`), `arena_standings` | `ladder` (on a freshly started server), `bots`, `db/migrations` |
+| saving Rundenspiele (`async/service.js` flush, `async_chat`, `async_log`) | `turns` (`engine-log`), `chat`, `stats`, `replay`, `scenes`, `summary`, `resign`, `restart`, `deadline`, `db/migrations` |
 | live-game sync (`broadcastState`, `state:rev`, `state:request`) | `sync`, `timer`, `pause`, `spectators`, `restart`, `rematch` |
 | `server.js` middleware order, `inject.js`, static files | `loading` |
 | `models/`, `migrations/`, database roles | `db/migrations`, then the tests of the feature |
