@@ -1820,6 +1820,7 @@ const MP = {
             this.joinCode = joinCode.toUpperCase();
             this.password = password;
 
+            this.leaveAsync();          // a live lobby: no Rundenspiel open any more
             await this.connect();
 
             this.socket.emit('session:connect', {
@@ -1945,6 +1946,7 @@ const MP = {
             this.sessionId = data.sessionId;
             this.joinCode = joinCode.toUpperCase();
             this.password = password;
+            this.leaveAsync();          // a live lobby: no Rundenspiel open any more
             await this.connect();
             this.socket.emit('session:connect', { sessionId: this.sessionId, clientId: this.getClientId(), password }, ack => {
                 if (ack.error) return toast(TXS(ack.error));
@@ -1956,7 +1958,17 @@ const MP = {
         }
     },
     /** After session:connect: take over the lobby state (players, settings, host, our seat or spectator). */
+    /**
+     * Into a live lobby from an open Rundenspiel (an invitation, a friend's lobby, matchmaking):
+     * leave its view first – before the socket connects, whose reconnect would open it again –
+     * or the page still counts as the Rundenspiel ("next game" button, its updates, no game:start).
+     */
+    leaveAsync: function () {
+        if (this.asyncId) ASYNC.close(true);
+    },
+
     enterSession: function (ack) {
+        this.leaveAsync();
         this.active = true;
         this.spectator = !!ack.spectator;
         this.lobbyIndex = this.spectator ? null : ack.playerIndex;
@@ -2013,6 +2025,7 @@ const MP = {
             this.lobbyIndex = 0; // Host is always 0
             this.gameConfig = config;
 
+            this.leaveAsync();          // a live lobby: no Rundenspiel open any more
             await this.connect();
 
             this.socket.emit('session:connect', {
@@ -3290,12 +3303,13 @@ const ASYNC = {
         this.apply(view);
     },
 
-    /** Leave the game view (the game itself goes on). */
-    close: function () {
+    /** Leave the game view (the game itself goes on). `stay`: on this page (into a live lobby). */
+    close: function (stay) {
         if (MP.socket && MP.asyncId) MP.socket.emit('async:close', {});
         MP.clearScenes();
         MP.asyncId = null;
         MP.nextIds = [];
+        MP._nextAt = 0;                 // the list is gone: the next game opened asks again at once
         MP.drawNextGame();
         MP.active = false;
         MP.spectator = false;
@@ -3305,7 +3319,7 @@ const ASYNC = {
         const credBox = $('mp-cred-box');
         if (credBox) credBox.textContent = '';
         // older versions are only there for Rundenspiele started on them – afterwards back to the current game
-        if (OLD_VERSIONS.includes(APP_VERSION_HERE)) { location.href = '/'; return; }
+        if (!stay && OLD_VERSIONS.includes(APP_VERSION_HERE)) { location.href = '/'; return; }
     },
 
     apply: function (view) {

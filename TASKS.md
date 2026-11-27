@@ -459,11 +459,12 @@ Texts with bad language are not sent but reported automatically, and the sender 
 **Decisions**
 - In a Rundenspiel, while it isn't one's turn (or the game is over), *▶ Nächstes Spiel (n)* appears below the waiting note when other games wait for one's turn; it opens the one with the nearest deadline. Hidden during one's own turn.
 - The list is fetched right after one's turn ends and at most every 20 seconds otherwise.
+- Never in a live lobby or live game: joining one from an open Rundenspiel (an invitation, a friend's lobby, matchmaking) leaves the Rundenspiel first.
 
 **Implementation**
-- `mp.js`: `refreshNext()` (from `syncTurnBlocker`), `drawNextGame()` (below the AFK/resign banner if one is shown), `openNextGame()` (closes the game and opens the next; on an older game version page via `/?async=`). `ASYNC.close()` hides it. Texts in `client/i18n.js`.
+- `mp.js`: `refreshNext()` (from `syncTurnBlocker`), `drawNextGame()` (below the AFK/resign banner if one is shown), `openNextGame()` (closes the game and opens the next; on an older game version page via `/?async=`). `ASYNC.close()` hides it and drops the 20-second wait, so a game opened again asks at once. `MP.leaveAsync()` closes an open Rundenspiel (`ASYNC.close(true)`: on this page, also on an older game version) before `joinWith`, `watch` and `host` connect, in `enterSession` and when matchmaking found a lobby. Before, the page kept `MP.asyncId` in the live lobby: the button stayed, and the live game's `game:start` would have been ignored. Texts in `client/i18n.js`.
 
-**Tests:** `tests/nextgame/nextgame.test.js`.
+**Tests:** `tests/nextgame/nextgame.test.js` (also: the button again after reopening a game, none after joining a live lobby from a Rundenspiel); lobbies, friends, invite, spectators, match, rematch, security/activity-handlers.
 
 **Status:** ✅ on `development`
 
