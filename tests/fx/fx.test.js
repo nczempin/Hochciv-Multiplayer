@@ -11,7 +11,7 @@
  * Uses an installed Chrome or Edge (no browser download); set HOCHCIV_BROWSER to its path if
  * it is not found.
  */
-const { chromium } = require('playwright-core');
+const { chromium, firefox } = require('playwright-core');
 const fs = require('fs');
 const path = require('path');
 const URL = (process.argv[2] || 'http://localhost:3000').replace(/\/$/, '') + '/?app=1';
@@ -154,9 +154,16 @@ const ok = (cond, name, info) => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${nam
 
   ok(!errors.length, 'no page errors', errors.slice(0, 3).join(' | '));
 
-  // big and wide screens: the game zooms the page (html{zoom}), the effect must still sit on the city
-  for (const [vw, vh, wheel] of [[1920, 1080, 0], [2560, 1080, 0], [1920, 1080, -400], [1280, 800, 0]]) {
-    const p2 = await (await browser.newContext({ viewport: { width: vw, height: vh }, locale: 'de-DE' })).newPage();
+  // big and wide screens: the game zooms the page (html{zoom}), the effect must still sit on the
+  // city. Firefox too (it gets getScreenCTM wrong under zoom) – when Playwright's Firefox is
+  // installed (node node_modules/playwright-core/cli.js install firefox), else skipped.
+  let fox = null;
+  try { fox = await firefox.launch(); } catch (e) { console.log('SKIP  Firefox (not installed)'); }
+  const screens = [[browser, 1920, 1080, 0, 1], [browser, 2560, 1080, 0, 1], [browser, 1920, 1080, -400, 1], [browser, 1280, 800, 0, 1], [browser, 1536, 864, 0, 1.25]];
+  if (fox) screens.push([fox, 1920, 1080, 0, 1], [fox, 1920, 1080, -400, 1]);
+  for (const [br, vw0, vh, wheel, dsf] of screens) {
+    const vw = vw0, tag = br === fox ? ' Firefox' : '';
+    const p2 = await (await br.newContext({ viewport: { width: vw, height: vh }, deviceScaleFactor: dsf, locale: 'de-DE' })).newPage();
     await p2.goto(URL, { waitUntil: 'networkidle' });
     await p2.evaluate(() => localStorage.removeItem('hochciv.save'));
     await p2.goto(URL, { waitUntil: 'networkidle' });
@@ -176,10 +183,55 @@ const ok = (cond, name, info) => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${nam
       return { city: [b.left + b.width / 2, b.top + b.height / 2], fx: HCFX.toScreen(ct.r, ct.c), cover: Math.max(Math.abs(sr.left - cr.left), Math.abs(sr.top - cr.top), Math.abs(sr.width - cr.width), Math.abs(sr.height - cr.height)) };
     });
     const off = at && at.fx ? Math.hypot(at.city[0] - at.fx[0], at.city[1] - at.fx[1]) : Infinity;
-    ok(off < 3, `${vw}x${vh}${wheel ? ' zoomed' : ''}: the effect sits on the city`, at && `${off.toFixed(1)} px off`);
-    ok(at && at.cover < 2, `${vw}x${vh}${wheel ? ' zoomed' : ''}: the canvas covers the map`, at && `${at.cover.toFixed(1)} px`);
+    ok(off < 3, `${vw}x${vh}${wheel ? ' zoomed' : ''}${tag}: the effect sits on the city`, at && `${off.toFixed(1)} px off`);
+    ok(at && at.cover < 2, `${vw}x${vh}${wheel ? ' zoomed' : ''}${tag}: the canvas covers the map`, at && `${at.cover.toFixed(1)} px`);
+
+    // a field overlay, checked on the picture: the storm surge darkens the sea fields where the map
+    // shows them (their polygons' boxes), more than the same points moved by one field
+    await p2.evaluate(() => { HCFX.clear(); S.ev = true; S.event = null; redraw(); });
+    await p2.mouse.move(1, 1);
+    await p2.waitForTimeout(200);
+    const before = (await p2.screenshot({ scale: 'css' })).toString('base64');
+    const sea = await p2.evaluate(() => {
+      const own = S.cities.find(c => c.owner === 0);
+      S.event = { round: S.round, row: own.r, col: own.c, k: 'sturmflut' };
+      redraw();
+      return [...document.querySelectorAll('#map polygon[data-r]')]
+        .filter(p => S.map.rows[+p.dataset.r][+p.dataset.c] === 'M')
+        .map(p => { const b = p.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2, b.width]; })
+        .filter(([x, y]) => { const e = document.elementFromPoint(x, y); return e && e.closest('#map'); });   // not under the bars
+    });
+    await p2.waitForTimeout(1300);
+    const during = (await p2.screenshot({ scale: 'css' })).toString('base64');
+    const score = await p2.evaluate(async ({ before, during, sea }) => {
+      const px = async b64 => {
+        const bmp = await createImageBitmap(await (await fetch('data:image/png;base64,' + b64)).blob());
+        const c = new OffscreenCanvas(bmp.width, bmp.height), g = c.getContext('2d');
+        g.drawImage(bmp, 0, 0);
+        return g.getImageData(0, 0, bmp.width, bmp.height);
+      };
+      const A = await px(before), B = await px(during);
+      const diff = (x, y) => {
+        let s = 0, n = 0;
+        for (let dy = -4; dy <= 4; dy += 2) for (let dx = -4; dx <= 4; dx += 2) {
+          const X = Math.round(x + dx), Y = Math.round(y + dy);
+          if (X < 0 || Y < 0 || X >= A.width || Y >= A.height) continue;
+          const i = (Y * A.width + X) * 4;
+          s += Math.abs(A.data[i] - B.data[i]) + Math.abs(A.data[i + 1] - B.data[i + 1]) + Math.abs(A.data[i + 2] - B.data[i + 2]); n++;
+        }
+        return n ? s / n : 0;
+      };
+      const H = sea[0] ? sea[0][2] : 40;
+      const at = (sx, sy) => sea.reduce((a, [x, y]) => a + diff(x + sx * H, y + sy * H * 0.86), 0) / (sea.length || 1);
+      const moved = [[1, 0], [-1, 0], [0.5, 1], [-0.5, 1], [0.5, -1], [-0.5, -1]].map(([x, y]) => at(x, y));
+      return { here: at(0, 0), moved: Math.max(...moved), tinted: sea.filter(([x, y]) => diff(x, y) > 25).length / (sea.length || 1) };
+    }, { before, during, sea });
+    ok(sea.length > 5 && score.here > score.moved * 1.2, `${vw}x${vh}${wheel ? ' zoomed' : ''}${tag}: the storm surge lies on the sea fields`, `${score.here.toFixed(0)} here, ${score.moved.toFixed(0)} one field off`);
+    ok(score.tinted > 0.95, `${vw}x${vh}${wheel ? ' zoomed' : ''}${tag}: every sea field tinted`, `${(score.tinted * 100).toFixed(0)} %`);
+    await p2.evaluate(() => { HCFX.clear(); S.event = null; redraw(); });
     await p2.context().close();
   }
+  if (fox) await fox.close();
   await browser.close();
   console.log(failed ? `\n${failed} FAILED` : '\nall passed');
   process.exit(failed ? 1 : 0);
