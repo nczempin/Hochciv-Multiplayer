@@ -725,6 +725,8 @@ function action(g, userId, type, params) {
  * turns, eliminated players. Yields between automatic turns (KI turns can take seconds).
  * `onStep` is called after every automatic step (live broadcast).
  */
+const kiTurnSeconds = require('../utils/metrics').async.kiTurn;     // P1.1: what a KI turn costs
+
 async function drive(g, onStep) {
     const S = g.state;
     if (!S || g.status !== 'playing') return;
@@ -746,11 +748,13 @@ async function drive(g, onStep) {
         if (p.dead) { finishAndAdvance(g); continue; }
         if (!ENG(g).isAutoPlayer(p)) break;         // a human's turn
         await new Promise(resolve => setImmediate(resolve));
+        const t0 = process.hrtime.bigint();
         try {
             ENG(g).autoTurn(S);
         } catch (err) {
             console.error(`[Async] ${p.kind} turn failed in game ${g.id}:`, err);
         }
+        kiTurnSeconds.observe({ kind: String(p.kind || 'ki'), level: String(p.kiLevel || '') }, Number(process.hrtime.bigint() - t0) / 1e9);
         finishAndAdvance(g);
         if (onStep) await onStep();
     }

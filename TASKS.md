@@ -47,6 +47,7 @@ Status: ⬜ planned · 🔨 in progress · ✅ on `development` (staging) · �
 | 37 | F37 | [Database roles and migrations](#f37-database-roles-and-migrations) | ✔ | ✔ | ✅ |
 | 38 | F38 | [Public bot descriptions](#f38-public-bot-descriptions) | ✔ | ✔ | ✅ (#171) |
 | 39 | F39 | [Arena](#f39-arena) | – | ✔ | 🚧 (#121) |
+| 40 | P1 | [Scalability, phase 1](#p1-scalability-phase-1) | – | ✔ | 🔨 |
 
 The numbers are those of the original proposal; F11 and F12 were requested after the staging tests of F1. F15–F22 (and F8, F10 moved up from "later") are the second round, approved on 2026-11-03. Not wanted for now: a vacation mode for Rundenspiele, a tutorial, tournaments (too few players yet). F23–F27 are the third round, approved on 2026-11-10; F28 was asked for the same day. Parked as GitHub issues for later: daily challenge (#120), bot arena (#121), Discord integration (#122), mirror match (#161, was F33). The order puts the small fixes for live games first. F6 and F7 come before F5 because they record per-turn data that F5 can reuse.
 
@@ -831,3 +832,21 @@ Rest of SA-13 from the second security audit: the server no longer connects as t
 **Tests:** `tests/ladder/ladder.test.js` – pairing and standings without a server (also in CI); against the local server the opt-in, the settings and the pairing of bots that ask for their games. Not covered by a test yet: a ladder game played to its end by two bot programs, and the *Arena* page in a browser.
 
 **Status:** 🚧 built, not yet played through by real bots
+
+## P1 Scalability, phase 1
+
+**Goal:** Many bots and players in Rundenspiele without the database and the event loop giving out: phase 1 of the scalability report (write less, read less, limit per account). Gate to phase 2: bytes written to the database per move down at least 5×, and the game list's p95 under 50 ms.
+
+**Built so far (PR A, write path):**
+
+* **P1.1 figures** – `utils/metrics.js`: action time by kind (`hochciv_async_action_seconds`), KI turn time by level (`hochciv_ki_turn_seconds`, timed in `logic.drive`), save time and size, writes by reason, save requests, views sent and their size, game-list time, games in memory. Grafana: row *Rundenspiele* (also `async_games` updates and dead rows from the exporter).
+* **P1.2 one save after the KI turns** – `withGame` no longer saves after every bot / KI turn: each turn records its statistics and a view goes out at most every 500 ms; the game is saved once when they are through.
+* **P1.3 delayed saving** – a save marks the game; the row is written `ASYNC_FLUSH_MS` (2 s) later in the game's queue, so a burst of moves costs one write. Written at once: the end of a game, a change of what the game list selects by (status, public, players, invitations, whose turn), chat messages. The row is serialised at once and written with one `UPDATE` (bind parameters); the writes of a game go out in order; a failed write is tried again. Shutdown writes everything left (`flushAll`). The game list takes turn, round and winners from the copy in memory.
+* **P1.9 leaner views** – the extra JSON copy per viewer is gone (`L.view` copies already, Socket.IO encodes at once); the viewers found by the broadcast are reused for the notifications.
+* **P1.10 cache limit** – at most `ASYNC_MAX_CACHED` (200) games in memory, least recently used first; a game is never dropped while it runs, has unwritten changes or somebody has it open.
+
+**Next:** sessions and game list (P1.7, P1.5), limits per account (P1.11), Arena standings (P1.6), the row split (P1.4), `rev` instead of the full resync (P1.8).
+
+**Tests:** the existing Rundenspiel tests (turns, stats, replay, scenes, chat, resign, deadline, restart, ladder) against the local server.
+
+**Status:** 🔨 PR A on `development`
