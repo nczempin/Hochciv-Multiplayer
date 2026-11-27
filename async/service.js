@@ -394,12 +394,19 @@ async function create(user, body, internal) {
  * seats of players who resigned (they keep their lost game and, ranked, the penalty). The
  * host's time per turn (`turnDays`, 1 / 3 / 7) holds from now on. Returns { id, guests } or
  * { error }.
+ *
+ * `opts.restart` (the server shuts down, sockets/game.js convertAllOnShutdown): no limit of
+ * running Rundenspiele – the game would be lost otherwise – and the state is copied at once,
+ * before anything else can still change it.
  */
 async function fromLive(hostUser, session, opts) {
-    const active = await AsyncGame.count({ where: { status: ACTIVE, participantIds: { [Op.contains]: [hostUser.id] } } });
-    if (active >= MAX_ACTIVE_PER_USER) return { error: `Höchstens ${MAX_ACTIVE_PER_USER} laufende Rundenspiele.` };
-    const gc = session.gameConfig || {};
+    const restart = !!(opts && opts.restart);
     const S = JSON.parse(JSON.stringify(session.state));
+    if (!restart) {
+        const active = await AsyncGame.count({ where: { status: ACTIVE, participantIds: { [Op.contains]: [hostUser.id] } } });
+        if (active >= MAX_ACTIVE_PER_USER) return { error: `Höchstens ${MAX_ACTIVE_PER_USER} laufende Rundenspiele.` };
+    }
+    const gc = session.gameConfig || {};
     const ranked = gc.ranked === true;
     const takeover = ranked ? 'schwer' : 'mittel';
     const now = Date.now();

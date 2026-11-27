@@ -1466,6 +1466,48 @@ async function processGameOverMmr(session, io, sessionId, isRanked = false) {
 }
 
 // for tests/score
+/**
+ * The server shuts down (SIGTERM / SIGINT: a deploy, Watchtower, a reboot – server.js): every
+ * running live game goes on as a Rundenspiel, as if its host had chosen "Als Rundenspiel
+ * fortsetzen" (F27, async/service.js fromLive). Its host is the session's host if they have an
+ * account, else the first other player with one. A game without any player with an account
+ * can't be one (Rundenspiele need an account) and is lost, as before. The players get
+ * 'game:toAsync' with `restart: true` (client/pause.js waits for the server to be back).
+ * Returns [{ session, asyncId } | { session, error }].
+ */
+async function convertAllOnShutdown(io) {
+    const { User } = require('../models');
+    const out = [];
+    for (const [id, session] of sessions.getAllSessions()) {
+        const S = session.state;
+        if (session.status !== 'playing' || !S || S.over || session.converting || session.converted) continue;
+        const account = p => p && p.kind === 'human' && p.dbUserId && !p.resigned;
+        const lp = [session.players[session.hostIndex]].concat(session.players).find(account);
+        if (!lp) { out.push({ session: id, error: 'no account' }); continue; }
+        session.converting = true;
+        let r;
+        try {
+            const user = await User.findByPk(lp.dbUserId);
+            r = user ? await require('../async/service').fromLive(user, session, { restart: true }) : { error: 'account gone' };
+        } catch (err) {
+            r = { error: err.message || String(err) };
+        }
+        if (r.error) {
+            session.converting = false;
+            console.error(`[Shutdown] Session ${id} not converted: ${r.error}`);
+            out.push({ session: id, error: r.error });
+            continue;
+        }
+        session.converted = r.id;
+        session.turnClock = null;
+        console.log(`[Shutdown] Session ${id} → Rundenspiel ${r.id}`);
+        io.to(id).emit('game:toAsync', { asyncId: r.id, by: lp.dbUsername || lp.name, guests: r.guests, restart: true });
+        out.push({ session: id, asyncId: r.id });
+    }
+    return out;
+}
+
+module.exports.convertAllOnShutdown = convertAllOnShutdown;
 module.exports.processGameOverMmr = processGameOverMmr;
 // for the matchmaking (sockets/match.js)
 module.exports.startGame = startGame;
