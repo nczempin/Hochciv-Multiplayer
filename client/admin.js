@@ -93,8 +93,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     // --- Overview: metrics, global switches, lobbies ---
+    const ladderAdmin = HC_LADDER_ADMIN.mount(document.getElementById('admin-ladder-panel'), authFetch);
     const LIVE_STATUS = { placement: tx('Startplättchen'), draft: tx('Draft'), playing: tx('Läuft'), finished: tx('Beendet') };
     async function loadDashboard() {
+        ladderAdmin.refreshStatus();
         try {
             const mData = await (await fetch('/api/admin/metrics')).json();
             document.getElementById('admin-lobbies-count').textContent = mData.lobbiesActive;
@@ -150,6 +152,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         msg.textContent = data.discordInvite ? tx('Gespeichert.') : tx('Entfernt – der Discord-Knopf ist ausgeblendet.');
     };
     loadSettings();
+
     window.toggleMaintenance = async () => {
         await post('/api/admin/config', { maintenanceMode: !window._maintenanceMode });
         loadDashboard();

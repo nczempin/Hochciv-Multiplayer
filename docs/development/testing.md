@@ -42,6 +42,7 @@ The server limits logins and other requests per minute, so tests run back to bac
 | `alerts/alerts.test.js` | sound and tab alerts: tones for join, ready, start, turn and chat, the blinking title of a hidden tab, the sound switch | default |
 | `auth/google-app-login.test.js` | Android Google sign-in (`/api/auth/google/*`) | override file with a token stub (see header) |
 | `invite/invite.test.js` | invite links: copying, the preview, joining a private lobby and a Rundenspiel, watching a running game, guests, English | default |
+| `ladder/ladder.test.js` | bot ladder: pairing and standings (without a server); with the server's address also the owner's opt-in, the admin's settings and the pairing of bots that ask for their games | `LADDER_TICK_MS=500` |
 | `lobbies/lobby-filter.test.js` | filters of the open games: every lobby setting in `/api/public-sessions`, each filter and combinations on live lobbies and Rundenspiele, search, reset, kept filters, phone | default |
 | `bots/bots.test.js` | bot accounts: tokens, owners, limits, the *Meine Bots* tab; player-bots in lobbies, Rundenspiele and matchmaking groups; a bot as friend, invited into a lobby and a Rundenspiel | default |
 | `bots/description.test.js` | bot descriptions: owner and admin permissions, length validation, editing and clearing in *Meine Bots*, escaped and wrapped public profile text | default |
@@ -102,7 +103,7 @@ Some tests need the same variable on the test side too (`filter`, `timer`) – t
 
 ## On GitHub
 
-`.github/workflows/checks.yml` runs on every pull request into `development` and `main`: the tests that need no server (`security/audit`, `security/research`, `security/params`, `security/activity-handlers`, `security/continuity`, `security/abuse`, `random/deal`, `draft/civdraft`, `draft/async-draft`, `challenge/challenge-map`), `db/migrations` against a Postgres service container and `npm audit --omit=dev --audit-level=high`. Workflow actions are pinned to commit SHAs; Dependabot (`.github/dependabot.yml`) proposes updates of the actions and the npm packages as pull requests into `development`.
+`.github/workflows/checks.yml` runs on every pull request into `development` and `main`: the tests that need no server (`security/audit`, `security/research`, `security/params`, `security/activity-handlers`, `security/continuity`, `security/abuse`, `random/deal`, `draft/civdraft`, `draft/async-draft`, `challenge/challenge-map`, `ladder/ladder`), `db/migrations` against a Postgres service container and `npm audit --omit=dev --audit-level=high`. Workflow actions are pinned to commit SHAs; Dependabot (`.github/dependabot.yml`) proposes updates of the actions and the npm packages as pull requests into `development`.
 
 ## Which tests to run
 
@@ -116,5 +117,6 @@ Some tests need the same variable on the test side too (`filter`, `timer`) – t
 | a feature from [TASKS.md](../../TASKS.md) | that feature's test (named in its section) |
 | auth, origin check, sessions | `security`, `auth`, `loading` |
 | bot accounts, player-bots | `bots`, `match`, `security` |
+| the bot ladder (`async/ladder.js`) | `ladder`, `bots`, `db/migrations` |
 | `server.js` middleware order, `inject.js`, static files | `loading` |
 | `models/`, `migrations/`, database roles | `db/migrations`, then the tests of the feature |

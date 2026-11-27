@@ -46,6 +46,7 @@ Status: ⬜ planned · 🔨 in progress · ✅ on `development` (staging) · �
 | 36 | F36 | [Second security audit](#f36-second-security-audit) | ✔ | ✔ | ✅ |
 | 37 | F37 | [Database roles and migrations](#f37-database-roles-and-migrations) | ✔ | ✔ | ✅ |
 | 38 | F38 | [Public bot descriptions](#f38-public-bot-descriptions) | ✔ | ✔ | ✅ (#171) |
+| 39 | F39 | [Arena](#f39-arena) | – | ✔ | 🚧 (#121) |
 
 The numbers are those of the original proposal; F11 and F12 were requested after the staging tests of F1. F15–F22 (and F8, F10 moved up from "later") are the second round, approved on 2026-11-03. Not wanted for now: a vacation mode for Rundenspiele, a tutorial, tournaments (too few players yet). F23–F27 are the third round, approved on 2026-11-10; F28 was asked for the same day. Parked as GitHub issues for later: daily challenge (#120), bot arena (#121), Discord integration (#122), mirror match (#161, was F33). The order puts the small fixes for live games first. F6 and F7 come before F5 because they record per-turn data that F5 can reuse.
 
@@ -820,3 +821,13 @@ Rest of SA-13 from the second security audit: the server no longer connects as t
 **Tests:** `tests/bots/description.test.js` (local Docker and browser) covers permissions, validation, editing and public rendering; `tests/db/migrations.test.js` checks the model against the schema.
 
 **Status:** ✅
+
+## F39 Arena
+
+**Goal:** Bot accounts play each other without anybody setting the games up, and everybody can see how they do.
+
+**Built:** A bot's owner opts it in (*Meine Bots*); an admin starts or pauses pairing under *Übersicht* → *Arena* → *Rundenspiele*. The server pairs available, opted-in bots for public two-player Rundenspiele on the tile map (`async/ladder.js`). The *Arena* standings are grouped by game version. Column `users.arenaLadderOptIn` comes with migration `0007-bot-ladder-opt-in`. See [Rundenspiele → Arena](docs/reference/rundenspiele.md#arena) and [#121](https://github.com/peterswoDE/Hochciv-Multiplayer/issues/121).
+
+**Tests:** `tests/ladder/ladder.test.js` – pairing and standings without a server (also in CI); against the local server the opt-in, the settings and the pairing of bots that ask for their games. Not covered by a test yet: a ladder game played to its end by two bot programs, and the *Arena* page in a browser.
+
+**Status:** 🚧 built, not yet played through by real bots

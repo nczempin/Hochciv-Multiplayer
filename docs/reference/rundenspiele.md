@@ -56,6 +56,30 @@ A seat taken over by the KI plays at level *mittel*, in ranked games *schwer*. I
 
 The weekly challenge (`utils/challenge.js`) is a Rundenspiel the server creates for one player with `config.challenge` = the week: the week's map, nation, ability and settings, three KI seats (base ability, the week's level) and a fixed seed. The seed is also the game's fixed dice (`config.fixedDice`, the engine's `cfg.fixedDice` since v106): which techs become available and the event of every round depend only on the week, not on how the game is played, so every attempt has the same tech tree and events. Battles and other dice still follow the play. It can't be left or cancelled, only resigned; there are no free seats. When it ends, its result goes to its row in `challenge_results` (by `asyncId`). It is never ranked. A player can play a week as often as they like, one attempt at a time; starting another resigns the running one.
 
+## Arena
+
+The correspondence arena (`async/ladder.js`) pairs [bot accounts](bot-accounts.md) automatically. Admins use *Aktiv* under *Übersicht* → *Arena* → *Rundenspiele* and click *Speichern* to start or pause pairing. Pausing lets games in progress finish. The settings are stored in the `arena-correspondence-ladder` row. Owners opt their bots in under *Meine Bots* → *An der Arena für Rundenspiele teilnehmen* (`users.arenaLadderOptIn`).
+
+The server checks for pairings every 15 seconds by default. An admin can save a pairing interval of 5–300 seconds. This changes how soon the server checks for available bots. It leaves the deadlines of existing games intact. Each check can pair bots that
+
+* asked for their games (`GET /api/async`) within the last five minutes,
+* are opted in and allowed to play (not disabled, their owner neither),
+* have no running ladder game and fewer than the 30 running Rundenspiele an account may have.
+
+The bot with the fewest finished ladder games is paired first, with the opponent it has met least often, then the one with fewer games, then the closest MMR. With *Direkte Wiederholung vermeiden* nobody gets the opponent of its last game again right away.
+
+A ladder game is an ordinary public Rundenspiel for two on the tile map, with random nations and turn order and the admin's days per turn (`config.arena`, `config.arenaLadder`). Both bots are seated from the start and place their start tiles first. It is rated between bots of different owners; between bots of one owner only if the admin allows it. It can be resigned but neither left nor cancelled, and it follows the usual waiting rules: a bot that doesn't play in time is replaced by the KI. Only the server creates ladder games – a request can't set the two flags.
+
+The *Arena* standings (`GET /api/async/ladder`) count the finished games per game version: games, wins–draws–losses and the score rate (wins plus half the draws, over the games). A bot whose seat the KI took over has lost that game, whatever the KI made of it.
+
+The games list shows the most recently started games for that version. Admins can set the number shown under *Letzte Partien (Anzahl)*. The default is 30.
+
+In the admin overview, *Position der Arena* selects the leaderboard tab (default) or a main-menu button. The game page reads the saved selection when it loads. Both entry points call `RANKING.openLadder()` in `client/ranking.js`. The main-menu hook is `MP.drawLadderButton()` in `mp.js`, and the leaderboard tab is in `RANKING.draw()`.
+
+The admin status line counts opted-in accounts, available bots, and active ladder games. Available bots meet the same check-in, eligibility and concurrency requirements as the pairing scheduler. The last-check time records the start of the latest enabled pairing pass since server start. These counts refresh independently of unsaved changes to the form.
+
+The panel in `client/ladder-admin.js` can mount separately from the global admin page. Its three endpoints are scoped in `routes/ladder-admin.js`. The `ladderAccess` check grants Admin and Super Admin write access and Review Admin read access. Giving another role just this panel can use the same scoped check.
+
 ## Resigning
 
 While the game runs, a player can resign (*Aufgeben* in the game menu, `POST /api/async/:id/resign`). The KI plays the seat to the end, like after the 7-day timeout (same level, same 15 MMR in ranked games); the player watches the game read-only. A duel without KI ends at once with the other player's win; when nobody human is left, the most points win.

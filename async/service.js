@@ -17,6 +17,7 @@ const { finalPoints } = require('../utils/score');
 const chatLib = require('../utils/chat');
 const reports = require('../utils/reports');
 const terms = require('../utils/terms');
+const Bots = require('../utils/bots');
 
 const ENDED = ['finished', 'cancelled'];
 const Stats = require('../utils/stats');
@@ -370,7 +371,8 @@ function generateJoinCode() {
 async function create(user, body, internal) {
     const active = await AsyncGame.count({ where: { status: ACTIVE, participantIds: { [Op.contains]: [user.id] } } });
     if (active >= MAX_ACTIVE_PER_USER) return { error: `Höchstens ${MAX_ACTIVE_PER_USER} laufende Rundenspiele.` };
-    const opts = Object.assign({}, body || {}, { challenge: internal && internal.challenge || undefined, seed: internal && internal.seed || undefined });
+    // arena: only createLadderGame (the bot ladder) sets it, never a request
+    const opts = Object.assign({}, body || {}, { challenge: internal && internal.challenge || undefined, seed: internal && internal.seed || undefined, arena: undefined });
     const { g, error } = L.create(userOf(user), opts);
     if (error) return { error };
     g.joinCode = generateJoinCode();
@@ -385,6 +387,21 @@ async function create(user, body, internal) {
         if (r && r.error) inviteErr.push(r.error);
     }
     return { id: g.id, joinCode: g.joinCode, inviteErrors: inviteErr };
+}
+
+/** The bot ladder (async/ladder.js): a game between two bot accounts, both seated from the start. */
+async function createLadderGame(a, b, options) {
+    const { g, error } = L.createLadderGame(userOf(a), userOf(b), options);
+    if (error) return { error };
+    g.joinCode = generateJoinCode();
+    g.waitSince = Date.now();
+    g.reminded = false;
+    const row = await AsyncGame.create(Object.assign({ joinCode: g.joinCode, hostUserId: a.id }, rowFields(g)));
+    g.id = row.id;
+    cache.set(g.id, { g, queue: Promise.resolve(), touched: Date.now(), busy: 0 });
+    notify(L.waitingOn(g).userIds, { type: 'turn', gameId: g.id,
+        subject: 'Du bist am Zug', text: 'Lege dein Startplättchen in deinem Rundenspiel.' });
+    return { id: g.id };
 }
 
 /**
@@ -615,6 +632,7 @@ async function list(user) {
         attributes: attrs, order: [['updatedAt', 'DESC']], limit: 20,
     });
     const u = await User.findByPk(user.id);
+    if (Bots.isBot(u)) require('./ladder').seen(u);     // a bot that asks for its games is there to play
     return {
         notifyEmail: u ? u.notifyEmail : true,
         notifyPush: u ? u.notifyPush : true,
@@ -824,6 +842,7 @@ function init(ioServer) {
     const t = setInterval(sweep, SWEEP_MS);
     t.unref();
     setTimeout(() => { resume().then(sweep); }, 15000).unref();
+    require('./ladder').start();
 }
 
 async function setNotifyEmail(user, on) {
@@ -892,7 +911,8 @@ function evict(id) {
 }
 
 module.exports = {
-    init, evict, create, fromLive, info, join, leave, cancel, invite, decline, list, open, action, place, draftPick, civDraftPick, chat, report, resign,
+    init, evict, create, createLadderGame, fromLive, info, join, leave, cancel, invite, decline, list, open, action, place, draftPick, civDraftPick, chat, report, resign,
     setNotifyEmail, setNotifyDiscord, sweep, room, removeUser, purgeEndedChats,
+    ACTIVE, MAX_ACTIVE_PER_USER,
     processResult,      // for tests/score
 };

@@ -6,6 +6,7 @@ const express = require('express');
 const router = express.Router();
 const service = require('../async/service');
 const serverState = require('../utils/serverState');
+const ladder = require('../async/ladder');
 
 function isAuthenticated(req, res, next) {
     if (req.isAuthenticated && req.isAuthenticated()) return next();
@@ -42,6 +43,9 @@ router.post('/', (req, res) => {
 
 // Look up a game by join code (for "Mit Code beitreten")
 router.get('/code/:code', (req, res) => send(res, service.info(req.user, null, req.params.code)));
+
+// The bot ladder (async/ladder.js): standings and the latest games of a game version
+router.get('/ladder', (req, res) => send(res, ladder.report(req.query.version)));
 
 // Notification preference
 router.post('/notify', (req, res) => send(res, service.setNotifyEmail(req.user, !!(req.body || {}).email)));

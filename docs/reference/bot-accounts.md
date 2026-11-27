@@ -56,6 +56,8 @@ The same two settings at creation (`config.playerBots`, `config.playerBotLimit`)
 
 The bot filter works the same way as in a live lobby (`config.playerBotFilter`, the same controls in the *Neues Rundenspiel* form). It is set at creation and can't be changed afterwards. When a bot hosts, its owner is stored (`config.hostBotOwnerId`, not public) so that *Meine eigenen Bots* means that owner's bots. `playerBotRoom(g, bot)` checks the filter when a bot joins (`POST /api/async/:id/join`) and when it is invited (`POST /api/async/:id/invite`). Friendship with the host is checked at that moment. In `GET /api/async`, `config.playerBotFilter` is only `true`/`false`. Asked by a bot, each game also has `playerBotsForYou`: whether the bot may take a seat now (player-bots allowed, room under the limit, and the filter lets it in). A Rundenspiel continued from a live game takes over the lobby's filter.
 
+A bot whose owner opted it in is paired with other bots automatically while the [correspondence arena](rundenspiele.md#arena) is active.
+
 ### Friends and invitations
 
 A bot can be a friend (`utils/friends.js`): a person sends the request, and the bot's program accepts or declines it over `/api/friends` like a player would; bots can't send requests. A bot's socket counts as online for its friends (`sockets/friends.js`). Inviting a bot friend into a live lobby (`friends:invite`) is refused unless the lobby takes one more player-bot (`playerBotPolicy`) and the host's bot filter lets it in; a Rundenspiel invitation of a bot (`POST /api/async/:id/invite`) is refused unless `playerBotRoom` (limit and filter) lets it in. Joining checks the same rules again. Friend suggestions (*Zuletzt gespielt mit*) still leave bots out.

@@ -27,7 +27,7 @@ Live lobbies and games are **not** in the database – they live in memory (`ses
 | `oauth_providers` | `OAuthProvider` | Google/Discord configuration |
 | `reports` | `Report` | Chat reports |
 | `banned_words` | `BannedWord` | Admins' word-filter entries |
-| `settings` | `Setting` | Server settings from the admin panel, one row per `key` (utils/settings.js): `discordInvite` |
+| `settings` | `Setting` | Server settings from the admin panel, one row per `key`: `discordInvite` (utils/settings.js), `arena-correspondence-ladder` (the bot ladder's settings as JSON, async/ladder.js) |
 | `session` | – | Login sessions (`connect-pg-simple`) |
 | `schema_migrations` | – | The applied migrations (`name`, `appliedAt`) |
 
@@ -41,7 +41,7 @@ Relations: a `User` has many `Passkey`, `TotpToken` and `DeviceToken` rows (devi
 | `password_hash` | bcrypt; empty for Google/Discord/passkey-only accounts |
 | `mmr` (default 1000), `gamesPlayed` | Ranking |
 | `role` (`user`/`botcreator`/`admin`/`superadmin`), `isActive`, `isBanned` | Rights and state |
-| `accountType` (`human`/`bot`), `ownerId`, `botTokenHash`, `botLimit`, `botDescription` | [Bot accounts](bot-accounts.md): a bot's owner and the SHA-256 of its token; how many bots a bot creator may own (null = default); the bot's public profile text (null = none) |
+| `accountType` (`human`/`bot`), `ownerId`, `botTokenHash`, `botLimit`, `botDescription`, `arenaLadderOptIn` | [Bot accounts](bot-accounts.md): a bot's owner and the SHA-256 of its token; how many bots a bot creator may own (null = default); the bot's public profile text (null = none); whether the bot takes part in the [correspondence arena](rundenspiele.md#arena) |
 | `googleId`, `discordId`, `avatarUrl` | Linked providers |
 | `activationCode…`, `resetCode…`, `pendingEmail`, `emailChangeCode…` | One-time codes with expiry and attempt counters |
 | `totpSecret`, `totpEnabled`, `totpAttempts`, `totpLockedUntil` | Authenticator (and its lockout) |
