@@ -606,6 +606,10 @@
         'Nur der Host kann das Spiel als Rundenspiel fortsetzen.': 'Only the host can continue the game as a turn-based game.',
         'Die KI zieht gerade – versuche es gleich noch einmal.': 'The AI is moving right now – try again in a moment.',
         'Das Spiel konnte nicht umgewandelt werden.': 'The game could not be converted.',
+        'Der Server startet neu – das Spiel geht als Rundenspiel weiter.': 'The server is restarting – the game goes on as a turn-based game.',
+        'Der Server startet neu. Das Spiel geht als Rundenspiel weiter – hier gibt es nichts mehr zu sehen.': 'The server is restarting. The game goes on as a turn-based game – there is nothing more to see here.',
+        'Der Server startet neu. Das Spiel geht als Rundenspiel weiter; du hattest aufgegeben – die KI spielt dein Reich weiter.': 'The server is restarting. The game goes on as a turn-based game; you had resigned – the AI plays your empire on.',
+        'Der Server startet neu. Das Spiel geht als Rundenspiel weiter. Rundenspiele gibt es nur mit Anmeldung – dein Reich spielt jetzt die KI.': 'The server is restarting. The game goes on as a turn-based game. Turn-based games need an account – the AI plays your empire now.',
         'Du spielst in diesem Spiel nicht mit.': 'You are not playing in this game.',
         // lobby presets (F25, client/presets.js)
         'Vorlagen': 'Presets',

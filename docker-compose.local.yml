@@ -53,6 +53,8 @@ services:
     image: hochciv-multiplayer-local
     container_name: hochciv-multiplayer-local
     restart: unless-stopped
+    # running live games are saved as Rundenspiele on shutdown (server.js) – give it time
+    stop_grace_period: 60s
     depends_on:
       hochciv-db-setup:
         condition: service_completed_successfully

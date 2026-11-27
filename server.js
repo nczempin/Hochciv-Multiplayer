@@ -342,6 +342,25 @@ Metrics.serve();
 
 // ── Start ────────────────────────────────────────────────────────────────────
 
+// Shutting down (a deploy, Watchtower, a reboot: Docker sends SIGTERM and waits stop_grace_period,
+// docker-compose*.yml): running live games are kept as Rundenspiele (sockets/game.js), then exit.
+let stopping = false;
+async function shutdown(signal) {
+    if (stopping) return;
+    stopping = true;
+    console.log(`[Shutdown] ${signal}: live games go on as Rundenspiele`);
+    setTimeout(() => process.exit(0), 50 * 1000).unref();          // never hang past Docker's grace period
+    try {
+        const done = await registerGame.convertAllOnShutdown(io);
+        console.log(`[Shutdown] ${done.filter(x => x.asyncId).length} of ${done.length} live games converted`);
+    } catch (err) {
+        console.error('[Shutdown] Converting live games failed:', err);
+    }
+    setTimeout(() => process.exit(0), 1000);                         // the 'game:toAsync' messages still go out
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
 server.listen(config.PORT, () => {
     console.log(`Hochciv Multiplayer-Server läuft auf Port ${config.PORT}`);
     console.log(`  REST:   http://localhost:${config.PORT}/api/sessions`);
