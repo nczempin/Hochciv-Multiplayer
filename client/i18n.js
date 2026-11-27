@@ -1406,6 +1406,7 @@
         'Spielstatus fehlt.': 'Game state missing.',
         'Ungültige Aktion.': 'Invalid action.',
         'Du bist nicht am Zug.': 'It is not your turn.',
+        'Dieser Zug ist schon beendet.': 'This turn has already ended.',
         'Falscher Status': 'Wrong status',
         'Kein Startplatz für dich reserviert.': 'No starting seat reserved for you.',
         'Du hast dein Startplättchen bereits platziert.': 'You have already placed your starting tile.',

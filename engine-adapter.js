@@ -339,7 +339,7 @@ function makeAdapter(engineDir, label) {
      */
     const KEY_PARAMS = ['tech', 'mode', 'kind', 'wonder'];
     const COUNT_PARAMS = ['n', 'amount'];
-    const INT_PARAMS = ['r', 'c', 'cityId', 'armyId', 'target'];
+    const INT_PARAMS = ['r', 'c', 'cityId', 'armyId', 'target', 'round'];
     const FORBIDDEN_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
     function checkParams(params) {
         for (const [k, v] of Object.entries(params)) {
@@ -472,6 +472,9 @@ function makeAdapter(engineDir, label) {
 
                 // ── Turn ──────────────────────────────────────────────────
                 case 'endTurn': {
+                    // The round the player ended (mp.js): an endTurn sent twice must not end the
+                    // player's next turn, when the KI turns in between have already come back round.
+                    if (params.round != null && params.round !== state.round) return 'Dieser Zug ist schon beendet.';
                     // v80+: an army still standing in a city blocks the end of the turn.
                     if (typeof E.blockingIssues === 'function') {
                         const stop = E.blockingIssues(state, pi);
