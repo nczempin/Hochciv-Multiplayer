@@ -845,8 +845,13 @@ Rest of SA-13 from the second security audit: the server no longer connects as t
 * **P1.9 leaner views** – the extra JSON copy per viewer is gone (`L.view` copies already, Socket.IO encodes at once); the viewers found by the broadcast are reused for the notifications.
 * **P1.10 cache limit** – at most `ASYNC_MAX_CACHED` (200) games in memory, least recently used first; a game is never dropped while it runs, has unwritten changes or somebody has it open.
 
-**Next:** sessions and game list (P1.7, P1.5), limits per account (P1.11), Arena standings (P1.6), the row split (P1.4), `rev` instead of the full resync (P1.8).
+**Built (PR B, sessions and game list):**
 
-**Tests:** the existing Rundenspiel tests (turns, stats, replay, scenes, chat, resign, deadline, restart, ladder) against the local server.
+* **P1.7 sessions** – `rolling` is off and the store no longer touches the session on every answer; `refreshSession` renews cookie and expiry at most every 15 minutes (30 days still count from the last visit). The user (and a bot's owner) comes from a cache (`USER_CACHE_MS`, 60 s); every change of a `users` row drops it at once – trigger `users_changed` → `pg_notify('hochciv_user_changed')` → `LISTEN` (migration 0008), no cache without the listener. Socket.IO runs session and passport only at the handshake (`onlyForHandshake`), not on every poll.
+* **P1.5 game list** – the rows come without `state`, chat, statistics, replay, marks, scenes and the rolled map (`jsonb_build_object` of the needed `data` fields), the five lists in parallel on the GIN indexes, finished games already seen are filtered in SQL. The answer is kept `ASYNC_LIST_CACHE_MS` (10 s) per account; saving a game drops the lists of its players and invited, a change of a public game (status, seats taken) all of them. Express answers repeats with `304` (weak ETag). Locally every list took under 10 ms.
+
+**Next:** limits per account (P1.11), Arena standings (P1.6), the row split (P1.4), `rev` instead of the full resync (P1.8).
+
+**Tests:** the existing Rundenspiel tests (turns, stats, replay, scenes, chat, resign, deadline, restart, ladder) against the local server; for PR B also auth, account, bots, invite, spectators, lobbies, maps, filter, friends, security, nextgame, reports, seasons and terms (`TERMS_CHECK=on`) – the tests that change users with raw SQL check the trigger.
 
 **Status:** 🔨 PR A on `development`

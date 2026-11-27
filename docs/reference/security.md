@@ -16,7 +16,8 @@
 
 ## Sessions and cookies
 
-* Login sessions are stored in PostgreSQL (table `session`) and last 30 days.
+* Login sessions are stored in PostgreSQL (table `session`) and last 30 days from the last visit. The cookie and the stored expiry are renewed at most every 15 minutes, not on every request (`utils/session-cost.js`); Socket.IO reads the session only at the handshake, not on every poll.
+* The logged-in user is kept up to `USER_CACHE_MS` (60 s) between requests. A ban, a role change or any other change of the `users` row – also by hand in `psql` – drops it at once: a trigger announces every change (`hochciv_user_changed`, migration 0008) and the server listens for it. Without that listener nothing is cached.
 * The cookie is `SameSite=Lax`, and `Secure` in production (`NODE_ENV=production`, behind a proxy with `trust proxy`).
 * Changing `SESSION_SECRET` logs everyone out.
 * A socket keeps the login it had when it connected. Whenever the other sessions of an account end – password change, password reset, a password set by an admin, a ban, deleting the account – its open sockets are closed as well (`utils/detachUser.js`), except those of the session that changed the password.

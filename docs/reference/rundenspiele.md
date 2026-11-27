@@ -18,6 +18,7 @@ setup ──▶ placement (tile map) ──┐
 * **placement / draft** – pre-phases of the tile map (everyone places a start tile) and of Marathon (ability draft).
 * **playing** – one action at a time per game; everyone who has the game open gets the new view (while bots and the KI play several turns in a row, at most every 500 ms). The game in memory is authoritative: it is written once per action (the KI turns it starts included), `ASYNC_FLUSH_MS` (2 s) later, so quick moves share one write. The end of a game, a change of whose turn it is and chat messages are written at once, and a shutdown writes whatever is left.
 * **finished** – result, points and MMR are stored as a match (`games`), the turn states become a replay. MMR, match and the game's `result` are written in one transaction ([Security](security.md#results-and-mmr)); if that fails, the scheduler tries again every 10 minutes, up to 5 times.
+  The game list (`GET /api/async`) reads only what it shows (no state, chat, statistics, replay or map; the five lists at once) and is kept `ASYNC_LIST_CACHE_MS` (10 s) per account – a change of one of the account's games or of a public game drops it, and a repeat with the same content gets `304`.
   The game list (`GET /api/async`, `ended`) keeps a finished game for each player until they open it once (`data.endSeen`, set by `async:open` and for everyone who has the game open when it ends), at most 14 days.
 * **cancelled** – by the host, when not enough players joined (games without KI), or when the host's account is deleted during setup.
 
