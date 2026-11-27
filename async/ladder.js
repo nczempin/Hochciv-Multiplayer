@@ -198,9 +198,11 @@ function start() {
 function standingsOf(field) {
     const scores = new Map();
     for (const game of field) for (const { userId, name } of game.seats) {
+        if (!userId) continue;
         if (!scores.has(userId)) scores.set(userId, { name, games: 0, wins: 0, draws: 0 });
     }
     for (const game of field.filter(counted)) for (const { userId, name, replaced } of game.seats) {
+        if (!userId) continue;
         const score = scores.get(userId);
         score.games++;
         if (replaced) continue;             // the KI finished the game for this bot: a loss, whatever the KI made of it
