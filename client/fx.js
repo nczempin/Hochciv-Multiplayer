@@ -17,7 +17,7 @@
  * How it hooks in: drawMap is wrapped (like client/chat.js and client/mobile/mobile.js do). Every
  * picture of #map is compared with the one before: new cities, more population, another owner,
  * a new event, a new battle (opts.fight). Positions are kept in map coordinates and turned into
- * pixels every frame (getCTM of #world), so zooming and panning (mobile layer) keep the effects
+ * pixels every frame (from the svg's viewBox), so zooming and panning (mobile layer) keep the effects
  * in place, and so does a redraw of the map in between.
  *
  * Nothing here changes the game state or the timing of the game: battles still last COMBAT_MS,
@@ -162,18 +162,40 @@
         if (!raf) raf = requestAnimationFrame(frame);
     }
 
-    /* Map → canvas through the screen: getCTM() is wrong where the page is enlarged with CSS
-       zoom (the game does that on big screens), getScreenCTM() and getBoundingClientRect()
-       are not. Both are in zoomed pixels, the canvas draws in its own: w / box.width. */
+    /* Map → canvas, computed from the svg's viewBox and its size – not from getCTM() or
+       getScreenCTM(): where the page is enlarged with CSS zoom (the game does that on big
+       screens) browsers get those wrong, each in its own way (Firefox: the scale without the
+       zoom but the offset with it; Chromium: getCTM's offset divided by the zoom). The canvas
+       lies exactly over the svg and has its size (frame), so the svg's own coordinates are the
+       canvas's: viewBox + preserveAspectRatio (+ a transform on #world) is all it takes. */
     function mapping(w, h) {
-        const world = mapSvg && mapSvg.querySelector('#world');
-        const m = world && world.getScreenCTM && world.getScreenCTM();
+        const vb = mapSvg && mapSvg.viewBox && mapSvg.viewBox.baseVal;
         const box = canvas && canvas.getBoundingClientRect();
-        if (!m || !box || !box.width || !box.height) return null;
-        const zx = w / box.width, zy = h / box.height;
+        if (!vb || !vb.width || !vb.height || !w || !h || !box || !box.width || !box.height) return null;
+        const par = mapSvg.preserveAspectRatio && mapSvg.preserveAspectRatio.baseVal;
+        let sx = w / vb.width, sy = h / vb.height, tx = 0, ty = 0;
+        if (!par || par.align !== 1) {                      // 1 = none: stretched, no letterbox
+            const s = par && par.meetOrSlice === 2 ? Math.max(sx, sy) : Math.min(sx, sy);
+            const a = par ? par.align : 6;                  // 6 = xMidYMid (default)
+            const fx = [0, 0, 0, 0.5, 1, 0, 0.5, 1, 0, 0.5, 1][a] ?? 0.5;
+            const fy = [0, 0, 0, 0, 0, 0.5, 0.5, 0.5, 1, 1, 1][a] ?? 0.5;
+            tx = (w - vb.width * s) * fx; ty = (h - vb.height * s) * fy;
+            sx = sy = s;
+        }
+        // a transform on #world (the game sets none, a mod might)
+        let g = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+        try {
+            const world = mapSvg.querySelector('#world');
+            const t = world && world.transform && world.transform.baseVal.consolidate();
+            if (t) g = t.matrix;
+        } catch (e) { /* no SVG DOM */ }
+        const zx = w / box.width, zy = h / box.height;     // canvas px per screen px (CSS zoom)
         return {
-            P: (x, y) => [(m.a * x + m.c * y + m.e - box.left) * zx, (m.b * x + m.d * y + m.f - box.top) * zy],
-            k: (Math.hypot(m.a, m.b) * zx) || 1,
+            P: (x, y) => {
+                const X = g.a * x + g.c * y + g.e, Y = g.b * x + g.d * y + g.f;
+                return [(X - vb.x) * sx + tx, (Y - vb.y) * sy + ty];
+            },
+            k: (sx * Math.hypot(g.a, g.b)) || 1,
             box, zx, zy,
         };
     }
@@ -549,20 +571,23 @@
 
     // A tint pulsing over a set of fields, optionally with something rising from them
     function fieldsEffect(tiles, opt) {
-        const list = pick(tiles, opt.max || 40);
+        /* Every hit field gets the tint – a random part only looked patchy, as if the overlay sat
+           beside the fields. `max` limits only what is drawn on top (opt.draw, opt.emit). */
+        const list = tiles.slice(0, 1500);
+        const deco = new Set(pick(list, opt.max || 40));
         const extra = [];
-        if (opt.emit) list.forEach(([r, c]) => { const [x, y] = center(r, c); extra.push(...opt.emit(x, y)); });
+        if (opt.emit) deco.forEach(([r, c]) => { const [x, y] = center(r, c); extra.push(...opt.emit(x, y)); });
         add({
             dur: opt.dur || 2600,
             delay: opt.delay || 0,
             draw(ctx, t, P, k) {
                 const a = bell(span(t, 0, 0.9));
-                for (const [r, c] of list) {
-                    const [x, y] = center(r, c);
+                for (const tile of list) {
+                    const [r, c] = tile, [x, y] = center(r, c);
                     hexPath(ctx, P, k, x, y, 0.96);
                     ctx.fillStyle = rgba(opt.color, (opt.alpha || 0.4) * a * (opt.flicker ? 0.75 + 0.25 * Math.sin(t * 40 + r * 3 + c) : 1));
                     ctx.fill();
-                    if (opt.draw) opt.draw(ctx, t, P, k, x, y, r, c);
+                    if (opt.draw && deco.has(tile)) opt.draw(ctx, t, P, k, x, y, r, c);
                 }
                 particles(ctx, P, k, extra, t);
             },
