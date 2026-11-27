@@ -9,6 +9,8 @@
  *   HC_I18N.t(de, ...args)  – our own texts; %s placeholders in order, like the game's T()
  *   HC_I18N.tr(msg)         – a message from the server: exact key, or a key with %s whose
  *                             pattern matches (numbers and names in the message stay)
+ *   HC_I18N.label(msg)      – like tr(), for a server text that may also be just names
+ *                             ("Anna, Bert" or "2 Mitspieler"): names are not reported missing
  *   HC_I18N.apply(root)     – the fixed texts of a page (text nodes, placeholder, title)
  *   HC_I18N.lang(), .locale(), .missing()
  *
@@ -1687,7 +1689,7 @@
     }
 
     /** A message from the server (German) in the player's language; unknown ones stay as they are. */
-    function tr(msg, nested) {
+    function tr(msg, nested, quiet) {
         if (msg == null || lang() === 'de') return msg;
         msg = String(msg);
         const en = lookup(msg);
@@ -1698,7 +1700,7 @@
             // a part may be a message of its own ("Eigene Karte: <engine message>"); names stay
             if (m) return fill(lookup(k), m.slice(1).map(x => (nested ? x : tr(x, true))));
         }
-        if (!nested) missingSet.add(msg);
+        if (!nested && !quiet) missingSet.add(msg);
         return msg;
     }
 
@@ -1724,5 +1726,7 @@
         if (root === document && document.title) { const en = lookup(key(document.title)); if (en != null) document.title = en; }
     }
 
-    window.HC_I18N = { t, tr, apply, lang, locale, missing: () => [...missingSet], EN };
+    const label = msg => tr(msg, false, true);
+
+    window.HC_I18N = { t, tr, label, apply, lang, locale, missing: () => [...missingSet], EN };
 })();
