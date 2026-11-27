@@ -57,7 +57,7 @@ Node.js (Express, Socket.IO, Passport), PostgreSQL through Sequelize. The big pi
 | `client/i18n.js` | English texts of everything the server adds ([Languages](../development/languages.md)) |
 | `client/chat.js` | In-game chat panel |
 | `client/stats.js`, `client/replay.js` | Post-game statistics, replay viewer (`?replay=<id>`) |
-| `client/endscreen.js` | End screen tabs in Civ IV style: score history, demographics, wonders & cities, chronicle |
+| `client/endscreen.js` | End screen tabs in Civ IV style: score history, demographics, wonders & cities, chronicle, time-lapse (the map, points and log round by round from the stored replay) |
 | `utils/logtext.js`, `client/logtext.js` | The game log in every language: the server records what each log line is made of (`e.t`: `T()` keys with arguments, literal text), the client puts it together in the player's language |
 | `client/report.js` | Player report: tap a row of the in-game player list – score, victory progress, empire, abilities, tech tree, trend and key moments |
 | `client/scenes.js` | Plays what the others did on the map (also the diff code `utils/scenes.js` uses) |
