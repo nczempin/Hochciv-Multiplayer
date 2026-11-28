@@ -43,7 +43,7 @@ router.post('/sessions', lobbyLimit, async (req, res) => {
         return res.status(400).json({ error: 'Ungültige Konfiguration.' });
     }
     // Only the host's settings; the seed is the server's (a chosen seed means a known map and dice)
-    const gameConfig = { ...sessions.cleanHostConfig(config), seed: crypto.randomInt(2 ** 31) };
+    const gameConfig = { ...sessions.cleanHostConfig(config), seed: 1 + crypto.randomInt(2 ** 31 - 1) };
     // a bot account plays its seat itself (sessions.js playerBotPolicy)
     const result = sessions.createSession(gameConfig, { ...host, ...(await botInfo(req, null)) });
     if (typeof result === 'string') return res.status(503).json({ error: result });

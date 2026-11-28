@@ -29,7 +29,7 @@ const ok = (cond, name, info) => {
 
 (async () => {
     const { chromium } = require('playwright-core');
-    const browser = await chromium.launch({ executablePath: BROWSER, headless: true });
+    const browser = await chromium.launch({ executablePath: BROWSER, headless: true, args: ['--disable-gpu', '--disable-dev-shm-usage'] });
     const errors = [];
     const newPage = async name => {
         const ctx = await browser.newContext({ locale: 'de-DE' });

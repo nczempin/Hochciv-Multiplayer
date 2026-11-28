@@ -48,7 +48,7 @@ function matchConfig(withBots = false, players = MIN_HUMANS) {
         mapKey: 'random', hexTiles: false, playerCount: empires, kiCount: 0, randomCivs: true, ranked: true,
         difficulty: levels[levels.length - 1].k, turnTime: 180,
         events: false, eventMode: 'hard', wonders: false, isPublic: false,
-        seed: crypto.randomInt(2 ** 31), matchmaking: true,
+        seed: 1 + crypto.randomInt(0x7fffffff), matchmaking: true,
         playerBots: withBots, playerBotLimit: null,
     };
 }

@@ -17,6 +17,7 @@
  * it is not found.
  */
 const fs = require('fs');
+const sessions = require('../../sessions');
 
 const BASE = (process.argv[2] || 'http://localhost:3000').replace(/\/$/, '');
 const BROWSER = process.env.HOCHCIV_BROWSER || [
@@ -43,8 +44,20 @@ async function until(fn, ms = 15000, step = 200) {
 const emit = (page, ev, data) => page.evaluate(([ev, data]) => new Promise(r => MP.socket.emit(ev, data, r)), [ev, data || {}]);
 
 (async () => {
+    // Server-side unit check: rematch picks a fresh positive seed even though clients never see it.
+    {
+        const sRes = sessions.createSession({ mapKey: '0' }, { name: 'U1', clientId: 'u1' });
+        const sObj = sessions.getSession(sRes.sessionId);
+        const oldSeed = sObj.gameConfig.seed;
+        sObj.players[0].connected = true;
+        sObj.status = 'finished';
+        sessions.resetForRematch(sRes.sessionId);
+        ok(Number.isInteger(sObj.gameConfig.seed) && sObj.gameConfig.seed >= 1 && sObj.gameConfig.seed <= 0x7fffffff && sObj.gameConfig.seed !== oldSeed,
+            'unit: rematch draws a new positive seed', `${oldSeed} -> ${sObj.gameConfig.seed}`);
+        sessions.removeSession(sRes.sessionId);
+    }
     const { chromium } = require('playwright-core');
-    const browser = await chromium.launch({ executablePath: BROWSER });
+    const browser = await chromium.launch({ executablePath: BROWSER, args: ['--disable-gpu', '--disable-dev-shm-usage'] });
     const errors = [];
     const newPage = async name => {
         const ctx = await browser.newContext({ locale: 'de-DE' });
@@ -82,8 +95,10 @@ const emit = (page, ev, data) => page.evaluate(([ev, data]) => new Promise(r => 
         await a.evaluate(() => MP.socket.emit('lobby:config', { playerCount: 4, kiCount: 1, mapKey: '0' }));
         await a.waitForFunction(() => MP.gameConfig.playerCount === 4);
         const seed1 = await a.evaluate(() => MP.gameConfig.seed);
+        ok(seed1 === undefined, 'lobby: server seed is not exposed in MP.gameConfig', String(seed1));
         await a.evaluate(() => MP.startGame());
         await Promise.all([inGame(a), inGame(b), inGame(c)]);
+        ok(await a.evaluate(() => S.seed === undefined), 'game: S.seed is stripped on client');
 
         const early = await emit(a, 'session:rematch');
         ok(early && early.error === 'Die Partie ist noch nicht vorbei.', 'no rematch while the game runs', early && early.error);
@@ -121,7 +136,7 @@ const emit = (page, ev, data) => page.evaluate(([ev, data]) => new Promise(r => 
         ok(la.code === cred.code, 'rematch: same lobby code', la.code);
         ok(la.players.length === 2 && la.players[0] === 'RematchA:random' && la.players[1] === 'RematchB:russland', 'rematch: A and B only, with their lobby choices (A: Zufall)', la.players.join(', '));
         ok(la.me === 0 && la.host === 0 && lb.me === 1 && lb.players === 2, 'rematch: seats and host', `A ${la.me}, host ${la.host}, B ${lb.me}`);
-        ok(la.seed !== seed1, 'rematch: a new seed', `${seed1} → ${la.seed}`);
+        ok(la.seed === undefined, 'rematch: seed remains hidden from client gameConfig', String(la.seed));
         ok(la.state === null && la.list === 'none' && !lb.waiting, 'rematch: the old game is cleared from the screen');
         ok(await a.isVisible('text=Spiel starten'), 'rematch: the host can start again');
 
